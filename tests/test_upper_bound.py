@@ -1,11 +1,11 @@
 from functions_iterative import (
-    AntaresProblem,
     AntaresParameter,
     Reservoir,
     compute_upper_bound,
     RewardApproximation,
     TimeScenarioIndex,
 )
+from optimization import AntaresProblem
 import pytest
 import numpy as np
 

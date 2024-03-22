@@ -1,4 +1,5 @@
-from functions_iterative import AntaresProblem, AntaresParameter, Reservoir, Basis
+from functions_iterative import AntaresParameter, Reservoir
+from optimization import AntaresProblem, Basis
 import pytest
 
 

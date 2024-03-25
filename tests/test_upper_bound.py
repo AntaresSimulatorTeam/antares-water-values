@@ -13,7 +13,7 @@ import numpy as np
 
 def test_upper_bound() -> None:
     problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
-    param = AntaresParameter(S=1, H=168, NTrain=1)
+    param = AntaresParameter(S=1, NTrain=1)
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
@@ -35,8 +35,8 @@ def test_upper_bound() -> None:
         G=[
             [
                 RewardApproximation(
-                    lb_control=-reservoir.P_pump[0] * 168,
-                    ub_control=reservoir.P_turb[0] * 168,
+                    lb_control=-reservoir.max_pumping[0],
+                    ub_control=reservoir.max_generating[0],
                     ub_reward=0,
                 )
             ]

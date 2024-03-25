@@ -7,7 +7,6 @@ import numpy as np
 @dataclass
 class AntaresParameter:
     S: int = 52
-    H: int = 168
     NTrain: int = 1
 
 
@@ -64,8 +63,12 @@ class Reservoir:
         max_power_data = np.loadtxt(
             f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
         )
-        self.P_turb = max_power_data[:, 0]
-        self.P_pump = max_power_data[:, 2]
+        weekly_energy = max_power_data[: self.days_in_year] * self.hours_in_day
+        weekly_energy = weekly_energy.reshape(
+            (self.weeks_in_year, self.days_in_week, 4)
+        ).sum(axis=1)
+        self.max_generating = weekly_energy[:, 0]
+        self.max_pumping = weekly_energy[:, 2]
 
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
@@ -74,7 +77,7 @@ class Reservoir:
         weekly_inflow = daily_inflow.reshape(
             (self.weeks_in_year, self.days_in_week, nb_scenarios)
         ).sum(axis=1)
-        self.inflow = weekly_inflow / self.hours_in_week
+        self.inflow = weekly_inflow
 
     def read_rule_curves(self, dir_study: str) -> None:
         rule_curves = (

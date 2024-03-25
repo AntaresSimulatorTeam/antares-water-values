@@ -72,7 +72,6 @@ def compute_x_multi_scenario(
 
     S = param.S
     NTrain = param.NTrain
-    H = param.H
 
     initial_x = np.zeros((S + 1, NTrain), dtype=np.float32)
     initial_x[0] = reservoir_management.reservoir.initial_level
@@ -90,9 +89,9 @@ def compute_x_multi_scenario(
             _, xf, u = solve_weekly_problem_with_approximation(
                 points=reward[s][k_s].breaking_point,
                 X=X,
-                inflow=reservoir_management.reservoir.inflow[s, k_s] * H,
-                lb=-reservoir_management.reservoir.P_pump[7 * s] * H,
-                ub=reservoir_management.reservoir.P_turb[7 * s] * H,
+                inflow=reservoir_management.reservoir.inflow[s, k_s],
+                lb=-reservoir_management.reservoir.max_pumping[s],
+                ub=reservoir_management.reservoir.max_generating[s],
                 level_i=initial_x[s, j],
                 xmax=reservoir_management.reservoir.upper_rule_curve[s],
                 xmin=reservoir_management.reservoir.bottom_rule_curve[s],
@@ -151,7 +150,6 @@ def compute_upper_bound(
     """
 
     S = param.S
-    H = param.H
     NTrain = param.NTrain
 
     current_itr = np.zeros((S, NTrain, 2), dtype=np.float32)
@@ -173,7 +171,6 @@ def compute_upper_bound(
                     V=V,
                     G=G,
                     S=S,
-                    H=H,
                     k=k,
                     level_i=level_i,
                     s=s,
@@ -297,7 +294,6 @@ def itr_control(
 
     S = param.S
     NTrain = param.NTrain
-    H = param.H
 
     tot_t = []
     debut = time()
@@ -316,8 +312,8 @@ def itr_control(
     G = [
         [
             RewardApproximation(
-                lb_control=-reservoir_management.reservoir.P_pump[7 * s] * H,
-                ub_control=reservoir_management.reservoir.P_turb[7 * s] * H,
+                lb_control=-reservoir_management.reservoir.max_pumping[s],
+                ub_control=reservoir_management.reservoir.max_generating[s],
                 ub_reward=0,
             )
             for k in range(NTrain)

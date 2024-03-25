@@ -332,7 +332,6 @@ def calculate_VU(
 
     NTrain = param.NTrain
     S = param.S
-    H = param.H
 
     V = np.zeros((len(X), S + 1, NTrain))
 
@@ -348,9 +347,9 @@ def calculate_VU(
                 Vu, _, _ = solve_weekly_problem_with_approximation(
                     points=reward[s][k].breaking_point,
                     X=X,
-                    inflow=reservoir_management.reservoir.inflow[s, k] * H,
-                    lb=-reservoir_management.reservoir.P_pump[7 * s] * H,
-                    ub=reservoir_management.reservoir.P_turb[7 * s] * H,
+                    inflow=reservoir_management.reservoir.inflow[s, k],
+                    lb=-reservoir_management.reservoir.max_pumping[s],
+                    ub=reservoir_management.reservoir.max_generating[s],
                     level_i=X[i],
                     xmax=reservoir_management.reservoir.upper_rule_curve[s],
                     xmin=reservoir_management.reservoir.bottom_rule_curve[s],

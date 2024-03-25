@@ -147,22 +147,21 @@ class AntaresProblem:
         -------
         None
         """
-
+        hours_in_week = reservoir_management.reservoir.hours_in_week
         S = param.S
-        H = param.H
 
         model = self.model
 
         self.delete_variable(
-            H=H,
+            H=hours_in_week,
             name_variable=f"^HydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
         self.delete_variable(
-            H=H,
+            H=hours_in_week,
             name_variable=f"^Overflow::area<{reservoir_management.reservoir.area}>::hour<.",
         )
         self.delete_constraint(
-            H=H,
+            H=hours_in_week,
             name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
 
@@ -185,16 +184,15 @@ class AntaresProblem:
 
         U = xp.var(
             "u",
-            lb=-reservoir_management.reservoir.P_pump[7 * self.week]
-            * reservoir_management.reservoir.efficiency
-            * H,
-            ub=reservoir_management.reservoir.P_turb[7 * self.week] * H,
+            lb=-reservoir_management.reservoir.max_pumping[self.week]
+            * reservoir_management.reservoir.efficiency,
+            ub=reservoir_management.reservoir.max_generating[self.week],
         )
         model.addVariable(U)  # State at the begining of the following week
 
         model.addConstraint(
             x_s_1
-            <= x_s - U + reservoir_management.reservoir.inflow[self.week, self.year] * H
+            <= x_s - U + reservoir_management.reservoir.inflow[self.week, self.year]
         )
 
         y = xp.var("y")
@@ -360,7 +358,6 @@ def find_likely_control(
     """
 
     S = param.S
-    H = param.H
 
     V_fut = interp1d(X, V[:, s + 1])
 
@@ -370,9 +367,9 @@ def find_likely_control(
     _, _, u = solve_weekly_problem_with_approximation(
         points=reward[s][k].breaking_point,
         X=X,
-        inflow=reservoir_management.reservoir.inflow[s, k] * H,
-        lb=-reservoir_management.reservoir.P_pump[7 * s] * H,
-        ub=reservoir_management.reservoir.P_turb[7 * s] * H,
+        inflow=reservoir_management.reservoir.inflow[s, k],
+        lb=-reservoir_management.reservoir.max_pumping[s],
+        ub=reservoir_management.reservoir.max_generating[s],
         level_i=level_i,
         xmax=reservoir_management.reservoir.upper_rule_curve[s],
         xmin=reservoir_management.reservoir.bottom_rule_curve[s],
@@ -392,7 +389,6 @@ def solve_problem_with_Bellman_values(
     V: Array2D,
     G: list[list[RewardApproximation]],
     S: int,
-    H: int,
     k: int,
     level_i: float,
     s: int,
@@ -472,6 +468,6 @@ def solve_problem_with_Bellman_values(
         fin_1 - debut_1,
         itr,
         cout,
-        -(xf - level_i - reservoir_management.reservoir.inflow[s, k] * H),
+        -(xf - level_i - reservoir_management.reservoir.inflow[s, k]),
         xf,
     )

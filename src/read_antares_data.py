@@ -24,7 +24,6 @@ class Reservoir:
         self,
         dir_study: str,
         name_area: str,
-        final_level: bool = True,
     ) -> None:
         """
         Create a new reservoir.
@@ -57,7 +56,7 @@ class Reservoir:
 
         self.read_capacity(hydro_ini_file=hydro_ini_file)
         self.read_efficiency(hydro_ini_file=hydro_ini_file)
-        self.read_rule_curves(dir_study, final_level)
+        self.read_rule_curves(dir_study)
         self.read_inflow(dir_study)
         self.read_max_power(dir_study)
 
@@ -77,7 +76,7 @@ class Reservoir:
         ).sum(axis=1)
         self.inflow = weekly_inflow / self.hours_in_week
 
-    def read_rule_curves(self, dir_study: str, final_level: bool) -> None:
+    def read_rule_curves(self, dir_study: str) -> None:
         rule_curves = (
             np.loadtxt(
                 f"{dir_study}/input/hydro/common/capacity/reservoir_{self.area}.txt"
@@ -96,9 +95,6 @@ class Reservoir:
         self.upper_rule_curve = np.concatenate(
             (upper_rule_curve, upper_rule_curve[[0]])
         )
-        if final_level:
-            self.bottom_rule_curve[51] = self.initial_level
-            self.upper_rule_curve[51] = self.initial_level
 
     def get_hydro_ini_file(self, dir_study: str) -> ConfigParser:
         hydro_ini_file = ConfigParser()

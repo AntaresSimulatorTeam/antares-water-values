@@ -3,9 +3,7 @@ import pytest
 
 
 def test_create_reservoir() -> None:
-    reservoir = Reservoir(
-        dir_study="test_data/one_node", name_area="area", final_level=True
-    )
+    reservoir = Reservoir(dir_study="test_data/one_node", name_area="area")
 
     assert reservoir.capacity == 1e7
     assert reservoir.efficiency == 1.0

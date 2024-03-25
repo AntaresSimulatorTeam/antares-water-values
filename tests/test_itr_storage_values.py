@@ -11,7 +11,7 @@ import numpy as np
 def test_itr_control() -> None:
 
     param = AntaresParameter(S=5, H=168, NTrain=1)
-    reservoir = Reservoir("test_data/one_node", "area", final_level=True)
+    reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
         penalty_bottom_rule_curve=3000,

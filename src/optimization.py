@@ -3,7 +3,7 @@ import xpress as xp
 from typing import List, Annotated, Literal
 from calculate_reward_and_bellman_values import (
     RewardApproximation,
-    get_penalty,
+    ReservoirManagement,
     solve_weekly_problem_with_approximation,
 )
 from read_antares_data import Reservoir, AntaresParameter
@@ -125,10 +125,7 @@ class AntaresProblem:
     def create_weekly_problem_itr(
         self,
         param: AntaresParameter,
-        reservoir: Reservoir,
-        pen_low: float = 0,
-        pen_high: float = 0,
-        pen_final: float = 0,
+        reservoir_management: ReservoirManagement,
     ) -> None:
         """
         Modify the Xpress problem to take into account reservoir constraints and manage reservoir with Bellman values and penalties on rule curves.
@@ -157,57 +154,74 @@ class AntaresProblem:
         model = self.model
 
         self.delete_variable(
-            H=H, name_variable=f"^HydroLevel::area<{reservoir.area}>::hour<."
+            H=H,
+            name_variable=f"^HydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
         self.delete_variable(
-            H=H, name_variable=f"^Overflow::area<{reservoir.area}>::hour<."
+            H=H,
+            name_variable=f"^Overflow::area<{reservoir_management.reservoir.area}>::hour<.",
         )
         self.delete_constraint(
-            H=H, name_constraint=f"^AreaHydroLevel::area<{reservoir.area}>::hour<."
+            H=H,
+            name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
 
         cst = model.getConstraint()
         binding_id = [
             i
             for i in range(len(cst))
-            if re.search(f"^HydroPower::area<{reservoir.area}>::week<.", cst[i].name)
+            if re.search(
+                f"^HydroPower::area<{reservoir_management.reservoir.area}>::week<.",
+                cst[i].name,
+            )
         ]
         assert len(binding_id) == 1
 
-        x_s = xp.var("x_s", lb=0, ub=reservoir.capacity)
+        x_s = xp.var("x_s", lb=0, ub=reservoir_management.reservoir.capacity)
         model.addVariable(x_s)  # State at the begining of the current week
 
-        x_s_1 = xp.var("x_s_1", lb=0, ub=reservoir.capacity)
+        x_s_1 = xp.var("x_s_1", lb=0, ub=reservoir_management.reservoir.capacity)
         model.addVariable(x_s_1)  # State at the begining of the following week
 
         U = xp.var(
             "u",
-            lb=-reservoir.P_pump[7 * self.week] * reservoir.efficiency * H,
-            ub=reservoir.P_turb[7 * self.week] * H,
+            lb=-reservoir_management.reservoir.P_pump[7 * self.week]
+            * reservoir_management.reservoir.efficiency
+            * H,
+            ub=reservoir_management.reservoir.P_turb[7 * self.week] * H,
         )
         model.addVariable(U)  # State at the begining of the following week
 
         model.addConstraint(
-            x_s_1 <= x_s - U + reservoir.inflow[self.week, self.year] * H
+            x_s_1
+            <= x_s - U + reservoir_management.reservoir.inflow[self.week, self.year] * H
         )
 
         y = xp.var("y")
 
         model.addVariable(y)  # Penality for violating guide curves
 
-        if self.week != S - 1:
+        if self.week != S - 1 or not reservoir_management.final_level:
             model.addConstraint(
-                y >= -pen_low * (x_s_1 - reservoir.bottom_rule_curve[self.week])
+                y
+                >= -reservoir_management.penalty_bottom_rule_curve
+                * (x_s_1 - reservoir_management.reservoir.bottom_rule_curve[self.week])
             )
             model.addConstraint(
-                y >= pen_high * (x_s_1 - reservoir.upper_rule_curve[self.week])
+                y
+                >= reservoir_management.penalty_upper_rule_curve
+                * (x_s_1 - reservoir_management.reservoir.upper_rule_curve[self.week])
             )
         else:
             model.addConstraint(
-                y >= -pen_final * (x_s_1 - reservoir.bottom_rule_curve[self.week])
+                y
+                >= -reservoir_management.penalty_final_level
+                * (x_s_1 - reservoir_management.final_level)
             )
             model.addConstraint(
-                y >= pen_final * (x_s_1 - reservoir.upper_rule_curve[self.week])
+                y
+                >= reservoir_management.penalty_final_level
+                * (x_s_1 - reservoir_management.final_level)
             )
 
         z = xp.var("z", lb=float("-inf"), ub=float("inf"))
@@ -304,13 +318,10 @@ class AntaresProblem:
 
 def find_likely_control(
     param: AntaresParameter,
-    reservoir: Reservoir,
+    reservoir_management: ReservoirManagement,
     X: Array1D,
     V: Array2D,
     reward: list[list[RewardApproximation]],
-    pen_low: float,
-    pen_high: float,
-    pen_final: float,
     level_i: float,
     s: int,
     k: int,
@@ -353,26 +364,19 @@ def find_likely_control(
 
     V_fut = interp1d(X, V[:, s + 1])
 
-    pen = get_penalty(
-        s=s,
-        S=S,
-        reservoir=reservoir,
-        pen_final=pen_final,
-        pen_low=pen_low,
-        pen_high=pen_high,
-    )
+    pen = reservoir_management.get_penalty(s=s, S=S)
     Gs = reward[s][k].reward_function()
 
     _, _, u = solve_weekly_problem_with_approximation(
         points=reward[s][k].breaking_point,
         X=X,
-        inflow=reservoir.inflow[s, k] * H,
-        lb=-reservoir.P_pump[7 * s] * H,
-        ub=reservoir.P_turb[7 * s] * H,
+        inflow=reservoir_management.reservoir.inflow[s, k] * H,
+        lb=-reservoir_management.reservoir.P_pump[7 * s] * H,
+        ub=reservoir_management.reservoir.P_turb[7 * s] * H,
         level_i=level_i,
-        xmax=reservoir.upper_rule_curve[s],
-        xmin=reservoir.bottom_rule_curve[s],
-        cap=reservoir.capacity,
+        xmax=reservoir_management.reservoir.upper_rule_curve[s],
+        xmin=reservoir_management.reservoir.bottom_rule_curve[s],
+        cap=reservoir_management.reservoir.capacity,
         pen=pen,
         V_fut=V_fut,
         Gs=Gs,
@@ -383,13 +387,10 @@ def find_likely_control(
 
 def solve_problem_with_Bellman_values(
     param: AntaresParameter,
-    reservoir: Reservoir,
+    reservoir_management: ReservoirManagement,
     X: Array1D,
     V: Array2D,
     G: list[list[RewardApproximation]],
-    pen_low: float,
-    pen_high: float,
-    pen_final: float,
     S: int,
     H: int,
     k: int,
@@ -411,13 +412,10 @@ def solve_problem_with_Bellman_values(
         if len(m.control_basis) >= 2:
             likely_control = find_likely_control(
                 param=param,
-                reservoir=reservoir,
+                reservoir_management=reservoir_management,
                 X=X,
                 V=V,
                 reward=G,
-                pen_low=pen_low,
-                pen_high=pen_high,
-                pen_final=pen_final,
                 level_i=level_i,
                 s=s,
                 k=k,
@@ -474,6 +472,6 @@ def solve_problem_with_Bellman_values(
         fin_1 - debut_1,
         itr,
         cout,
-        -(xf - level_i - reservoir.inflow[s, k] * H),
+        -(xf - level_i - reservoir_management.reservoir.inflow[s, k] * H),
         xf,
     )

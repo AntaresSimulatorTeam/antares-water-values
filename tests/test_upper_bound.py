@@ -4,6 +4,7 @@ from functions_iterative import (
     compute_upper_bound,
     RewardApproximation,
     TimeScenarioIndex,
+    ReservoirManagement,
 )
 from optimization import AntaresProblem
 import pytest
@@ -14,13 +15,20 @@ def test_upper_bound() -> None:
     problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
     param = AntaresParameter(S=1, H=168, NTrain=1)
     reservoir = Reservoir("test_data/one_node", "area", final_level=True)
+    reservoir_management = ReservoirManagement(
+        reservoir=reservoir,
+        penalty_bottom_rule_curve=0,
+        penalty_upper_rule_curve=0,
+        penalty_final_level=0,
+        force_final_level=True,
+    )
     problem.create_weekly_problem_itr(
-        param=param, reservoir=reservoir, pen_low=0, pen_high=0, pen_final=0
+        param=param, reservoir_management=reservoir_management
     )
 
     upper_bound, controls, _ = compute_upper_bound(
         param=param,
-        reservoir=reservoir,
+        reservoir_management=reservoir_management,
         list_models={TimeScenarioIndex(0, 0): problem},
         X=np.linspace(0, reservoir.capacity, num=20),
         V=np.zeros((20, 2), dtype=np.float32),
@@ -33,9 +41,6 @@ def test_upper_bound() -> None:
                 )
             ]
         ],
-        pen_low=0,
-        pen_high=0,
-        pen_final=0,
     )
 
     assert upper_bound == pytest.approx(380492940.000565)

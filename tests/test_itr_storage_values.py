@@ -1,29 +1,33 @@
-from functions_iterative import AntaresParameter, Reservoir, itr_control
+from functions_iterative import (
+    AntaresParameter,
+    Reservoir,
+    itr_control,
+    ReservoirManagement,
+)
 import pytest
 import numpy as np
 
 
 def test_itr_control() -> None:
 
-    pen_low = 3000
-    pen_high = 3000
-    pen_final = 3000
-
     param = AntaresParameter(S=5, H=168, NTrain=1)
     reservoir = Reservoir("test_data/one_node", "area", final_level=True)
-
+    reservoir_management = ReservoirManagement(
+        reservoir=reservoir,
+        penalty_bottom_rule_curve=3000,
+        penalty_upper_rule_curve=3000,
+        penalty_final_level=3000,
+        force_final_level=False,
+    )
     xNsteps = 20
     X = np.linspace(0, reservoir.capacity, num=xNsteps)
 
     vb, G, _, _, controls_upper, traj = itr_control(
         param=param,
-        reservoir=reservoir,
+        reservoir_management=reservoir_management,
         output_path="test_data/one_node",
-        pen_low=pen_low,
-        pen_high=pen_high,
         X=X,
         N=3,
-        pen_final=pen_final,
         tol_gap=1e-4,
     )
 

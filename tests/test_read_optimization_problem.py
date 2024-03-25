@@ -1,4 +1,4 @@
-from functions_iterative import AntaresParameter, Reservoir
+from functions_iterative import AntaresParameter, Reservoir, ReservoirManagement
 from optimization import AntaresProblem, Basis
 import pytest
 
@@ -7,8 +7,15 @@ def test_create_and_modify_weekly_problem() -> None:
     problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
     param = AntaresParameter(S=52, H=168, NTrain=1)
     reservoir = Reservoir("test_data/one_node", "area", final_level=True)
+    reservoir_management = ReservoirManagement(
+        reservoir=reservoir,
+        penalty_bottom_rule_curve=0,
+        penalty_upper_rule_curve=0,
+        penalty_final_level=0,
+        force_final_level=True,
+    )
     problem.create_weekly_problem_itr(
-        param=param, reservoir=reservoir, pen_low=0, pen_high=0, pen_final=0
+        param=param, reservoir_management=reservoir_management
     )
 
     beta, lamb, _, _, _ = problem.modify_weekly_problem_itr(
@@ -19,7 +26,7 @@ def test_create_and_modify_weekly_problem() -> None:
 
     problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
-        param=param, reservoir=reservoir, pen_low=0, pen_high=0, pen_final=0
+        param=param, reservoir_management=reservoir_management
     )
     beta, lamb, _, _, _ = problem.modify_weekly_problem_itr(
         control=8400000, i=0, prev_basis=Basis()
@@ -29,7 +36,7 @@ def test_create_and_modify_weekly_problem() -> None:
 
     problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
-        param=param, reservoir=reservoir, pen_low=0, pen_high=0, pen_final=0
+        param=param, reservoir_management=reservoir_management
     )
     beta, lamb, _, _, _ = problem.modify_weekly_problem_itr(
         control=-8400000, i=0, prev_basis=Basis()

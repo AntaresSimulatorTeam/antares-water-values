@@ -1,11 +1,94 @@
-from typing import Callable, Annotated, Literal
+from typing import Callable, Annotated, Literal, Optional
 from read_antares_data import AntaresParameter, Reservoir
 from scipy.interpolate import interp1d
 import numpy as np
 import numpy.typing as npt
+from dataclasses import dataclass
 
 Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
 Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
+
+
+class ReservoirManagement:
+
+    def __init__(
+        self,
+        reservoir: Reservoir,
+        penalty_bottom_rule_curve: float = 0,
+        penalty_upper_rule_curve: float = 0,
+        penalty_final_level: float = 0,
+        force_final_level: bool = False,
+        final_level: Optional[float] = None,
+    ) -> None:
+
+        self.reservoir = reservoir
+        self.penalty_bottom_rule_curve = penalty_bottom_rule_curve
+        self.penalty_upper_rule_curve = penalty_upper_rule_curve
+
+        if force_final_level:
+            self.penalty_final_level = penalty_final_level
+            if final_level:
+                self.final_level = final_level
+            else:
+                self.final_level = reservoir.initial_level
+        else:
+            self.final_level = False
+
+    def get_penalty(self, s: int, S: int) -> Callable:
+        """
+        Return a function to evaluate penalities for violating rule curves for any level of stock.
+
+        Parameters
+        ----------
+        s:int :
+            Week considered
+        S:int :
+            Total number of weeks
+        reservoir:Reservoir :
+            Reservoir considered
+        pen_final:float :
+            Penalty for violating final rule curves
+        pen_low:float :
+            Penalty for violating bottom rule curve
+        pen_high:float :
+            Penalty for violating top rule curve
+
+        Returns
+        -------
+
+        """
+        if s == S - 1 and self.final_level:
+            pen = interp1d(
+                [
+                    0,
+                    self.final_level,
+                    self.reservoir.capacity,
+                ],
+                [
+                    -self.penalty_final_level * (self.final_level),
+                    0,
+                    -self.penalty_final_level
+                    * (self.reservoir.capacity - self.final_level),
+                ],
+            )
+        else:
+            pen = interp1d(
+                [
+                    0,
+                    self.reservoir.bottom_rule_curve[s],
+                    self.reservoir.upper_rule_curve[s],
+                    self.reservoir.capacity,
+                ],
+                [
+                    -self.penalty_bottom_rule_curve
+                    * (self.reservoir.bottom_rule_curve[s]),
+                    0,
+                    0,
+                    -self.penalty_upper_rule_curve
+                    * (self.reservoir.capacity - self.reservoir.upper_rule_curve[s]),
+                ],
+            )
+        return pen
 
 
 class RewardApproximation:
@@ -119,69 +202,6 @@ class RewardApproximation:
         self.list_cut = new_reward
 
 
-def get_penalty(
-    s: int,
-    S: int,
-    reservoir: Reservoir,
-    pen_final: float,
-    pen_low: float,
-    pen_high: float,
-) -> Callable:
-    """
-    Return a function to evaluate penalities for violating rule curves for any level of stock.
-
-    Parameters
-    ----------
-    s:int :
-        Week considered
-    S:int :
-        Total number of weeks
-    reservoir:Reservoir :
-        Reservoir considered
-    pen_final:float :
-        Penalty for violating final rule curves
-    pen_low:float :
-        Penalty for violating bottom rule curve
-    pen_high:float :
-        Penalty for violating top rule curve
-
-    Returns
-    -------
-
-    """
-    if s == S - 1:
-        pen = interp1d(
-            [
-                0,
-                reservoir.bottom_rule_curve[s],
-                reservoir.upper_rule_curve[s],
-                reservoir.capacity,
-            ],
-            [
-                -pen_final * (reservoir.bottom_rule_curve[s]),
-                0,
-                0,
-                -pen_final * (reservoir.capacity - reservoir.upper_rule_curve[s]),
-            ],
-        )
-    else:
-        pen = interp1d(
-            [
-                0,
-                reservoir.bottom_rule_curve[s],
-                reservoir.upper_rule_curve[s],
-                reservoir.capacity,
-            ],
-            [
-                -pen_low * (reservoir.bottom_rule_curve[s]),
-                0,
-                0,
-                -pen_high * (reservoir.capacity - reservoir.upper_rule_curve[s]),
-            ],
-        )
-    return pen
-
-
 def solve_weekly_problem_with_approximation(
     points: list,
     X: Array1D,
@@ -282,11 +302,8 @@ def solve_weekly_problem_with_approximation(
 def calculate_VU(
     param: AntaresParameter,
     reward: list[list[RewardApproximation]],
-    reservoir: Reservoir,
+    reservoir_management: ReservoirManagement,
     X: Array1D,
-    pen_low: float,
-    pen_high: float,
-    pen_final: float,
 ) -> Array2D:
     """
     Calculate Bellman values for every week based on reward approximation
@@ -321,14 +338,7 @@ def calculate_VU(
 
     for s in range(S - 1, -1, -1):
 
-        pen = get_penalty(
-            s=s,
-            S=S,
-            reservoir=reservoir,
-            pen_final=pen_final,
-            pen_low=pen_low,
-            pen_high=pen_high,
-        )
+        pen = reservoir_management.get_penalty(s=s, S=S)
 
         for k in range(NTrain):
             V_fut = interp1d(X, V[:, s + 1, k])
@@ -338,13 +348,13 @@ def calculate_VU(
                 Vu, _, _ = solve_weekly_problem_with_approximation(
                     points=reward[s][k].breaking_point,
                     X=X,
-                    inflow=reservoir.inflow[s, k] * H,
-                    lb=-reservoir.P_pump[7 * s] * H,
-                    ub=reservoir.P_turb[7 * s] * H,
+                    inflow=reservoir_management.reservoir.inflow[s, k] * H,
+                    lb=-reservoir_management.reservoir.P_pump[7 * s] * H,
+                    ub=reservoir_management.reservoir.P_turb[7 * s] * H,
                     level_i=X[i],
-                    xmax=reservoir.upper_rule_curve[s],
-                    xmin=reservoir.bottom_rule_curve[s],
-                    cap=reservoir.capacity,
+                    xmax=reservoir_management.reservoir.upper_rule_curve[s],
+                    xmin=reservoir_management.reservoir.bottom_rule_curve[s],
+                    cap=reservoir_management.reservoir.capacity,
                     pen=pen,
                     V_fut=V_fut,
                     Gs=Gs,

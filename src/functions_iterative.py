@@ -13,7 +13,7 @@ from optimization import (
 from read_antares_data import Reservoir, AntaresParameter
 from calculate_reward_and_bellman_values import (
     RewardApproximation,
-    get_penalty,
+    ReservoirManagement,
     solve_weekly_problem_with_approximation,
     calculate_VU,
 )
@@ -32,13 +32,10 @@ class TimeScenarioIndex:
 
 def compute_x_multi_scenario(
     param: AntaresParameter,
-    reservoir: Reservoir,
+    reservoir_management: ReservoirManagement,
     X: Array1D,
     V: Array2D,
     reward: list[list[RewardApproximation]],
-    pen_low: float,
-    pen_high: float,
-    pen_final: float,
     itr: int,
 ) -> tuple[Array2D, Array2D]:
     """
@@ -78,7 +75,7 @@ def compute_x_multi_scenario(
     H = param.H
 
     initial_x = np.zeros((S + 1, NTrain), dtype=np.float32)
-    initial_x[0] = reservoir.initial_level
+    initial_x[0] = reservoir_management.reservoir.initial_level
     np.random.seed(19 * itr)
     controls = np.zeros((S, NTrain), dtype=np.float32)
 
@@ -87,26 +84,19 @@ def compute_x_multi_scenario(
         V_fut = interp1d(X, V[:, s + 1])
         for j, k_s in enumerate(np.random.permutation(range(NTrain))):
 
-            pen = get_penalty(
-                s=s,
-                S=S,
-                reservoir=reservoir,
-                pen_final=pen_final,
-                pen_low=pen_low,
-                pen_high=pen_high,
-            )
+            pen = reservoir_management.get_penalty(s=s, S=S)
             Gs = reward[s][k_s].reward_function()
 
             _, xf, u = solve_weekly_problem_with_approximation(
                 points=reward[s][k_s].breaking_point,
                 X=X,
-                inflow=reservoir.inflow[s, k_s] * H,
-                lb=-reservoir.P_pump[7 * s] * H,
-                ub=reservoir.P_turb[7 * s] * H,
+                inflow=reservoir_management.reservoir.inflow[s, k_s] * H,
+                lb=-reservoir_management.reservoir.P_pump[7 * s] * H,
+                ub=reservoir_management.reservoir.P_turb[7 * s] * H,
                 level_i=initial_x[s, j],
-                xmax=reservoir.upper_rule_curve[s],
-                xmin=reservoir.bottom_rule_curve[s],
-                cap=reservoir.capacity,
+                xmax=reservoir_management.reservoir.upper_rule_curve[s],
+                xmin=reservoir_management.reservoir.bottom_rule_curve[s],
+                cap=reservoir_management.reservoir.capacity,
                 pen=pen,
                 V_fut=V_fut,
                 Gs=Gs,
@@ -120,14 +110,11 @@ def compute_x_multi_scenario(
 
 def compute_upper_bound(
     param: AntaresParameter,
-    reservoir: Reservoir,
+    reservoir_management: ReservoirManagement,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     X: Array1D,
     V: Array2D,
     G: list[list[RewardApproximation]],
-    pen_low: float,
-    pen_high: float,
-    pen_final: float,
 ) -> tuple[float, Array2D, Array3D]:
     """
     Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
@@ -173,7 +160,7 @@ def compute_upper_bound(
     controls = np.zeros((S, NTrain), dtype=np.float32)
     for k in range(NTrain):
 
-        level_i = reservoir.initial_level
+        level_i = reservoir_management.reservoir.initial_level
         for s in range(S):
             print(f"{k} {s}", end="\r")
             m = list_models[TimeScenarioIndex(s, k)]
@@ -181,13 +168,10 @@ def compute_upper_bound(
             computational_time, itr, current_cost, control, level_i = (
                 solve_problem_with_Bellman_values(
                     param=param,
-                    reservoir=reservoir,
+                    reservoir_management=reservoir_management,
                     X=X,
                     V=V,
                     G=G,
-                    pen_low=pen_low,
-                    pen_high=pen_high,
-                    pen_final=pen_final,
                     S=S,
                     H=H,
                     k=k,
@@ -258,13 +242,10 @@ def calculate_reward(
 
 def itr_control(
     param: AntaresParameter,
-    reservoir: Reservoir,
+    reservoir_management: ReservoirManagement,
     output_path: str,
-    pen_low: float,
-    pen_high: float,
     X: Array1D,
     N: int,
-    pen_final: float,
     tol_gap: float,
 ) -> tuple[
     Array2D,
@@ -327,10 +308,7 @@ def itr_control(
             m = AntaresProblem(year=k, week=s, path=output_path, itr=1)
             m.create_weekly_problem_itr(
                 param=param,
-                reservoir=reservoir,
-                pen_low=pen_low,
-                pen_high=pen_high,
-                pen_final=pen_final,
+                reservoir_management=reservoir_management,
             )
             list_models[TimeScenarioIndex(s, k)] = m
 
@@ -338,8 +316,8 @@ def itr_control(
     G = [
         [
             RewardApproximation(
-                lb_control=-reservoir.P_pump[7 * s] * H,
-                ub_control=reservoir.P_turb[7 * s] * H,
+                lb_control=-reservoir_management.reservoir.P_pump[7 * s] * H,
+                ub_control=reservoir_management.reservoir.P_turb[7 * s] * H,
                 ub_reward=0,
             )
             for k in range(NTrain)
@@ -360,13 +338,10 @@ def itr_control(
 
         initial_x, controls = compute_x_multi_scenario(
             param=param,
-            reservoir=reservoir,
+            reservoir_management=reservoir_management,
             X=X,
             V=V,
             reward=G,
-            pen_low=pen_low,
-            pen_high=pen_high,
-            pen_final=pen_final,
             itr=i,
         )
         traj.append(np.array(initial_x))
@@ -379,25 +354,19 @@ def itr_control(
         V = calculate_VU(
             param=param,
             reward=G,
-            reservoir=reservoir,
+            reservoir_management=reservoir_management,
             X=X,
-            pen_low=pen_low,
-            pen_high=pen_high,
-            pen_final=pen_final,
         )
         V_fut = interp1d(X, V[:, 0])
-        V0 = V_fut(reservoir.initial_level)
+        V0 = V_fut(reservoir_management.reservoir.initial_level)
 
         upper_bound, controls, current_itr = compute_upper_bound(
             param=param,
-            reservoir=reservoir,
+            reservoir_management=reservoir_management,
             list_models=list_models,
             X=X,
             V=V,
             G=G,
-            pen_low=pen_low,
-            pen_high=pen_high,
-            pen_final=pen_final,
         )
         itr_tot.append(current_itr)
         controls_upper.append(controls)

@@ -6,7 +6,7 @@ import pytest
 def test_create_and_modify_weekly_problem() -> None:
     problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
     param = AntaresParameter(S=52, H=168, NTrain=1)
-    reservoir = Reservoir(param, "test_data/one_node", "area", final_level=True)
+    reservoir = Reservoir("test_data/one_node", "area", final_level=True)
     problem.create_weekly_problem_itr(
         param=param, reservoir=reservoir, pen_low=0, pen_high=0, pen_final=0
     )

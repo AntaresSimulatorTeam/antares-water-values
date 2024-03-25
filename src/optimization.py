@@ -196,11 +196,19 @@ class AntaresProblem:
         model.addVariable(y)  # Penality for violating guide curves
 
         if self.week != S - 1:
-            model.addConstraint(y >= -pen_low * (x_s_1 - reservoir.Xmin[self.week]))
-            model.addConstraint(y >= pen_high * (x_s_1 - reservoir.Xmax[self.week]))
+            model.addConstraint(
+                y >= -pen_low * (x_s_1 - reservoir.bottom_rule_curve[self.week])
+            )
+            model.addConstraint(
+                y >= pen_high * (x_s_1 - reservoir.upper_rule_curve[self.week])
+            )
         else:
-            model.addConstraint(y >= -pen_final * (x_s_1 - reservoir.Xmin[self.week]))
-            model.addConstraint(y >= pen_final * (x_s_1 - reservoir.Xmax[self.week]))
+            model.addConstraint(
+                y >= -pen_final * (x_s_1 - reservoir.bottom_rule_curve[self.week])
+            )
+            model.addConstraint(
+                y >= pen_final * (x_s_1 - reservoir.upper_rule_curve[self.week])
+            )
 
         z = xp.var("z", lb=float("-inf"), ub=float("inf"))
 
@@ -362,8 +370,8 @@ def find_likely_control(
         lb=-reservoir.P_pump[7 * s] * H,
         ub=reservoir.P_turb[7 * s] * H,
         level_i=level_i,
-        xmax=reservoir.Xmax[s],
-        xmin=reservoir.Xmin[s],
+        xmax=reservoir.upper_rule_curve[s],
+        xmin=reservoir.bottom_rule_curve[s],
         cap=reservoir.capacity,
         pen=pen,
         V_fut=V_fut,

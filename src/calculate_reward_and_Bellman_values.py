@@ -151,22 +151,32 @@ def get_penalty(
     """
     if s == S - 1:
         pen = interp1d(
-            [0, reservoir.Xmin[s], reservoir.Xmax[s], reservoir.capacity],
             [
-                -pen_final * (reservoir.Xmin[s]),
+                0,
+                reservoir.bottom_rule_curve[s],
+                reservoir.upper_rule_curve[s],
+                reservoir.capacity,
+            ],
+            [
+                -pen_final * (reservoir.bottom_rule_curve[s]),
                 0,
                 0,
-                -pen_final * (reservoir.capacity - reservoir.Xmax[s]),
+                -pen_final * (reservoir.capacity - reservoir.upper_rule_curve[s]),
             ],
         )
     else:
         pen = interp1d(
-            [0, reservoir.Xmin[s], reservoir.Xmax[s], reservoir.capacity],
             [
-                -pen_low * (reservoir.Xmin[s]),
+                0,
+                reservoir.bottom_rule_curve[s],
+                reservoir.upper_rule_curve[s],
+                reservoir.capacity,
+            ],
+            [
+                -pen_low * (reservoir.bottom_rule_curve[s]),
                 0,
                 0,
-                -pen_high * (reservoir.capacity - reservoir.Xmax[s]),
+                -pen_high * (reservoir.capacity - reservoir.upper_rule_curve[s]),
             ],
         )
     return pen
@@ -332,8 +342,8 @@ def calculate_VU(
                     lb=-reservoir.P_pump[7 * s] * H,
                     ub=reservoir.P_turb[7 * s] * H,
                     level_i=X[i],
-                    xmax=reservoir.Xmax[s],
-                    xmin=reservoir.Xmin[s],
+                    xmax=reservoir.upper_rule_curve[s],
+                    xmin=reservoir.bottom_rule_curve[s],
                     cap=reservoir.capacity,
                     pen=pen,
                     V_fut=V_fut,

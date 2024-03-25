@@ -10,7 +10,7 @@ def test_itr_control() -> None:
     pen_final = 3000
 
     param = AntaresParameter(S=5, H=168, NTrain=1)
-    reservoir = Reservoir(param, "test_data/one_node", "area", final_level=True)
+    reservoir = Reservoir("test_data/one_node", "area", final_level=True)
 
     xNsteps = 20
     X = np.linspace(0, reservoir.capacity, num=xNsteps)

@@ -14,9 +14,14 @@ class AntaresParameter:
 class Reservoir:
     """Describes reservoir parameters"""
 
+    weeks_in_year = 52
+    hours_in_week = 168
+    hours_in_day = 24
+    days_in_week = hours_in_week // hours_in_day
+    days_in_year = weeks_in_year * days_in_week
+
     def __init__(
         self,
-        param: AntaresParameter,
         dir_study: str,
         name_area: str,
         final_level: bool = True,
@@ -46,50 +51,70 @@ class Reservoir:
         None
         """
 
-        H = param.H
+        self.area = name_area
 
-        hydro_ini = ConfigParser()
-        hydro_ini.read(dir_study + "/input/hydro/hydro.ini")
+        hydro_ini_file = self.get_hydro_ini_file(dir_study=dir_study)
 
-        self.capacity = hydro_ini.getfloat("reservoir capacity", name_area)
+        self.read_capacity(hydro_ini_file=hydro_ini_file)
+        self.read_efficiency(hydro_ini_file=hydro_ini_file)
+        self.read_rule_curves(dir_study, final_level)
+        self.read_inflow(dir_study)
+        self.read_max_power(dir_study)
 
-        courbes_guides = (
+    def read_max_power(self, dir_study: str) -> None:
+        max_power_data = np.loadtxt(
+            f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
+        )
+        self.P_turb = max_power_data[:, 0]
+        self.P_pump = max_power_data[:, 2]
+
+    def read_inflow(self, dir_study: str) -> None:
+        daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
+        daily_inflow = daily_inflow[: self.days_in_year]
+        nb_scenarios = daily_inflow.shape[1]
+        weekly_inflow = daily_inflow.reshape(
+            (self.weeks_in_year, self.days_in_week, nb_scenarios)
+        ).sum(axis=1)
+        self.inflow = weekly_inflow / self.hours_in_week
+
+    def read_rule_curves(self, dir_study: str, final_level: bool) -> None:
+        rule_curves = (
             np.loadtxt(
-                dir_study
-                + "/input/hydro/common/capacity/reservoir_"
-                + name_area
-                + ".txt"
+                f"{dir_study}/input/hydro/common/capacity/reservoir_{self.area}.txt"
             )[:, [0, 2]]
             * self.capacity
         )
-        assert courbes_guides[0, 0] == courbes_guides[0, 1]
-        self.initial_level = courbes_guides[0, 0]
-        Xmin = courbes_guides[6:365:7, 0]
-        Xmax = courbes_guides[6:365:7, 1]
-        self.Xmin = np.concatenate((Xmin, Xmin[[0]]))
-        self.Xmax = np.concatenate((Xmax, Xmax[[0]]))
-        if final_level:
-            self.Xmin[51] = self.initial_level
-            self.Xmax[51] = self.initial_level
-
-        self.inflow = (
-            np.loadtxt(dir_study + "/input/hydro/series/" + name_area + "/mod.txt")[
-                6:365:7
-            ]
-            * 7
-            / H
+        assert (
+            rule_curves[0, 0] == rule_curves[0, 1]
+        ), "Initial level is not correctly defined by bottom and upper rule curves"
+        self.initial_level = rule_curves[0, 0]
+        bottom_rule_curve = rule_curves[6:365:7, 0]
+        upper_rule_curve = rule_curves[6:365:7, 1]
+        self.bottom_rule_curve = np.concatenate(
+            (bottom_rule_curve, bottom_rule_curve[[0]])
         )
-        self.area = name_area
+        self.upper_rule_curve = np.concatenate(
+            (upper_rule_curve, upper_rule_curve[[0]])
+        )
+        if final_level:
+            self.bottom_rule_curve[51] = self.initial_level
+            self.upper_rule_curve[51] = self.initial_level
 
-        P_turb = np.loadtxt(
-            dir_study + "/input/hydro/common/capacity/maxpower_" + name_area + ".txt"
-        )[:, 0]
-        P_pump = np.loadtxt(
-            dir_study + "/input/hydro/common/capacity/maxpower_" + name_area + ".txt"
-        )[:, 2]
-        self.P_turb = P_turb
-        self.P_pump = P_pump
-        self.efficiency = hydro_ini.getfloat("pumping efficiency", name_area)
+    def get_hydro_ini_file(self, dir_study: str) -> ConfigParser:
+        hydro_ini_file = ConfigParser()
+        hydro_ini_file.read(dir_study + "/input/hydro/hydro.ini")
+
+        return hydro_ini_file
+
+    def read_capacity(self, hydro_ini_file: ConfigParser) -> None:
+
+        capacity = hydro_ini_file.getfloat("reservoir capacity", self.area)
+
+        self.capacity = capacity
+
+    def read_efficiency(self, hydro_ini_file: ConfigParser) -> None:
+        efficiency = hydro_ini_file.getfloat("pumping efficiency", self.area)
+        self.efficiency = efficiency
 
 
 def generate_mps_file(study_path: str, antares_path: str) -> str:

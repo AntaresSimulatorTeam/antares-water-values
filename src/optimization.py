@@ -1,6 +1,5 @@
 import re
-import xpress as xp
-from typing import List, Annotated, Literal, Dict
+from typing import List, Annotated, Literal
 from calculate_reward_and_bellman_values import (
     RewardApproximation,
     ReservoirManagement,
@@ -11,8 +10,7 @@ import numpy as np
 import numpy.typing as npt
 from time import time
 from scipy.interpolate import interp1d
-
-xp.setOutputEnabled(False)
+from ortools.linear_solver.python import model_builder
 
 Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
 Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
@@ -73,17 +71,22 @@ class AntaresProblem:
         self.week = week
         self.path = path
 
-        model = xp.problem()
-        model.controls.outputlog = 0
-        model.controls.threads = 1
-        model.controls.scaling = 0
-        model.controls.presolve = 0
-        model.controls.feastol = 1.0e-7
-        model.controls.optimalitytol = 1.0e-7
-        model.controls.xslp_log = -1
-        model.controls.lplogstyle = 0
-        model.read(path + f"/problem-{scenario+1}-{week+1}--optim-nb-{itr}.mps")
+        mps_path = path + f"/problem-{scenario+1}-{week+1}--optim-nb-{itr}.mps"
+        model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
+        model.import_from_mps_file(mps_path)
+
+        solver = model_builder.ModelSolver("XPRESS_LP")
+        if not (solver.solver_is_supported()):
+            solver = model_builder.ModelSolver("GLOP")
+            assert solver.solver_is_supported(), "Couldn't find any supported solver"
+        else:
+            solver.set_solver_specific_parameters(
+                "threads:1, scaling:0, presolve:0, feastol:1.0e-7, optimalitytol:1.0e-7"
+            )
+        solver.enable_output(False)
+
         self.model = model
+        self.solver = solver
 
         self.basis: List = []
         self.control_basis: List = []
@@ -159,7 +162,7 @@ class AntaresProblem:
             name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
 
-        cst = model.getConstraint()
+        cst = model.get_linear_constraints()
         binding_id = [
             i
             for i in range(len(cst))
@@ -170,59 +173,72 @@ class AntaresProblem:
         ]
         assert len(binding_id) == 1
 
-        x_s = xp.var("x_s", lb=0, ub=reservoir_management.reservoir.capacity)
-        model.addVariable(x_s)  # State at the begining of the current week
+        x_s = model.new_var(
+            lb=0,
+            ub=reservoir_management.reservoir.capacity,
+            is_integer=False,
+            name="x_s",
+        )
 
-        x_s_1 = xp.var("x_s_1", lb=0, ub=reservoir_management.reservoir.capacity)
-        model.addVariable(x_s_1)  # State at the begining of the following week
+        x_s_1 = model.new_var(
+            lb=0,
+            ub=reservoir_management.reservoir.capacity,
+            is_integer=False,
+            name="x_s_1",
+        )
 
-        U = xp.var(
-            "u",
+        U = model.new_var(
             lb=-reservoir_management.reservoir.max_pumping[self.week]
             * reservoir_management.reservoir.efficiency,
             ub=reservoir_management.reservoir.max_generating[self.week],
+            is_integer=False,
+            name="u",
         )
-        model.addVariable(U)  # State at the begining of the following week
 
-        model.addConstraint(
+        model.add(
             x_s_1
-            <= x_s - U + reservoir_management.reservoir.inflow[self.week, self.scenario]
+            <= x_s
+            - U
+            + reservoir_management.reservoir.inflow[self.week, self.scenario],
+            name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
         )
 
-        y = xp.var("y")
-
-        model.addVariable(y)  # Penality for violating guide curves
+        y = model.new_var(
+            lb=0, ub=float("inf"), is_integer=False, name="y"
+        )  # Penality for violating guide curves
 
         if self.week != len_week - 1 or not reservoir_management.final_level:
-            model.addConstraint(
+            model.add(
                 y
                 >= -reservoir_management.penalty_bottom_rule_curve
-                * (x_s_1 - reservoir_management.reservoir.bottom_rule_curve[self.week])
+                * (x_s_1 - reservoir_management.reservoir.bottom_rule_curve[self.week]),
+                name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
-            model.addConstraint(
+            model.add(
                 y
                 >= reservoir_management.penalty_upper_rule_curve
-                * (x_s_1 - reservoir_management.reservoir.upper_rule_curve[self.week])
+                * (x_s_1 - reservoir_management.reservoir.upper_rule_curve[self.week]),
+                name=f"PenaltyForViolatingUpperRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
         else:
-            model.addConstraint(
+            model.add(
                 y
                 >= -reservoir_management.penalty_final_level
-                * (x_s_1 - reservoir_management.final_level)
+                * (x_s_1 - reservoir_management.final_level),
+                name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
-            model.addConstraint(
+            model.add(
                 y
                 >= reservoir_management.penalty_final_level
-                * (x_s_1 - reservoir_management.final_level)
+                * (x_s_1 - reservoir_management.final_level),
+                name=f"PenaltyForViolatingUpperRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
 
-        z = xp.var("z", lb=float("-inf"), ub=float("inf"))
-
-        model.addVariable(
-            z
+        z = model.new_var(
+            lb=float("-inf"), ub=float("inf"), is_integer=False, name="z"
         )  # Auxiliar variable to introduce the piecewise representation of the future cost
 
-        self.binding_id = binding_id
+        self.binding_id = cst[binding_id[0]]
         self.U = U
         self.x_s = x_s
         self.x_s_1 = x_s_1
@@ -231,21 +247,26 @@ class AntaresProblem:
 
     def delete_variable(self, hours_in_week: int, name_variable: str) -> None:
         model = self.model
-        var = model.getVariable()
+        var = model.get_variables()
         var_id = [i for i in range(len(var)) if re.search(name_variable, var[i].name)]
         assert len(var_id) in [0, hours_in_week]
         if len(var_id) == hours_in_week:
-            model.delVariable(var_id)
+            for i in var_id:
+                var[i].lower_bound = float("-inf")
+                var[i].upper_bound = float("inf")
+                var[i].objective_coefficient = 0
 
     def delete_constraint(self, hours_in_week: int, name_constraint: str) -> None:
         model = self.model
-        cons = model.getConstraint()
+        cons = model.get_linear_constraints()
         cons_id = [
             i for i in range(len(cons)) if re.search(name_constraint, cons[i].name)
         ]
         assert len(cons_id) in [0, hours_in_week]
         if len(cons_id) == hours_in_week:
-            model.delConstraint(cons_id)
+            for i in cons_id:
+                cons[i].lower_bound = float("-inf")
+                cons[i].upper_bound = float("inf")
 
     def modify_weekly_problem_itr(
         self, control: float, i: int, prev_basis: Basis = Basis()
@@ -276,35 +297,39 @@ class AntaresProblem:
             Time spent solving the problem
         """
 
-        if (prev_basis.not_empty()) & (i == 0):
-            self.model.loadbasis(prev_basis.rstatus, prev_basis.cstatus)
+        # TODO : gérer les bases
+        # if (prev_basis.not_empty()) & (i == 0):
+        #     self.model.loadbasis(prev_basis.rstatus, prev_basis.cstatus)
 
-        if i >= 1:
-            basis = self.find_closest_basis(control=control)
-            self.model.loadbasis(basis.rstatus, basis.cstatus)
+        # if i >= 1:
+        #     basis = self.find_closest_basis(control=control)
+        #     self.model.loadbasis(basis.rstatus, basis.cstatus)
 
         rbas: List = []
         cbas: List = []
 
-        self.model.chgrhs(self.binding_id, [control])
+        self.binding_id.lower_bound = control
+        self.binding_id.upper_bound = control
         debut_1 = time()
-        self.model.lpoptimize()
+        solve_status = self.solver.solve(self.model)
         fin_1 = time()
 
-        if self.model.attributes.lpstatus == 1:
-            beta = self.model.getObjVal()
-            lamb = self.model.getDual(self.binding_id)[0]
-            itr = self.model.attributes.SIMPLEXITER
+        if solve_status.name == "OPTIMAL":
+            beta = float(self.solver.objective_value)
+            lamb = float(self.solver.dual_value(self.binding_id))
+            # TODO : gérer le nombre d'itérations du simplexe
+            itr = 0  # self.model.attributes.SIMPLEXITER
 
-            self.model.getbasis(rbas, cbas)
-            self.add_basis(basis=Basis(rbas, cbas), control_basis=control)
+            # TODO : gérer les bases
+            # self.model.getbasis(rbas, cbas)
+            # self.add_basis(basis=Basis(rbas, cbas), control_basis=control)
 
             if i == 0:
                 prev_basis.rstatus = rbas
                 prev_basis.cstatus = cbas
             return (beta, lamb, itr, prev_basis, fin_1 - debut_1)
         else:
-
+            print(solve_status.name)
             raise (ValueError)
 
 
@@ -323,12 +348,12 @@ def solve_problem_with_Bellman_values(
 
     X = bellman_value_calculation.stock_discretization
 
-    nb_cons = m.model.attributes.rows
+    m.binding_id.set_coefficient(m.U, -1)
+    m.binding_id.lower_bound = 0
+    m.binding_id.upper_bound = 0
 
-    m.model.chgmcoef(m.binding_id, [m.U], [-1])
-    m.model.chgrhs(m.binding_id, [0])
-
-    m.model.chgobj([m.y, m.z], [1, 1])
+    m.y.objective_coefficient = 1
+    m.z.objective_coefficient = 1
 
     if find_optimal_basis:
         if len(m.control_basis) >= 1:
@@ -346,50 +371,62 @@ def solve_problem_with_Bellman_values(
             else:
                 likely_control = 0
             basis = m.find_closest_basis(likely_control)
-            m.model.loadbasis(basis.rstatus, basis.cstatus)
+            # TODO : gérer les bases
+        # m.model.loadbasis(basis.rstatus, basis.cstatus)
+    additional_constraint: List = []
 
     for j in range(len(X) - 1):
         if (V[j + 1, week + 1] < float("inf")) & (V[j, week + 1] < float("inf")):
-            m.model.addConstraint(
+            cst = m.model.add(
                 m.z
                 >= (-V[j + 1, week + 1] + V[j, week + 1])
                 / (X[j + 1] - X[j])
                 * (m.x_s_1 - X[j])
-                - V[j, week + 1]
+                - V[j, week + 1],
+                name=f"BellmanValueBetween{j}And{j+1}::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
             )
+            additional_constraint.append(cst)
 
-    cst_initial_level = m.x_s == level_i
-    m.model.addConstraint(cst_initial_level)
+    cst_initial_level = m.model.add(
+        m.x_s == level_i,
+        name=f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
+    )
+    additional_constraint.append(cst_initial_level)
 
     rbas: List = []
     cbas: List = []
 
     debut_1 = time()
-    m.model.lpoptimize()
+    solve_status = m.solver.solve(m.model)
     fin_1 = time()
 
-    if m.model.attributes.lpstatus == 1:
-        m.model.getbasis(rbas, cbas)
-        m.add_basis(
-            basis=Basis(rbas[:nb_cons], cbas),
-            control_basis=m.model.getSolution(m.U),
-        )
+    if solve_status.name == "OPTIMAL":
+        # TODO : gérer les bases
+        # m.model.getbasis(rbas, cbas)
+        # m.add_basis(
+        #     basis=Basis(rbas[:nb_cons], cbas),
+        #     control_basis=m.model.getSolution(m.U),
+        # )
 
-        beta = m.model.getObjVal()
-        xf = m.model.getSolution(m.x_s_1)
-        z = m.model.getSolution(m.z)
-        y = m.model.getSolution(m.y)
-        m.model.delConstraint(range(nb_cons, m.model.attributes.rows))
-        m.model.chgmcoef(m.binding_id, [m.U], [0])
+        beta = float(m.solver.objective_value)
+        xf = float(m.solver.value(m.x_s_1))
+        z = float(m.solver.value(m.z))
+        y = float(m.solver.value(m.y))
+        for cst in additional_constraint:
+            cst.lower_bound = float("-inf")
+            cst.upper_bound = float("inf")
+        m.binding_id.set_coefficient(m.U, 0)
 
-        m.model.chgobj([m.y, m.z], [0, 0])
+        m.y.objective_coefficient = 0
+        m.z.objective_coefficient = 0
         cout += beta
         if not (
             take_into_account_z_and_y
         ):  # week != bellman_value_calculation.time_scenario_param.len_week - 1:
             cout += -z - y
 
-        itr = m.model.attributes.SIMPLEXITER
+        # TODO : gérer le nombre d'itérations du simplexe
+        itr = 0  # m.model.attributes.SIMPLEXITER
 
     else:
         raise (ValueError)

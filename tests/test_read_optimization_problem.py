@@ -1,11 +1,12 @@
-from functions_iterative import AntaresParameter, Reservoir, ReservoirManagement
+from functions_iterative import TimeScenarioParameter, ReservoirManagement
+from read_antares_data import Reservoir
 from optimization import AntaresProblem, Basis
 import pytest
 
 
 def test_create_and_modify_weekly_problem() -> None:
-    problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
-    param = AntaresParameter(S=52, NTrain=1)
+    problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
+    param = TimeScenarioParameter(len_week=52, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
@@ -24,7 +25,7 @@ def test_create_and_modify_weekly_problem() -> None:
     assert beta == pytest.approx(943484691.8759749)
     assert lamb == pytest.approx(-200.08020911704824)
 
-    problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
+    problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
         param=param, reservoir_management=reservoir_management
     )
@@ -34,7 +35,7 @@ def test_create_and_modify_weekly_problem() -> None:
     assert beta == pytest.approx(38709056.48535345)
     assert lamb == pytest.approx(0.0004060626000000001)
 
-    problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
+    problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
         param=param, reservoir_management=reservoir_management
     )

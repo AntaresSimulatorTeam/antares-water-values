@@ -1,5 +1,4 @@
-from functions_iterative import Reservoir, AntaresParameter
-import pytest
+from read_antares_data import Reservoir
 
 
 def test_create_reservoir() -> None:

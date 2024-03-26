@@ -6,7 +6,7 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     solve_weekly_problem_with_approximation,
 )
-from read_antares_data import Reservoir, AntaresParameter
+from read_antares_data import TimeScenarioParameter
 import numpy as np
 import numpy.typing as npt
 from time import time
@@ -50,7 +50,7 @@ class Basis:
 class AntaresProblem:
     """Class to store an Xpress optimization problem describing the problem solved by Antares for one week and one scenario."""
 
-    def __init__(self, year: int, week: int, path: str, itr: int = 1) -> None:
+    def __init__(self, scenario: int, week: int, path: str, itr: int = 1) -> None:
         """
         Create a new Xpress problem and load the problem stored in the associated mps file.
 
@@ -69,7 +69,7 @@ class AntaresProblem:
         -------
         None
         """
-        self.year = year
+        self.scenario = scenario
         self.week = week
         self.path = path
 
@@ -82,7 +82,7 @@ class AntaresProblem:
         model.controls.optimalitytol = 1.0e-7
         model.controls.xslp_log = -1
         model.controls.lplogstyle = 0
-        model.read(path + f"/problem-{year+1}-{week+1}--optim-nb-{itr}.mps")
+        model.read(path + f"/problem-{scenario+1}-{week+1}--optim-nb-{itr}.mps")
         self.model = model
 
         self.basis: List = []
@@ -124,7 +124,7 @@ class AntaresProblem:
 
     def create_weekly_problem_itr(
         self,
-        param: AntaresParameter,
+        param: TimeScenarioParameter,
         reservoir_management: ReservoirManagement,
     ) -> None:
         """
@@ -148,20 +148,20 @@ class AntaresProblem:
         None
         """
         hours_in_week = reservoir_management.reservoir.hours_in_week
-        S = param.S
+        len_week = param.len_week
 
         model = self.model
 
         self.delete_variable(
-            H=hours_in_week,
+            hours_in_week=hours_in_week,
             name_variable=f"^HydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
         self.delete_variable(
-            H=hours_in_week,
+            hours_in_week=hours_in_week,
             name_variable=f"^Overflow::area<{reservoir_management.reservoir.area}>::hour<.",
         )
         self.delete_constraint(
-            H=hours_in_week,
+            hours_in_week=hours_in_week,
             name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
 
@@ -192,14 +192,14 @@ class AntaresProblem:
 
         model.addConstraint(
             x_s_1
-            <= x_s - U + reservoir_management.reservoir.inflow[self.week, self.year]
+            <= x_s - U + reservoir_management.reservoir.inflow[self.week, self.scenario]
         )
 
         y = xp.var("y")
 
         model.addVariable(y)  # Penality for violating guide curves
 
-        if self.week != S - 1 or not reservoir_management.final_level:
+        if self.week != len_week - 1 or not reservoir_management.final_level:
             model.addConstraint(
                 y
                 >= -reservoir_management.penalty_bottom_rule_curve
@@ -235,22 +235,22 @@ class AntaresProblem:
         self.z = z
         self.y = y
 
-    def delete_variable(self, H: int, name_variable: str) -> None:
+    def delete_variable(self, hours_in_week: int, name_variable: str) -> None:
         model = self.model
         var = model.getVariable()
         var_id = [i for i in range(len(var)) if re.search(name_variable, var[i].name)]
-        assert len(var_id) in [0, H]
-        if len(var_id) == H:
+        assert len(var_id) in [0, hours_in_week]
+        if len(var_id) == hours_in_week:
             model.delVariable(var_id)
 
-    def delete_constraint(self, H: int, name_constraint: str) -> None:
+    def delete_constraint(self, hours_in_week: int, name_constraint: str) -> None:
         model = self.model
         cons = model.getConstraint()
         cons_id = [
             i for i in range(len(cons)) if re.search(name_constraint, cons[i].name)
         ]
-        assert len(cons_id) in [0, H]
-        if len(cons_id) == H:
+        assert len(cons_id) in [0, hours_in_week]
+        if len(cons_id) == hours_in_week:
             model.delConstraint(cons_id)
 
     def modify_weekly_problem_itr(
@@ -315,14 +315,14 @@ class AntaresProblem:
 
 
 def find_likely_control(
-    param: AntaresParameter,
+    param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
     X: Array1D,
     V: Array2D,
     reward: list[list[RewardApproximation]],
     level_i: float,
-    s: int,
-    k: int,
+    week: int,
+    scenario: int,
 ) -> float:
     """
     Compute a control which is likely to be optimal in the real optimization problem based on reward approximation.
@@ -347,9 +347,9 @@ def find_likely_control(
         Penalty for violating final rule curves
     level_i:float :
         Initial level of stock
-    s:int :
+    week:int :
         Week considered
-    k:int :
+    scenario:int :
         Scenario considered
 
     Returns
@@ -357,22 +357,20 @@ def find_likely_control(
     Likely control
     """
 
-    S = param.S
+    V_fut = interp1d(X, V[:, week + 1])
 
-    V_fut = interp1d(X, V[:, s + 1])
-
-    pen = reservoir_management.get_penalty(s=s, S=S)
-    Gs = reward[s][k].reward_function()
+    pen = reservoir_management.get_penalty(week=week, len_week=param.len_week)
+    Gs = reward[week][scenario].reward_function()
 
     _, _, u = solve_weekly_problem_with_approximation(
-        points=reward[s][k].breaking_point,
+        points=reward[week][scenario].breaking_point,
         X=X,
-        inflow=reservoir_management.reservoir.inflow[s, k],
-        lb=-reservoir_management.reservoir.max_pumping[s],
-        ub=reservoir_management.reservoir.max_generating[s],
+        inflow=reservoir_management.reservoir.inflow[week, scenario],
+        lb=-reservoir_management.reservoir.max_pumping[week],
+        ub=reservoir_management.reservoir.max_generating[week],
         level_i=level_i,
-        xmax=reservoir_management.reservoir.upper_rule_curve[s],
-        xmin=reservoir_management.reservoir.bottom_rule_curve[s],
+        xmax=reservoir_management.reservoir.upper_rule_curve[week],
+        xmin=reservoir_management.reservoir.bottom_rule_curve[week],
         cap=reservoir_management.reservoir.capacity,
         pen=pen,
         V_fut=V_fut,
@@ -383,15 +381,14 @@ def find_likely_control(
 
 
 def solve_problem_with_Bellman_values(
-    param: AntaresParameter,
+    param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
     X: Array1D,
     V: Array2D,
     G: list[list[RewardApproximation]],
-    S: int,
-    k: int,
+    scenario: int,
     level_i: float,
-    s: int,
+    week: int,
     m: AntaresProblem,
 ) -> tuple[float, int, float, float, float]:
 
@@ -413,8 +410,8 @@ def solve_problem_with_Bellman_values(
                 V=V,
                 reward=G,
                 level_i=level_i,
-                s=s,
-                k=k,
+                week=week,
+                scenario=scenario,
             )
         else:
             likely_control = 0
@@ -422,13 +419,13 @@ def solve_problem_with_Bellman_values(
         m.model.loadbasis(basis.rstatus, basis.cstatus)
 
     for j in range(len(X) - 1):
-        if (V[j + 1, s + 1] < float("inf")) & (V[j, s + 1] < float("inf")):
+        if (V[j + 1, week + 1] < float("inf")) & (V[j, week + 1] < float("inf")):
             m.model.addConstraint(
                 m.z
-                >= (-V[j + 1, s + 1] + V[j, s + 1])
+                >= (-V[j + 1, week + 1] + V[j, week + 1])
                 / (X[j + 1] - X[j])
                 * (m.x_s_1 - X[j])
-                - V[j, s + 1]
+                - V[j, week + 1]
             )
 
     cst_initial_level = m.x_s == level_i
@@ -457,7 +454,7 @@ def solve_problem_with_Bellman_values(
 
         m.model.chgobj([m.y, m.z], [0, 0])
         cout += beta
-        if s != S - 1:
+        if week != param.len_week - 1:
             cout += -z - y
 
         itr = m.model.attributes.SIMPLEXITER
@@ -468,6 +465,6 @@ def solve_problem_with_Bellman_values(
         fin_1 - debut_1,
         itr,
         cout,
-        -(xf - level_i - reservoir_management.reservoir.inflow[s, k]),
+        -(xf - level_i - reservoir_management.reservoir.inflow[week, scenario]),
         xf,
     )

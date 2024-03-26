@@ -1,16 +1,16 @@
 from functions_iterative import (
-    AntaresParameter,
-    Reservoir,
+    TimeScenarioParameter,
     itr_control,
     ReservoirManagement,
 )
+from read_antares_data import Reservoir
 import pytest
 import numpy as np
 
 
 def test_itr_control() -> None:
 
-    param = AntaresParameter(S=5, NTrain=1)
+    param = TimeScenarioParameter(len_week=5, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,

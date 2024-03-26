@@ -5,9 +5,9 @@ import numpy as np
 
 
 @dataclass
-class AntaresParameter:
-    S: int = 52
-    NTrain: int = 1
+class TimeScenarioParameter:
+    len_week: int = 52
+    len_scenario: int = 1
 
 
 class Reservoir:

@@ -1,16 +1,15 @@
 import numpy as np
 from scipy.interpolate import interp1d
 from time import time
-from typing import Annotated, Literal, Dict, List
+from typing import Annotated, Literal, Dict
 import numpy.typing as npt
 from dataclasses import dataclass
 from optimization import (
     AntaresProblem,
     solve_problem_with_Bellman_values,
     Basis,
-    find_likely_control,
 )
-from read_antares_data import Reservoir, AntaresParameter
+from read_antares_data import TimeScenarioParameter
 from calculate_reward_and_bellman_values import (
     RewardApproximation,
     ReservoirManagement,
@@ -31,7 +30,7 @@ class TimeScenarioIndex:
 
 
 def compute_x_multi_scenario(
-    param: AntaresParameter,
+    param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
     X: Array1D,
     V: Array2D,
@@ -70,45 +69,44 @@ def compute_x_multi_scenario(
         Controls associated to trajectories
     """
 
-    S = param.S
-    NTrain = param.NTrain
-
-    initial_x = np.zeros((S + 1, NTrain), dtype=np.float32)
+    initial_x = np.zeros((param.len_week + 1, param.len_scenario), dtype=np.float32)
     initial_x[0] = reservoir_management.reservoir.initial_level
     np.random.seed(19 * itr)
-    controls = np.zeros((S, NTrain), dtype=np.float32)
+    controls = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
 
-    for s in range(S):
+    for week in range(param.len_week):
 
-        V_fut = interp1d(X, V[:, s + 1])
-        for j, k_s in enumerate(np.random.permutation(range(NTrain))):
+        V_fut = interp1d(X, V[:, week + 1])
+        for trajectory, scenario in enumerate(
+            np.random.permutation(range(param.len_scenario))
+        ):
 
-            pen = reservoir_management.get_penalty(s=s, S=S)
-            Gs = reward[s][k_s].reward_function()
+            pen = reservoir_management.get_penalty(week=week, len_week=param.len_week)
+            Gs = reward[week][scenario].reward_function()
 
             _, xf, u = solve_weekly_problem_with_approximation(
-                points=reward[s][k_s].breaking_point,
+                points=reward[week][scenario].breaking_point,
                 X=X,
-                inflow=reservoir_management.reservoir.inflow[s, k_s],
-                lb=-reservoir_management.reservoir.max_pumping[s],
-                ub=reservoir_management.reservoir.max_generating[s],
-                level_i=initial_x[s, j],
-                xmax=reservoir_management.reservoir.upper_rule_curve[s],
-                xmin=reservoir_management.reservoir.bottom_rule_curve[s],
+                inflow=reservoir_management.reservoir.inflow[week, scenario],
+                lb=-reservoir_management.reservoir.max_pumping[week],
+                ub=reservoir_management.reservoir.max_generating[week],
+                level_i=initial_x[week, trajectory],
+                xmax=reservoir_management.reservoir.upper_rule_curve[week],
+                xmin=reservoir_management.reservoir.bottom_rule_curve[week],
                 cap=reservoir_management.reservoir.capacity,
                 pen=pen,
                 V_fut=V_fut,
                 Gs=Gs,
             )
 
-            initial_x[s + 1, j] = xf
-            controls[s, k_s] = u
+            initial_x[week + 1, trajectory] = xf
+            controls[week, scenario] = u
 
     return (initial_x, controls)
 
 
 def compute_upper_bound(
-    param: AntaresParameter,
+    param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     X: Array1D,
@@ -149,19 +147,16 @@ def compute_upper_bound(
         Time and simplex iterations used to solve the problem
     """
 
-    S = param.S
-    NTrain = param.NTrain
-
-    current_itr = np.zeros((S, NTrain, 2), dtype=np.float32)
+    current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
 
     cout = 0.0
-    controls = np.zeros((S, NTrain), dtype=np.float32)
-    for k in range(NTrain):
+    controls = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
+    for scenario in range(param.len_scenario):
 
         level_i = reservoir_management.reservoir.initial_level
-        for s in range(S):
-            print(f"{k} {s}", end="\r")
-            m = list_models[TimeScenarioIndex(s, k)]
+        for week in range(param.len_week):
+            print(f"{scenario} {week}", end="\r")
+            m = list_models[TimeScenarioIndex(week, scenario)]
 
             computational_time, itr, current_cost, control, level_i = (
                 solve_problem_with_Bellman_values(
@@ -170,23 +165,22 @@ def compute_upper_bound(
                     X=X,
                     V=V,
                     G=G,
-                    S=S,
-                    k=k,
+                    scenario=scenario,
                     level_i=level_i,
-                    s=s,
+                    week=week,
                     m=m,
                 )
             )
             cout += current_cost
-            controls[s, k] = control
-            current_itr[s, k] = (itr, computational_time)
+            controls[week, scenario] = control
+            current_itr[week, scenario] = (itr, computational_time)
 
-        upper_bound = cout / NTrain
+        upper_bound = cout / param.len_scenario
     return (upper_bound, controls, current_itr)
 
 
 def calculate_reward(
-    param: AntaresParameter,
+    param: TimeScenarioParameter,
     controls: Array2D,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     G: list[list[RewardApproximation]],
@@ -216,29 +210,30 @@ def calculate_reward(
         Updated reward approximation
     """
 
-    S = param.S
-    NTrain = param.NTrain
+    current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
 
-    current_itr = np.zeros((S, NTrain, 2), dtype=np.float32)
-
-    for k in range(NTrain):
+    for scenario in range(param.len_scenario):
         basis_0 = Basis([], [])
-        for s in range(S):
-            print(f"{k} {s}", end="\r")
+        for week in range(param.len_week):
+            print(f"{scenario} {week}", end="\r")
 
             beta, lamb, itr, basis_0, computation_time = list_models[
-                TimeScenarioIndex(s, k)
-            ].modify_weekly_problem_itr(control=controls[s][k], i=i, prev_basis=basis_0)
+                TimeScenarioIndex(week, scenario)
+            ].modify_weekly_problem_itr(
+                control=controls[week][scenario], i=i, prev_basis=basis_0
+            )
 
-            G[s][k].update_reward_approximation(lamb, beta, controls[s][k])
+            G[week][scenario].update_reward_approximation(
+                lamb, beta, controls[week][scenario]
+            )
 
-            current_itr[s, k] = (itr, computation_time)
+            current_itr[week, scenario] = (itr, computation_time)
 
     return (current_itr, G)
 
 
 def itr_control(
-    param: AntaresParameter,
+    param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
     output_path: str,
     X: Array1D,
@@ -292,33 +287,33 @@ def itr_control(
         Trajectories computed at each iteration
     """
 
-    S = param.S
-    NTrain = param.NTrain
+    len_week = param.len_week
+    len_scenario = param.len_scenario
 
     tot_t = []
     debut = time()
 
     list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
-    for s in range(S):
-        for k in range(NTrain):
-            m = AntaresProblem(year=k, week=s, path=output_path, itr=1)
+    for week in range(len_week):
+        for scenario in range(len_scenario):
+            m = AntaresProblem(scenario=scenario, week=week, path=output_path, itr=1)
             m.create_weekly_problem_itr(
                 param=param,
                 reservoir_management=reservoir_management,
             )
-            list_models[TimeScenarioIndex(s, k)] = m
+            list_models[TimeScenarioIndex(week, scenario)] = m
 
-    V = np.zeros((len(X), S + 1), dtype=np.float32)
+    V = np.zeros((len(X), len_week + 1), dtype=np.float32)
     G = [
         [
             RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[s],
-                ub_control=reservoir_management.reservoir.max_generating[s],
+                lb_control=-reservoir_management.reservoir.max_pumping[week],
+                ub_control=reservoir_management.reservoir.max_generating[week],
                 ub_reward=0,
             )
-            for k in range(NTrain)
+            for scenario in range(len_scenario)
         ]
-        for s in range(S)
+        for week in range(len_week)
     ]
 
     itr_tot = []

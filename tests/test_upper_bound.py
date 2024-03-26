@@ -1,19 +1,19 @@
 from functions_iterative import (
-    AntaresParameter,
-    Reservoir,
+    TimeScenarioParameter,
     compute_upper_bound,
     RewardApproximation,
     TimeScenarioIndex,
     ReservoirManagement,
 )
 from optimization import AntaresProblem
+from read_antares_data import Reservoir
 import pytest
 import numpy as np
 
 
 def test_upper_bound() -> None:
-    problem = AntaresProblem(year=0, week=0, path="test_data/one_node", itr=1)
-    param = AntaresParameter(S=1, NTrain=1)
+    problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
+    param = TimeScenarioParameter(len_week=1, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,

@@ -1,9 +1,8 @@
 from typing import Callable, Annotated, Literal, Optional
-from read_antares_data import AntaresParameter, Reservoir
+from read_antares_data import TimeScenarioParameter, Reservoir
 from scipy.interpolate import interp1d
 import numpy as np
 import numpy.typing as npt
-from dataclasses import dataclass
 
 Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
 Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
@@ -34,15 +33,15 @@ class ReservoirManagement:
         else:
             self.final_level = False
 
-    def get_penalty(self, s: int, S: int) -> Callable:
+    def get_penalty(self, week: int, len_week: int) -> Callable:
         """
         Return a function to evaluate penalities for violating rule curves for any level of stock.
 
         Parameters
         ----------
-        s:int :
+        week:int :
             Week considered
-        S:int :
+        param.len_week:int :
             Total number of weeks
         reservoir:Reservoir :
             Reservoir considered
@@ -57,7 +56,7 @@ class ReservoirManagement:
         -------
 
         """
-        if s == S - 1 and self.final_level:
+        if week == len_week - 1 and self.final_level:
             pen = interp1d(
                 [
                     0,
@@ -75,17 +74,17 @@ class ReservoirManagement:
             pen = interp1d(
                 [
                     0,
-                    self.reservoir.bottom_rule_curve[s],
-                    self.reservoir.upper_rule_curve[s],
+                    self.reservoir.bottom_rule_curve[week],
+                    self.reservoir.upper_rule_curve[week],
                     self.reservoir.capacity,
                 ],
                 [
                     -self.penalty_bottom_rule_curve
-                    * (self.reservoir.bottom_rule_curve[s]),
+                    * (self.reservoir.bottom_rule_curve[week]),
                     0,
                     0,
                     -self.penalty_upper_rule_curve
-                    * (self.reservoir.capacity - self.reservoir.upper_rule_curve[s]),
+                    * (self.reservoir.capacity - self.reservoir.upper_rule_curve[week]),
                 ],
             )
         return pen
@@ -300,7 +299,7 @@ def solve_weekly_problem_with_approximation(
 
 
 def calculate_VU(
-    param: AntaresParameter,
+    param: TimeScenarioParameter,
     reward: list[list[RewardApproximation]],
     reservoir_management: ReservoirManagement,
     X: Array1D,
@@ -330,38 +329,35 @@ def calculate_VU(
 
     """
 
-    NTrain = param.NTrain
-    S = param.S
+    V = np.zeros((len(X), param.len_week + 1, param.len_scenario))
 
-    V = np.zeros((len(X), S + 1, NTrain))
+    for week in range(param.len_week - 1, -1, -1):
 
-    for s in range(S - 1, -1, -1):
+        pen = reservoir_management.get_penalty(week=week, len_week=param.len_week)
 
-        pen = reservoir_management.get_penalty(s=s, S=S)
-
-        for k in range(NTrain):
-            V_fut = interp1d(X, V[:, s + 1, k])
-            Gs = reward[s][k].reward_function()
+        for k in range(param.len_scenario):
+            V_fut = interp1d(X, V[:, week + 1, k])
+            Gs = reward[week][k].reward_function()
             for i in range(len(X)):
 
                 Vu, _, _ = solve_weekly_problem_with_approximation(
-                    points=reward[s][k].breaking_point,
+                    points=reward[week][k].breaking_point,
                     X=X,
-                    inflow=reservoir_management.reservoir.inflow[s, k],
-                    lb=-reservoir_management.reservoir.max_pumping[s],
-                    ub=reservoir_management.reservoir.max_generating[s],
+                    inflow=reservoir_management.reservoir.inflow[week, k],
+                    lb=-reservoir_management.reservoir.max_pumping[week],
+                    ub=reservoir_management.reservoir.max_generating[week],
                     level_i=X[i],
-                    xmax=reservoir_management.reservoir.upper_rule_curve[s],
-                    xmin=reservoir_management.reservoir.bottom_rule_curve[s],
+                    xmax=reservoir_management.reservoir.upper_rule_curve[week],
+                    xmin=reservoir_management.reservoir.bottom_rule_curve[week],
                     cap=reservoir_management.reservoir.capacity,
                     pen=pen,
                     V_fut=V_fut,
                     Gs=Gs,
                 )
 
-                V[i, s, k] = Vu + V[i, s, k]
+                V[i, week, k] = Vu + V[i, week, k]
 
-        V[:, s, :] = np.repeat(
-            np.mean(V[:, s, :], axis=1, keepdims=True), NTrain, axis=1
+        V[:, week, :] = np.repeat(
+            np.mean(V[:, week, :], axis=1, keepdims=True), param.len_scenario, axis=1
         )
     return np.mean(V, axis=2)

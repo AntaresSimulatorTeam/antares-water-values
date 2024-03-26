@@ -224,7 +224,8 @@ def calculate_reward(
             )
 
             G[week][scenario].update_reward_approximation(
-                lamb, beta, controls[week][scenario]
+                slope_new_cut=-lamb,
+                intercept_new_cut=-beta + lamb * controls[week][scenario],
             )
 
             current_itr[week, scenario] = (itr, computation_time)

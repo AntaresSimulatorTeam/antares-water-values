@@ -118,7 +118,7 @@ class RewardApproximation:
         return lambda x: min([cut[0] * x + cut[1] for cut in self.list_cut])
 
     def update_reward_approximation(
-        self, lamb: float, beta: float, new_control: float
+        self, slope_new_cut: float, intercept_new_cut: float
     ) -> None:
         """
         Update reward approximation by adding a new cut
@@ -137,68 +137,96 @@ class RewardApproximation:
         None
         """
 
-        Gs = self.reward_function()
-        new_cut: Callable = lambda x: -lamb * x - beta + lamb * new_control
-        new_reward = []
+        previous_reward = self.reward_function()
+        new_cut: Callable = lambda x: slope_new_cut * x + intercept_new_cut
+        new_reward: list[tuple[float, float]] = []
         new_points = [self.breaking_point[0]]
 
         if len(self.breaking_point) != len(self.list_cut) + 1:
             raise (ValueError)
 
         for i in range(len(self.breaking_point)):
-            if i == 0:
-                if new_cut(self.breaking_point[i]) < Gs(self.breaking_point[i]):
-                    new_reward.append((-lamb, -beta + lamb * new_control))
-                    if new_cut(self.breaking_point[i + 1]) >= Gs(
-                        self.breaking_point[i + 1]
-                    ):
-                        if -lamb - self.list_cut[i][0] != 0:
-                            new_points.append(
-                                -(-beta + lamb * new_control - self.list_cut[i][1])
-                                / (-lamb - self.list_cut[i][0])
-                            )
-                            new_reward.append(self.list_cut[i])
-                elif new_cut(self.breaking_point[i]) >= Gs(self.breaking_point[i]):
-                    new_reward.append(self.list_cut[i])
-                    if new_cut(self.breaking_point[i + 1]) < Gs(
-                        self.breaking_point[i + 1]
-                    ):
-                        if -lamb - self.list_cut[i][0] != 0:
-                            new_points.append(
-                                -(-beta + lamb * new_control - self.list_cut[i][1])
-                                / (-lamb - self.list_cut[i][0])
-                            )
-                            new_reward.append((-lamb, -beta + lamb * new_control))
-            elif i == len(self.breaking_point) - 1:
+            if i == len(self.breaking_point) - 1:
                 new_points.append(self.breaking_point[-1])
             else:
-                if new_cut(self.breaking_point[i]) >= Gs(self.breaking_point[i]):
-                    new_reward.append(self.list_cut[i])
-                    new_points.append(self.breaking_point[i])
-                    if new_cut(self.breaking_point[i + 1]) < Gs(
-                        self.breaking_point[i + 1]
-                    ):
-                        if -lamb - self.list_cut[i][0] != 0:
-                            new_reward.append((-lamb, -beta + lamb * new_control))
-                            new_points.append(
-                                -(-beta + lamb * new_control - self.list_cut[i][1])
-                                / (-lamb - self.list_cut[i][0])
-                            )
-                elif (
-                    new_cut(self.breaking_point[i]) < Gs(self.breaking_point[i])
-                ) and (
-                    new_cut(self.breaking_point[i + 1])
-                    >= Gs(self.breaking_point[i + 1])
+                new_cut_below_previous_reward_at_i = self.check_relative_position(
+                    previous_reward, new_cut, i
+                )
+                new_cut_above_previous_reward_at_i = self.check_relative_position(
+                    new_cut, previous_reward, i
+                )
+                new_cut_below_previous_reward_at_i_plus_1 = (
+                    self.check_relative_position(previous_reward, new_cut, i + 1)
+                )
+                new_cut_above_previous_reward_at_i_plus_1 = (
+                    self.check_relative_position(new_cut, previous_reward, i + 1)
+                )
+                slopes_are_different = (slope_new_cut - self.list_cut[i][0]) != 0
+                if i == 0:
+                    if new_cut_below_previous_reward_at_i:
+                        new_reward.append((slope_new_cut, intercept_new_cut))
+                    elif new_cut_above_previous_reward_at_i:
+                        new_reward.append(self.list_cut[i])
+                    elif new_cut_below_previous_reward_at_i_plus_1:
+                        new_reward.append((slope_new_cut, intercept_new_cut))
+                    else:
+                        new_reward.append(self.list_cut[i])
+                if (new_cut_below_previous_reward_at_i) and (
+                    new_cut_above_previous_reward_at_i_plus_1
                 ):
-                    if -lamb - self.list_cut[i][0] != 0:
+                    if slopes_are_different:
                         new_reward.append(self.list_cut[i])
                         new_points.append(
-                            -(-beta + lamb * new_control - self.list_cut[i][1])
-                            / (-lamb - self.list_cut[i][0])
+                            self.calculate_breaking_point(
+                                slope_new_cut=slope_new_cut,
+                                intercept_new_cut=intercept_new_cut,
+                                i=i,
+                            )
                         )
+                elif new_cut_above_previous_reward_at_i:
+                    if i != 0:
+                        new_reward.append(self.list_cut[i])
+                        new_points.append(self.breaking_point[i])
+                    if new_cut_below_previous_reward_at_i_plus_1:
+                        if slopes_are_different:
+                            new_reward.append((slope_new_cut, intercept_new_cut))
+                            new_points.append(
+                                self.calculate_breaking_point(
+                                    slope_new_cut=slope_new_cut,
+                                    intercept_new_cut=intercept_new_cut,
+                                    i=i,
+                                )
+                            )
+                elif (
+                    not (new_cut_below_previous_reward_at_i)
+                    and not (new_cut_above_previous_reward_at_i)
+                    and i != 0
+                ):
+                    new_points.append(self.breaking_point[i])
+                    if new_cut_below_previous_reward_at_i_plus_1:
+                        new_reward.append((slope_new_cut, intercept_new_cut))
+                    else:
+                        new_reward.append(self.list_cut[i])
 
         self.breaking_point = new_points
         self.list_cut = new_reward
+
+    def calculate_breaking_point(
+        self,
+        intercept_new_cut: float,
+        slope_new_cut: float,
+        i: int,
+    ) -> float:
+        intercept_previous_cut = self.list_cut[i][1]
+        slope_previous_cut = self.list_cut[i][0]
+        return -(intercept_new_cut - intercept_previous_cut) / (
+            slope_new_cut - slope_previous_cut
+        )
+
+    def check_relative_position(
+        self, previous_reward: Callable, new_cut: Callable, i: int
+    ) -> bool:
+        return new_cut(self.breaking_point[i]) < previous_reward(self.breaking_point[i])
 
 
 def solve_weekly_problem_with_approximation(

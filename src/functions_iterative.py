@@ -1,7 +1,7 @@
 import numpy as np
 from scipy.interpolate import interp1d
 from time import time
-from typing import Annotated, Literal, Dict
+from typing import Annotated, Literal, Dict, List
 import numpy.typing as npt
 from optimization import (
     AntaresProblem,
@@ -57,11 +57,11 @@ def compute_x_multi_scenario(
     controls:np.array :
         Controls associated to trajectories
     """
-
+    param = bellman_value_calculation.time_scenario_param
     initial_x = np.zeros(
         (
-            bellman_value_calculation.time_scenario_param.len_week + 1,
-            bellman_value_calculation.time_scenario_param.len_scenario,
+            param.len_week + 1,
+            param.len_scenario,
         ),
         dtype=np.float32,
     )
@@ -71,19 +71,17 @@ def compute_x_multi_scenario(
     np.random.seed(19 * itr)
     controls = np.zeros(
         (
-            bellman_value_calculation.time_scenario_param.len_week,
-            bellman_value_calculation.time_scenario_param.len_scenario,
+            param.len_week,
+            param.len_scenario,
         ),
         dtype=np.float32,
     )
 
-    for week in range(bellman_value_calculation.time_scenario_param.len_week):
+    for week in range(param.len_week):
 
         V_fut = interp1d(bellman_value_calculation.stock_discretization, V[:, week + 1])
         for trajectory, scenario in enumerate(
-            np.random.permutation(
-                range(bellman_value_calculation.time_scenario_param.len_scenario)
-            )
+            np.random.permutation(range(param.len_scenario))
         ):
 
             _, xf, u = (
@@ -279,49 +277,19 @@ def itr_control(
         Trajectories computed at each iteration
     """
 
-    len_week = param.len_week
-    len_scenario = param.len_scenario
-
-    tot_t = []
-    debut = time()
-
-    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
-    for week in range(len_week):
-        for scenario in range(len_scenario):
-            m = AntaresProblem(scenario=scenario, week=week, path=output_path, itr=1)
-            m.create_weekly_problem_itr(
-                param=param,
-                reservoir_management=reservoir_management,
-            )
-            list_models[TimeScenarioIndex(week, scenario)] = m
-
-    V = np.zeros((len(X), len_week + 1), dtype=np.float32)
-
-    G: Dict[TimeScenarioIndex, RewardApproximation] = {}
-    for week in range(len_week):
-        for scenario in range(len_scenario):
-            r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week],
-                ub_control=reservoir_management.reservoir.max_generating[week],
-                ub_reward=0,
-            )
-            G[TimeScenarioIndex(week, scenario)] = r
-
-    itr_tot = []
-    controls_upper = []
-    traj = []
-
-    bellman_value_calculation = BellmanValueCalculation(
-        param=param,
-        reward=G,
-        reservoir_management=reservoir_management,
-        stock_discretization=X,
-    )
-
+    (
+        tot_t,
+        list_models,
+        V,
+        itr_tot,
+        controls_upper,
+        traj,
+        bellman_value_calculation,
+        gap,
+        G,
+    ) = init_iterative_calculation(param, reservoir_management, output_path, X)
     i = 0
-    gap = 1e3
-    fin = time()
-    tot_t.append(fin - debut)
+
     while (gap >= tol_gap and gap >= 0) and i < N:  # and (i<3):
         debut = time()
 
@@ -364,3 +332,75 @@ def itr_control(
         fin = time()
         tot_t.append(fin - debut)
     return (V, G, np.array(itr_tot), tot_t, controls_upper, traj)
+
+
+def init_iterative_calculation(
+    param: TimeScenarioParameter,
+    reservoir_management: ReservoirManagement,
+    output_path: str,
+    X: Array1D,
+) -> tuple[
+    List,
+    Dict[TimeScenarioIndex, AntaresProblem],
+    Array2D,
+    List,
+    List,
+    List,
+    BellmanValueCalculation,
+    float,
+    Dict[TimeScenarioIndex, RewardApproximation],
+]:
+    len_week = param.len_week
+    len_scenario = param.len_scenario
+
+    tot_t = []
+    debut = time()
+
+    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
+    for week in range(len_week):
+        for scenario in range(len_scenario):
+            m = AntaresProblem(scenario=scenario, week=week, path=output_path, itr=1)
+            m.create_weekly_problem_itr(
+                param=param,
+                reservoir_management=reservoir_management,
+            )
+            list_models[TimeScenarioIndex(week, scenario)] = m
+
+    V = np.zeros((len(X), len_week + 1), dtype=np.float32)
+
+    G: Dict[TimeScenarioIndex, RewardApproximation] = {}
+    for week in range(len_week):
+        for scenario in range(len_scenario):
+            r = RewardApproximation(
+                lb_control=-reservoir_management.reservoir.max_pumping[week],
+                ub_control=reservoir_management.reservoir.max_generating[week],
+                ub_reward=0,
+            )
+            G[TimeScenarioIndex(week, scenario)] = r
+
+    itr_tot: List = []
+    controls_upper: List = []
+    traj: List = []
+
+    bellman_value_calculation = BellmanValueCalculation(
+        param=param,
+        reward=G,
+        reservoir_management=reservoir_management,
+        stock_discretization=X,
+    )
+
+    i = 0
+    gap = 1e3
+    fin = time()
+    tot_t.append(fin - debut)
+    return (
+        tot_t,
+        list_models,
+        V,
+        itr_tot,
+        controls_upper,
+        traj,
+        bellman_value_calculation,
+        gap,
+        G,
+    )

@@ -10,6 +10,12 @@ class TimeScenarioParameter:
     len_scenario: int = 1
 
 
+@dataclass(frozen=True)
+class TimeScenarioIndex:
+    week: int
+    scenario: int
+
+
 class Reservoir:
     """Describes reservoir parameters"""
 

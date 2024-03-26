@@ -1,5 +1,5 @@
-from typing import Callable, Annotated, Literal, Optional
-from read_antares_data import TimeScenarioParameter, Reservoir
+from typing import Callable, Annotated, Literal, Optional, Dict
+from read_antares_data import TimeScenarioParameter, Reservoir, TimeScenarioIndex
 from scipy.interpolate import interp1d
 import numpy as np
 import numpy.typing as npt
@@ -229,163 +229,189 @@ class RewardApproximation:
         return new_cut(self.breaking_point[i]) < previous_reward(self.breaking_point[i])
 
 
-def solve_weekly_problem_with_approximation(
-    points: list,
-    X: Array1D,
-    inflow: float,
-    lb: float,
-    ub: float,
-    level_i: float,
-    xmax: float,
-    xmin: float,
-    cap: float,
-    pen: Callable,
-    V_fut: Callable,
-    Gs: Callable,
-) -> tuple[float, float, float]:
-    """
-    Optimize control of reservoir during a week based on reward approximation and current Bellman values.
+class BellmanValueCalculation:
 
-    Parameters
-    ----------
-    points:list :
-        Breaking points in reward approximation
-    X:np.array :
-        Breaking points in Bellman values approximation
-    inflow:float :
-        Inflow in the reservoir during the week
-    lb:float :
-        Lower possible bound on control
-    ub:float :
-        Upper possible bound on control
-    level_i:float :
-        Initial level of reservoir at the beginning of the week
-    xmax:float :
-        Upper rule curve at the end of the week
-    xmin:float :
-        Bottom rule curve an the end of the week
-    cap:float :
-        Capacity of the reservoir
-    pen:callable :
-        Penalties for violating rule curves at the end of the week
-    V_fut:callable :
-        Bellman values at the end of the week
-    Gs:callable :
-        Reward approximation for the current week
+    def __init__(
+        self,
+        param: TimeScenarioParameter,
+        reward: Dict[TimeScenarioIndex, RewardApproximation],
+        reservoir_management: ReservoirManagement,
+        stock_discretization: Array1D,
+    ) -> None:
+        self.time_scenario_param = param
+        self.reward_approximation = reward
+        self.reservoir_management = reservoir_management
+        self.stock_discretization = stock_discretization
 
-    Returns
-    -------
-    Vu:float :
-        Optimal objective value
-    xf:float :
-        Final level of sotck
-    control:float :
-        Optimal control
-    """
-    Vu = float("-inf")
-
-    for i_fut in range(len(X)):
-        u = -X[i_fut] + level_i + inflow
-        if lb <= u <= ub:
-            G = Gs(u)
-            penalty = pen(X[i_fut])
-            if (G + V_fut(X[i_fut]) + penalty) > Vu:
-                Vu = G + V_fut(X[i_fut]) + penalty
-                xf = X[i_fut]
-                control = u
-
-    for u in range(len(points)):
-        state_fut = min(cap, level_i - points[u] + inflow)
-        if 0 <= state_fut:
-            penalty = pen(state_fut)
-            G = Gs(points[u])
-            if (G + V_fut(state_fut) + penalty) > Vu:
-                Vu = G + V_fut(state_fut) + penalty
-                xf = state_fut
-                control = points[u]
-
-    Umin = level_i + inflow - xmin
-    if lb <= Umin <= ub:
-        state_fut = level_i - Umin + inflow
-        penalty = pen(state_fut)
-        if (Gs(Umin) + V_fut(state_fut) + penalty) > Vu:
-            Vu = Gs(Umin) + V_fut(state_fut) + penalty
-            xf = state_fut
-            control = Umin
-
-    Umax = level_i + inflow - xmax
-    if lb <= Umax <= ub:
-        state_fut = level_i - Umax + inflow
-        penalty = pen(state_fut)
-        if (Gs(Umax) + V_fut(state_fut) + penalty) > Vu:
-            Vu = Gs(Umax) + V_fut(state_fut) + penalty
-            xf = state_fut
-            control = Umax
-
-    control = min(-(xf - level_i - inflow), ub)
-    return (Vu, xf, control)
-
-
-def calculate_VU(
-    param: TimeScenarioParameter,
-    reward: list[list[RewardApproximation]],
-    reservoir_management: ReservoirManagement,
-    X: Array1D,
-) -> Array2D:
-    """
-    Calculate Bellman values for every week based on reward approximation
-
-    Parameters
-    ----------
-    param:AntaresParameter :
-        Time-related parameters
-    reward:list[list[RewardApproximation]] :
-        Reward approximation for every week and every scenario
-    reservoir:Reservoir :
-        Reservoir considered
-    X:np.array :
-        Discretization of stock levels
-    pen_low:float :
-        Penalty for violating bottom rule curve
-    pen_high:float :
-        Penalty for violating top rule curve
-    pen_final:float :
-        Penalty for violating final rule curves
-
-    Returns
-    -------
-
-    """
-
-    V = np.zeros((len(X), param.len_week + 1, param.len_scenario))
-
-    for week in range(param.len_week - 1, -1, -1):
-
-        pen = reservoir_management.get_penalty(week=week, len_week=param.len_week)
-
-        for k in range(param.len_scenario):
-            V_fut = interp1d(X, V[:, week + 1, k])
-            Gs = reward[week][k].reward_function()
-            for i in range(len(X)):
-
-                Vu, _, _ = solve_weekly_problem_with_approximation(
-                    points=reward[week][k].breaking_point,
-                    X=X,
-                    inflow=reservoir_management.reservoir.inflow[week, k],
-                    lb=-reservoir_management.reservoir.max_pumping[week],
-                    ub=reservoir_management.reservoir.max_generating[week],
-                    level_i=X[i],
-                    xmax=reservoir_management.reservoir.upper_rule_curve[week],
-                    xmin=reservoir_management.reservoir.bottom_rule_curve[week],
-                    cap=reservoir_management.reservoir.capacity,
-                    pen=pen,
-                    V_fut=V_fut,
-                    Gs=Gs,
+        self.reward_fn: Dict[TimeScenarioIndex, Callable] = {}
+        self.penalty_fn: Dict[TimeScenarioIndex, Callable] = {}
+        for week in range(self.time_scenario_param.len_week):
+            for scenario in range(self.time_scenario_param.len_scenario):
+                self.reward_fn[TimeScenarioIndex(week=week, scenario=scenario)] = (
+                    self.reward_approximation[
+                        TimeScenarioIndex(week=week, scenario=scenario)
+                    ].reward_function()
+                )
+                self.penalty_fn[TimeScenarioIndex(week=week, scenario=scenario)] = (
+                    self.reservoir_management.get_penalty(
+                        week=week, len_week=param.len_week
+                    )
                 )
 
-                V[i, week, k] = Vu + V[i, week, k]
+    def solve_weekly_problem_with_approximation(
+        self,
+        week: int,
+        scenario: int,
+        level_i: float,
+        V_fut: Callable,
+    ) -> tuple[float, float, float]:
+        """
+        Optimize control of reservoir during a week based on reward approximation and current Bellman values.
 
-        V[:, week, :] = np.repeat(
-            np.mean(V[:, week, :], axis=1, keepdims=True), param.len_scenario, axis=1
+        Parameters
+        ----------
+        points:list :
+            Breaking points in reward approximation
+        X:np.array :
+            Breaking points in Bellman values approximation
+        inflow:float :
+            Inflow in the reservoir during the week
+        lb:float :
+            Lower possible bound on control
+        ub:float :
+            Upper possible bound on control
+        level_i:float :
+            Initial level of reservoir at the beginning of the week
+        xmax:float :
+            Upper rule curve at the end of the week
+        xmin:float :
+            Bottom rule curve an the end of the week
+        cap:float :
+            Capacity of the reservoir
+        pen:callable :
+            Penalties for violating rule curves at the end of the week
+        V_fut:callable :
+            Bellman values at the end of the week
+        Gs:callable :
+            Reward approximation for the current week
+
+        Returns
+        -------
+        Vu:float :
+            Optimal objective value
+        xf:float :
+            Final level of sotck
+        control:float :
+            Optimal control
+        """
+
+        Vu = float("-inf")
+        stock = self.reservoir_management.reservoir
+        pen = self.penalty_fn[TimeScenarioIndex(week=week, scenario=scenario)]
+        reward_fn = self.reward_fn[TimeScenarioIndex(week=week, scenario=scenario)]
+        points = self.reward_approximation[
+            TimeScenarioIndex(week=week, scenario=scenario)
+        ].breaking_point
+        X = self.stock_discretization
+
+        for i_fut in range(len(X)):
+            u = -X[i_fut] + level_i + stock.inflow[week, scenario]
+            if -stock.max_pumping[week] <= u <= stock.max_generating[week]:
+                G = reward_fn(u)
+                penalty = pen(X[i_fut])
+                if (G + V_fut(X[i_fut]) + penalty) > Vu:
+                    Vu = G + V_fut(X[i_fut]) + penalty
+                    xf = X[i_fut]
+                    control = u
+
+        for u in range(len(points)):
+            state_fut = min(
+                stock.capacity, level_i - points[u] + stock.inflow[week, scenario]
+            )
+            if 0 <= state_fut:
+                penalty = pen(state_fut)
+                G = reward_fn(points[u])
+                if (G + V_fut(state_fut) + penalty) > Vu:
+                    Vu = G + V_fut(state_fut) + penalty
+                    xf = state_fut
+                    control = points[u]
+
+        Umin = level_i + stock.inflow[week, scenario] - stock.bottom_rule_curve[week]
+        if -stock.max_pumping[week] <= Umin <= stock.max_generating[week]:
+            state_fut = level_i - Umin + stock.inflow[week, scenario]
+            penalty = pen(state_fut)
+            if (reward_fn(Umin) + V_fut(state_fut) + penalty) > Vu:
+                Vu = reward_fn(Umin) + V_fut(state_fut) + penalty
+                xf = state_fut
+                control = Umin
+
+        Umax = level_i + stock.inflow[week, scenario] - stock.upper_rule_curve[week]
+        if -stock.max_pumping[week] <= Umax <= stock.max_generating[week]:
+            state_fut = level_i - Umax + stock.inflow[week, scenario]
+            penalty = pen(state_fut)
+            if (reward_fn(Umax) + V_fut(state_fut) + penalty) > Vu:
+                Vu = reward_fn(Umax) + V_fut(state_fut) + penalty
+                xf = state_fut
+                control = Umax
+
+        control = min(
+            -(xf - level_i - stock.inflow[week, scenario]),
+            stock.max_generating[week],
         )
-    return np.mean(V, axis=2)
+        return (Vu, xf, control)
+
+    def calculate_VU(self) -> Array2D:
+        """
+        Calculate Bellman values for every week based on reward approximation
+
+        Parameters
+        ----------
+        param:AntaresParameter :
+            Time-related parameters
+        reward:list[list[RewardApproximation]] :
+            Reward approximation for every week and every scenario
+        reservoir:Reservoir :
+            Reservoir considered
+        X:np.array :
+            Discretization of stock levels
+        pen_low:float :
+            Penalty for violating bottom rule curve
+        pen_high:float :
+            Penalty for violating top rule curve
+        pen_final:float :
+            Penalty for violating final rule curves
+
+        Returns
+        -------
+
+        """
+        X = self.stock_discretization
+        V = np.zeros(
+            (
+                len(X),
+                self.time_scenario_param.len_week + 1,
+                self.time_scenario_param.len_scenario,
+            )
+        )
+
+        for week in range(self.time_scenario_param.len_week - 1, -1, -1):
+
+            for scenario in range(self.time_scenario_param.len_scenario):
+                V_fut = interp1d(X, V[:, week + 1, scenario])
+                for i in range(len(X)):
+
+                    Vu, _, _ = self.solve_weekly_problem_with_approximation(
+                        level_i=X[i],
+                        V_fut=V_fut,
+                        week=week,
+                        scenario=scenario,
+                    )
+
+                    V[i, week, scenario] = Vu + V[i, week, scenario]
+
+            V[:, week, :] = np.repeat(
+                np.mean(V[:, week, :], axis=1, keepdims=True),
+                self.time_scenario_param.len_scenario,
+                axis=1,
+            )
+        return np.mean(V, axis=2)

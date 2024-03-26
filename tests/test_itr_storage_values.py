@@ -2,6 +2,7 @@ from functions_iterative import (
     TimeScenarioParameter,
     itr_control,
     ReservoirManagement,
+    TimeScenarioIndex,
 )
 from read_antares_data import Reservoir
 import pytest
@@ -31,14 +32,18 @@ def test_itr_control() -> None:
         tol_gap=1e-4,
     )
 
-    assert G[0][0].list_cut[0] == pytest.approx((300.0022431781, -848257117.7874993))
-    assert G[0][0].list_cut[1] == pytest.approx(
+    assert G[TimeScenarioIndex(0, 0)].list_cut[0] == pytest.approx(
+        (300.0022431781, -848257117.7874993)
+    )
+    assert G[TimeScenarioIndex(0, 0)].list_cut[1] == pytest.approx(
         (200.08020216786073, -943484691.5152471)
     )
-    assert G[0][0].list_cut[2] == pytest.approx((100.0003310016, -828694927.2829424))
-    assert G[0][0].list_cut[3] == pytest.approx((0.0, 0.0))
+    assert G[TimeScenarioIndex(0, 0)].list_cut[2] == pytest.approx(
+        (100.0003310016, -828694927.2829424)
+    )
+    assert G[TimeScenarioIndex(0, 0)].list_cut[3] == pytest.approx((0.0, 0.0))
 
-    assert G[0][0].breaking_point == pytest.approx(
+    assert G[TimeScenarioIndex(0, 0)].breaking_point == pytest.approx(
         np.array(
             [
                 -8400000.0,

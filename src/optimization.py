@@ -1,12 +1,12 @@
 import re
 import xpress as xp
-from typing import List, Annotated, Literal
+from typing import List, Annotated, Literal, Dict
 from calculate_reward_and_bellman_values import (
     RewardApproximation,
     ReservoirManagement,
-    solve_weekly_problem_with_approximation,
+    BellmanValueCalculation,
 )
-from read_antares_data import TimeScenarioParameter
+from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
 import numpy as np
 import numpy.typing as npt
 from time import time
@@ -314,78 +314,9 @@ class AntaresProblem:
             raise (ValueError)
 
 
-def find_likely_control(
-    param: TimeScenarioParameter,
-    reservoir_management: ReservoirManagement,
-    X: Array1D,
-    V: Array2D,
-    reward: list[list[RewardApproximation]],
-    level_i: float,
-    week: int,
-    scenario: int,
-) -> float:
-    """
-    Compute a control which is likely to be optimal in the real optimization problem based on reward approximation.
-
-    Parameters
-    ----------
-    param:AntaresParameter :
-        Time-related parameters
-    reservoir:Reservoir :
-        Reservoir considered
-    X:np.array :
-        Discretization of Bellman values
-    V:np.array :
-        Bellman values
-    reward:list[list[RewardApproximation]] :
-        Reward approximation for every week and every scenario
-    pen_low:float :
-        Penalty for violating bottom rule curve
-    pen_high:float :
-        Penalty for violating top rule curve
-    pen_final:float :
-        Penalty for violating final rule curves
-    level_i:float :
-        Initial level of stock
-    week:int :
-        Week considered
-    scenario:int :
-        Scenario considered
-
-    Returns
-    -------
-    Likely control
-    """
-
-    V_fut = interp1d(X, V[:, week + 1])
-
-    pen = reservoir_management.get_penalty(week=week, len_week=param.len_week)
-    Gs = reward[week][scenario].reward_function()
-
-    _, _, u = solve_weekly_problem_with_approximation(
-        points=reward[week][scenario].breaking_point,
-        X=X,
-        inflow=reservoir_management.reservoir.inflow[week, scenario],
-        lb=-reservoir_management.reservoir.max_pumping[week],
-        ub=reservoir_management.reservoir.max_generating[week],
-        level_i=level_i,
-        xmax=reservoir_management.reservoir.upper_rule_curve[week],
-        xmin=reservoir_management.reservoir.bottom_rule_curve[week],
-        cap=reservoir_management.reservoir.capacity,
-        pen=pen,
-        V_fut=V_fut,
-        Gs=Gs,
-    )
-
-    return u
-
-
 def solve_problem_with_Bellman_values(
-    param: TimeScenarioParameter,
-    reservoir_management: ReservoirManagement,
-    X: Array1D,
+    bellman_value_calculation: BellmanValueCalculation,
     V: Array2D,
-    G: list[list[RewardApproximation]],
     scenario: int,
     level_i: float,
     week: int,
@@ -393,6 +324,8 @@ def solve_problem_with_Bellman_values(
 ) -> tuple[float, int, float, float, float]:
 
     cout = 0.0
+
+    X = bellman_value_calculation.stock_discretization
 
     nb_cons = m.model.attributes.rows
 
@@ -403,15 +336,15 @@ def solve_problem_with_Bellman_values(
 
     if len(m.control_basis) >= 1:
         if len(m.control_basis) >= 2:
-            likely_control = find_likely_control(
-                param=param,
-                reservoir_management=reservoir_management,
-                X=X,
-                V=V,
-                reward=G,
-                level_i=level_i,
-                week=week,
-                scenario=scenario,
+            V_fut = interp1d(X, V[:, week + 1])
+
+            _, _, likely_control = (
+                bellman_value_calculation.solve_weekly_problem_with_approximation(
+                    level_i=level_i,
+                    V_fut=V_fut,
+                    week=week,
+                    scenario=scenario,
+                )
             )
         else:
             likely_control = 0
@@ -454,7 +387,7 @@ def solve_problem_with_Bellman_values(
 
         m.model.chgobj([m.y, m.z], [0, 0])
         cout += beta
-        if week != param.len_week - 1:
+        if week != bellman_value_calculation.time_scenario_param.len_week - 1:
             cout += -z - y
 
         itr = m.model.attributes.SIMPLEXITER
@@ -465,6 +398,12 @@ def solve_problem_with_Bellman_values(
         fin_1 - debut_1,
         itr,
         cout,
-        -(xf - level_i - reservoir_management.reservoir.inflow[week, scenario]),
+        -(
+            xf
+            - level_i
+            - bellman_value_calculation.reservoir_management.reservoir.inflow[
+                week, scenario
+            ]
+        ),
         xf,
     )

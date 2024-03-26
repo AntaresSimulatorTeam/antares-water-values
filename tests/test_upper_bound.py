@@ -4,6 +4,7 @@ from functions_iterative import (
     RewardApproximation,
     TimeScenarioIndex,
     ReservoirManagement,
+    BellmanValueCalculation,
 )
 from optimization import AntaresProblem
 from read_antares_data import Reservoir
@@ -25,22 +26,23 @@ def test_upper_bound() -> None:
     problem.create_weekly_problem_itr(
         param=param, reservoir_management=reservoir_management
     )
+    bellman_value_calculation = BellmanValueCalculation(
+        param=param,
+        reward={
+            TimeScenarioIndex(0, 0): RewardApproximation(
+                lb_control=-reservoir.max_pumping[0],
+                ub_control=reservoir.max_generating[0],
+                ub_reward=0,
+            )
+        },
+        reservoir_management=reservoir_management,
+        stock_discretization=np.linspace(0, reservoir.capacity, num=20),
+    )
 
     upper_bound, controls, _ = compute_upper_bound(
-        param=param,
-        reservoir_management=reservoir_management,
+        bellman_value_calculation=bellman_value_calculation,
         list_models={TimeScenarioIndex(0, 0): problem},
-        X=np.linspace(0, reservoir.capacity, num=20),
         V=np.zeros((20, 2), dtype=np.float32),
-        G=[
-            [
-                RewardApproximation(
-                    lb_control=-reservoir.max_pumping[0],
-                    ub_control=reservoir.max_generating[0],
-                    ub_reward=0,
-                )
-            ]
-        ],
     )
 
     assert upper_bound == pytest.approx(380492940.000565)

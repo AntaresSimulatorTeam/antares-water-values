@@ -158,6 +158,10 @@ def compute_upper_bound(
                     level_i=level_i,
                     week=week,
                     m=m,
+                    take_into_account_z_and_y=(
+                        week
+                        == bellman_value_calculation.time_scenario_param.len_week - 1
+                    ),
                 )
             )
             cout += current_cost

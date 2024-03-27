@@ -321,6 +321,8 @@ def solve_problem_with_Bellman_values(
     level_i: float,
     week: int,
     m: AntaresProblem,
+    take_into_account_z_and_y: bool,
+    find_optimal_basis: bool = True,
 ) -> tuple[float, int, float, float, float]:
 
     cout = 0.0
@@ -334,22 +336,23 @@ def solve_problem_with_Bellman_values(
 
     m.model.chgobj([m.y, m.z], [1, 1])
 
-    if len(m.control_basis) >= 1:
-        if len(m.control_basis) >= 2:
-            V_fut = interp1d(X, V[:, week + 1])
+    if find_optimal_basis:
+        if len(m.control_basis) >= 1:
+            if len(m.control_basis) >= 2:
+                V_fut = interp1d(X, V[:, week + 1])
 
-            _, _, likely_control = (
-                bellman_value_calculation.solve_weekly_problem_with_approximation(
-                    level_i=level_i,
-                    V_fut=V_fut,
-                    week=week,
-                    scenario=scenario,
+                _, _, likely_control = (
+                    bellman_value_calculation.solve_weekly_problem_with_approximation(
+                        level_i=level_i,
+                        V_fut=V_fut,
+                        week=week,
+                        scenario=scenario,
+                    )
                 )
-            )
-        else:
-            likely_control = 0
-        basis = m.find_closest_basis(likely_control)
-        m.model.loadbasis(basis.rstatus, basis.cstatus)
+            else:
+                likely_control = 0
+            basis = m.find_closest_basis(likely_control)
+            m.model.loadbasis(basis.rstatus, basis.cstatus)
 
     for j in range(len(X) - 1):
         if (V[j + 1, week + 1] < float("inf")) & (V[j, week + 1] < float("inf")):
@@ -387,7 +390,9 @@ def solve_problem_with_Bellman_values(
 
         m.model.chgobj([m.y, m.z], [0, 0])
         cout += beta
-        if week != bellman_value_calculation.time_scenario_param.len_week - 1:
+        if not (
+            take_into_account_z_and_y
+        ):  # week != bellman_value_calculation.time_scenario_param.len_week - 1:
             cout += -z - y
 
         itr = m.model.attributes.SIMPLEXITER

@@ -378,7 +378,7 @@ def solve_problem_with_Bellman_values(
             )
             if cst:
                 cst.SetCoefficient(
-                    m.x_s_1, (-V[j + 1, week + 1] + V[j, week + 1]) / (X[j + 1] - X[j])
+                    m.x_s_1, -(-V[j + 1, week + 1] + V[j, week + 1]) / (X[j + 1] - X[j])
                 )
                 cst.SetLb(
                     (-V[j + 1, week + 1] + V[j, week + 1]) / (X[j + 1] - X[j]) * (-X[j])

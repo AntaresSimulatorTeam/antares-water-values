@@ -38,12 +38,43 @@ def test_upper_bound() -> None:
         reservoir_management=reservoir_management,
         stock_discretization=np.linspace(0, reservoir.capacity, num=20),
     )
+    bellman_value_calculation = BellmanValueCalculation(
+        param=param,
+        reward={
+            TimeScenarioIndex(0, 0): RewardApproximation(
+                lb_control=-reservoir.max_pumping[0],
+                ub_control=reservoir.max_generating[0],
+                ub_reward=0,
+            )
+        },
+        reservoir_management=reservoir_management,
+        stock_discretization=np.linspace(0, reservoir.capacity, num=20),
+    )
+
+    list_models = {TimeScenarioIndex(0, 0): problem}
+    V = np.zeros((20, 2), dtype=np.float32)
+    assert problem.model.num_constraints == 3535
+    assert problem.model.num_variables == 3533
 
     upper_bound, controls, _ = compute_upper_bound(
         bellman_value_calculation=bellman_value_calculation,
-        list_models={TimeScenarioIndex(0, 0): problem},
-        V=np.zeros((20, 2), dtype=np.float32),
+        list_models=list_models,
+        V=V,
     )
 
     assert upper_bound == pytest.approx(380492940.000565)
     assert controls[0, 0] == pytest.approx(4482011.0)
+    assert problem.model.num_constraints == 3555
+    assert problem.model.num_variables == 3533
+
+    V[:, 1] = np.linspace(-5e9, -3e9, num=20)
+    upper_bound, controls, _ = compute_upper_bound(
+        bellman_value_calculation=bellman_value_calculation,
+        list_models=list_models,
+        V=np.zeros((20, 2), dtype=np.float32),
+    )
+
+    assert upper_bound == pytest.approx(5046992854.133574)
+    assert controls[0, 0] == pytest.approx(1146984.0)
+    assert problem.model.num_constraints == 3555
+    assert problem.model.num_variables == 3533

@@ -369,23 +369,50 @@ def solve_problem_with_Bellman_values(
             # TODO : gérer les bases
         # m.model.loadbasis(basis.rstatus, basis.cstatus)
     additional_constraint: List = []
+    constraints = m.model.get_linear_constraints()
 
     for j in range(len(X) - 1):
         if (V[j + 1, week + 1] < float("inf")) & (V[j, week + 1] < float("inf")):
-            cst = m.model.add(
-                m.z
-                >= (-V[j + 1, week + 1] + V[j, week + 1])
-                / (X[j + 1] - X[j])
-                * (m.x_s_1 - X[j])
-                - V[j, week + 1],
-                name=f"BellmanValueBetween{j}And{j+1}::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
-            )
+            idx_cst = [
+                i
+                for i in constraints
+                if i.name
+                == f"BellmanValueBetween{j}And{j+1}::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>"
+            ]
+            if len(idx_cst) >= 1:
+                cst = idx_cst[0]
+                cst.set_coefficient(
+                    m.x_s_1, -(-V[j + 1, week + 1] + V[j, week + 1]) / (X[j + 1] - X[j])
+                )
+                cst.lower_bound = (-V[j + 1, week + 1] + V[j, week + 1]) / (
+                    X[j + 1] - X[j]
+                ) * (-X[j]) - V[j, week + 1]
+            else:
+                cst = m.model.add(
+                    m.z
+                    >= (-V[j + 1, week + 1] + V[j, week + 1])
+                    / (X[j + 1] - X[j])
+                    * (m.x_s_1 - X[j])
+                    - V[j, week + 1],
+                    name=f"BellmanValueBetween{j}And{j+1}::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
+                )
             additional_constraint.append(cst)
 
-    cst_initial_level = m.model.add(
-        m.x_s == level_i,
-        name=f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
-    )
+    idx_cst = [
+        i
+        for i in constraints
+        if i.name
+        == f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>"
+    ]
+    if len(idx_cst) >= 1:
+        cst_initial_level = idx_cst[0]
+        cst_initial_level.lower_bound = level_i
+        cst_initial_level.upper_bound = level_i
+    else:
+        cst_initial_level = m.model.add(
+            m.x_s == level_i,
+            name=f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
+        )
     additional_constraint.append(cst_initial_level)
 
     rbas: List = []

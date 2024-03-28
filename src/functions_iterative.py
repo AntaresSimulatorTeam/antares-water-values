@@ -189,7 +189,7 @@ def calculate_reward(
             beta, lamb, itr, basis_0, computation_time = list_models[
                 TimeScenarioIndex(week, scenario)
             ].modify_weekly_problem_itr(
-                control=controls[week][scenario], i=i, prev_basis=basis_0
+                control=float(controls[week][scenario]), i=i, prev_basis=basis_0
             )
 
             G[TimeScenarioIndex(week, scenario)].update_reward_approximation(

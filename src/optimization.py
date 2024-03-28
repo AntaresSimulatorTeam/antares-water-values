@@ -11,6 +11,7 @@ import numpy.typing as npt
 from time import time
 from scipy.interpolate import interp1d
 from ortools.linear_solver.python import model_builder
+import ortools.linear_solver.pywraplp as pywraplp
 
 Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
 Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
@@ -74,13 +75,14 @@ class AntaresProblem:
         mps_path = path + f"/problem-{scenario+1}-{week+1}--optim-nb-{itr}.mps"
         model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
         model.import_from_mps_file(mps_path)
+        model_proto = model.export_to_proto()
 
-        solver = model_builder.ModelSolver("GLOP")
+        solver = pywraplp.Solver.CreateSolver("GLOP")
         assert solver, "Couldn't find any supported solver"
+        solver.EnableOutput()
 
-        solver.enable_output(False)
+        solver.LoadModelFromProtoWithUniqueNamesOrDie(model_proto)
 
-        self.model = model
         self.solver = solver
 
         self.basis: List = []
@@ -139,10 +141,11 @@ class AntaresProblem:
         -------
         None
         """
+
         hours_in_week = reservoir_management.reservoir.hours_in_week
         len_week = param.len_week
 
-        model = self.model
+        model = self.solver
 
         self.delete_variable(
             hours_in_week=hours_in_week,
@@ -157,40 +160,40 @@ class AntaresProblem:
             name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
 
-        cst = model.get_linear_constraints()
+        cst = model.constraints()
         binding_id = [
             i
             for i in range(len(cst))
             if re.search(
                 f"^HydroPower::area<{reservoir_management.reservoir.area}>::week<.",
-                cst[i].name,
+                cst[i].name(),
             )
         ]
         assert len(binding_id) == 1
 
-        x_s = model.new_var(
+        x_s = model.Var(
             lb=0,
             ub=reservoir_management.reservoir.capacity,
-            is_integer=False,
+            integer=False,
             name="x_s",
         )
 
-        x_s_1 = model.new_var(
+        x_s_1 = model.Var(
             lb=0,
             ub=reservoir_management.reservoir.capacity,
-            is_integer=False,
+            integer=False,
             name="x_s_1",
         )
 
-        U = model.new_var(
+        U = model.Var(
             lb=-reservoir_management.reservoir.max_pumping[self.week]
             * reservoir_management.reservoir.efficiency,
             ub=reservoir_management.reservoir.max_generating[self.week],
-            is_integer=False,
+            integer=False,
             name="u",
         )
 
-        model.add(
+        model.Add(
             x_s_1
             <= x_s
             - U
@@ -198,39 +201,39 @@ class AntaresProblem:
             name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
         )
 
-        y = model.new_var(
-            lb=0, ub=float("inf"), is_integer=False, name="y"
+        y = model.Var(
+            lb=0, ub=float("inf"), integer=False, name="y"
         )  # Penality for violating guide curves
 
         if self.week != len_week - 1 or not reservoir_management.final_level:
-            model.add(
+            model.Add(
                 y
                 >= -reservoir_management.penalty_bottom_rule_curve
                 * (x_s_1 - reservoir_management.reservoir.bottom_rule_curve[self.week]),
                 name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
-            model.add(
+            model.Add(
                 y
                 >= reservoir_management.penalty_upper_rule_curve
                 * (x_s_1 - reservoir_management.reservoir.upper_rule_curve[self.week]),
                 name=f"PenaltyForViolatingUpperRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
         else:
-            model.add(
+            model.Add(
                 y
                 >= -reservoir_management.penalty_final_level
                 * (x_s_1 - reservoir_management.final_level),
                 name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
-            model.add(
+            model.Add(
                 y
                 >= reservoir_management.penalty_final_level
                 * (x_s_1 - reservoir_management.final_level),
                 name=f"PenaltyForViolatingUpperRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
 
-        z = model.new_var(
-            lb=float("-inf"), ub=float("inf"), is_integer=False, name="z"
+        z = model.Var(
+            lb=float("-inf"), ub=float("inf"), integer=False, name="z"
         )  # Auxiliar variable to introduce the piecewise representation of the future cost
 
         self.binding_id = cst[binding_id[0]]
@@ -241,27 +244,26 @@ class AntaresProblem:
         self.y = y
 
     def delete_variable(self, hours_in_week: int, name_variable: str) -> None:
-        model = self.model
-        var = model.get_variables()
-        var_id = [i for i in range(len(var)) if re.search(name_variable, var[i].name)]
+        model = self.solver
+        var = model.variables()
+        var_id = [i for i in range(len(var)) if re.search(name_variable, var[i].name())]
         assert len(var_id) in [0, hours_in_week]
         if len(var_id) == hours_in_week:
             for i in var_id:
-                var[i].lower_bound = float("-inf")
-                var[i].upper_bound = float("inf")
-                var[i].objective_coefficient = 0
+                var[i].SetLb(float("-inf"))
+                var[i].SetUb(float("inf"))
+                model.Objective().SetCoefficient(var[i], 0)
 
     def delete_constraint(self, hours_in_week: int, name_constraint: str) -> None:
-        model = self.model
-        cons = model.get_linear_constraints()
+        model = self.solver
+        cons = model.constraints()
         cons_id = [
-            i for i in range(len(cons)) if re.search(name_constraint, cons[i].name)
+            i for i in range(len(cons)) if re.search(name_constraint, cons[i].name())
         ]
         assert len(cons_id) in [0, hours_in_week]
         if len(cons_id) == hours_in_week:
             for i in cons_id:
-                cons[i].lower_bound = float("-inf")
-                cons[i].upper_bound = float("inf")
+                cons[i].SetBounds(lb=float("-inf"), ub=float("inf"))
 
     def modify_weekly_problem_itr(
         self, control: float, i: int, prev_basis: Basis = Basis()
@@ -303,15 +305,14 @@ class AntaresProblem:
         rbas: List = []
         cbas: List = []
 
-        self.binding_id.lower_bound = control
-        self.binding_id.upper_bound = control
+        self.binding_id.SetBounds(lb=control, ub=control)
         debut_1 = time()
-        solve_status = self.solver.solve(self.model)
+        solve_status = self.solver.Solve()
         fin_1 = time()
 
-        if solve_status.name == "OPTIMAL":
-            beta = float(self.solver.objective_value)
-            lamb = float(self.solver.dual_value(self.binding_id))
+        if solve_status == pywraplp.Solver.OPTIMAL:
+            beta = float(self.solver.Objective().Value())
+            lamb = float(self.binding_id.dual_value())
             # TODO : gérer le nombre d'itérations du simplexe
             itr = 0  # self.model.attributes.SIMPLEXITER
 
@@ -324,7 +325,7 @@ class AntaresProblem:
                 prev_basis.cstatus = cbas
             return (beta, lamb, itr, prev_basis, fin_1 - debut_1)
         else:
-            print(solve_status.name)
+            print(solve_status)
             raise (ValueError)
 
 
@@ -419,7 +420,7 @@ def solve_problem_with_Bellman_values(
     cbas: List = []
 
     debut_1 = time()
-    solve_status = m.solver.solve(m.model)
+    solve_status = m.solver.Solve()
     fin_1 = time()
 
     if solve_status.name == "OPTIMAL":

@@ -344,12 +344,12 @@ def solve_problem_with_Bellman_values(
 
     X = bellman_value_calculation.stock_discretization
 
-    m.binding_id.set_coefficient(m.U, -1)
-    m.binding_id.lower_bound = 0
-    m.binding_id.upper_bound = 0
+    m.binding_id.SetCoefficient(m.U, -1)
+    m.binding_id.SetLb(0.0)
+    m.binding_id.SetUb(0.0)
 
-    m.y.objective_coefficient = 1
-    m.z.objective_coefficient = 1
+    m.solver.Objective().SetCoefficient(m.y, 1)
+    m.solver.Objective().SetCoefficient(m.z, 1)
 
     if find_optimal_basis:
         if len(m.control_basis) >= 1:
@@ -370,26 +370,22 @@ def solve_problem_with_Bellman_values(
             # TODO : gérer les bases
         # m.model.loadbasis(basis.rstatus, basis.cstatus)
     additional_constraint: List = []
-    constraints = m.model.get_linear_constraints()
 
     for j in range(len(X) - 1):
         if (V[j + 1, week + 1] < float("inf")) & (V[j, week + 1] < float("inf")):
-            idx_cst = [
-                i
-                for i in constraints
-                if i.name
-                == f"BellmanValueBetween{j}And{j+1}::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>"
-            ]
-            if len(idx_cst) >= 1:
-                cst = idx_cst[0]
-                cst.set_coefficient(
-                    m.x_s_1, -(-V[j + 1, week + 1] + V[j, week + 1]) / (X[j + 1] - X[j])
+            cst = m.solver.LookupConstraint(
+                f"BellmanValueBetween{j}And{j+1}::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>"
+            )
+            if cst:
+                cst.SetCoefficient(
+                    m.x_s_1, (-V[j + 1, week + 1] + V[j, week + 1]) / (X[j + 1] - X[j])
                 )
-                cst.lower_bound = (-V[j + 1, week + 1] + V[j, week + 1]) / (
-                    X[j + 1] - X[j]
-                ) * (-X[j]) - V[j, week + 1]
+                cst.SetLb(
+                    (-V[j + 1, week + 1] + V[j, week + 1]) / (X[j + 1] - X[j]) * (-X[j])
+                    - V[j, week + 1]
+                )
             else:
-                cst = m.model.add(
+                cst = m.solver.Add(
                     m.z
                     >= (-V[j + 1, week + 1] + V[j, week + 1])
                     / (X[j + 1] - X[j])
@@ -399,22 +395,17 @@ def solve_problem_with_Bellman_values(
                 )
             additional_constraint.append(cst)
 
-    idx_cst = [
-        i
-        for i in constraints
-        if i.name
-        == f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>"
-    ]
-    if len(idx_cst) >= 1:
-        cst_initial_level = idx_cst[0]
-        cst_initial_level.lower_bound = level_i
-        cst_initial_level.upper_bound = level_i
+    cst_initial_level = m.solver.LookupConstraint(
+        f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>"
+    )
+    if cst_initial_level:
+        cst_initial_level.SetBounds(lb=level_i, ub=level_i)
     else:
-        cst_initial_level = m.model.add(
+        cst_initial_level = m.solver.Add(
             m.x_s == level_i,
             name=f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
         )
-    additional_constraint.append(cst_initial_level)
+    # additional_constraint.append(cst_initial_level)
 
     rbas: List = []
     cbas: List = []
@@ -423,7 +414,7 @@ def solve_problem_with_Bellman_values(
     solve_status = m.solver.Solve()
     fin_1 = time()
 
-    if solve_status.name == "OPTIMAL":
+    if solve_status == pywraplp.Solver.OPTIMAL:
         # TODO : gérer les bases
         # m.model.getbasis(rbas, cbas)
         # m.add_basis(
@@ -431,17 +422,17 @@ def solve_problem_with_Bellman_values(
         #     control_basis=m.model.getSolution(m.U),
         # )
 
-        beta = float(m.solver.objective_value)
-        xf = float(m.solver.value(m.x_s_1))
-        z = float(m.solver.value(m.z))
-        y = float(m.solver.value(m.y))
-        for cst in additional_constraint:
-            cst.lower_bound = float("-inf")
-            cst.upper_bound = float("inf")
-        m.binding_id.set_coefficient(m.U, 0)
+        beta = float(m.solver.Objective().Value())
+        xf = float(m.x_s_1.solution_value())
+        z = float(m.z.solution_value())
+        y = float(m.y.solution_value())
+        cst_initial_level.SetBounds(
+            lb=0, ub=bellman_value_calculation.reservoir_management.reservoir.capacity
+        )
+        m.binding_id.SetCoefficient(m.U, 0)
 
-        m.y.objective_coefficient = 0
-        m.z.objective_coefficient = 0
+        m.solver.Objective().SetCoefficient(m.y, 0)
+        m.solver.Objective().SetCoefficient(m.z, 0)
         cout += beta
         if not (
             take_into_account_z_and_y
@@ -452,6 +443,7 @@ def solve_problem_with_Bellman_values(
         itr = 0  # m.model.attributes.SIMPLEXITER
 
     else:
+        print(solve_status)
         raise (ValueError)
     return (
         fin_1 - debut_1,

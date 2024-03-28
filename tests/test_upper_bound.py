@@ -53,8 +53,8 @@ def test_upper_bound() -> None:
 
     list_models = {TimeScenarioIndex(0, 0): problem}
     V = np.zeros((20, 2), dtype=np.float32)
-    assert problem.model.num_constraints == 3535
-    assert problem.model.num_variables == 3533
+    assert len(problem.solver.constraints()) == 3535
+    assert len(problem.solver.variables()) == 3533
 
     upper_bound, controls, _ = compute_upper_bound(
         bellman_value_calculation=bellman_value_calculation,
@@ -64,8 +64,8 @@ def test_upper_bound() -> None:
 
     assert upper_bound == pytest.approx(380492940.000565)
     assert controls[0, 0] == pytest.approx(4482011.0)
-    assert problem.model.num_constraints == 3555
-    assert problem.model.num_variables == 3533
+    assert len(problem.solver.constraints()) == 3555
+    assert len(problem.solver.variables()) == 3533
 
     V[:, 1] = np.linspace(-5e9, -3e9, num=20)
     upper_bound, controls, _ = compute_upper_bound(
@@ -76,5 +76,5 @@ def test_upper_bound() -> None:
 
     assert upper_bound == pytest.approx(5046992854.133574)
     assert controls[0, 0] == pytest.approx(1146984.0)
-    assert problem.model.num_constraints == 3555
-    assert problem.model.num_variables == 3533
+    assert len(problem.solver.constraints()) == 3555
+    assert len(problem.solver.variables()) == 3533

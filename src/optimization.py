@@ -75,14 +75,9 @@ class AntaresProblem:
         model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
         model.import_from_mps_file(mps_path)
 
-        solver = model_builder.ModelSolver("XPRESS_LP")
-        if not (solver.solver_is_supported()):
-            solver = model_builder.ModelSolver("GLOP")
-            assert solver.solver_is_supported(), "Couldn't find any supported solver"
-        else:
-            solver.set_solver_specific_parameters(
-                "threads:1, scaling:0, presolve:0, feastol:1.0e-7, optimalitytol:1.0e-7"
-            )
+        solver = model_builder.ModelSolver("GLOP")
+        assert solver, "Couldn't find any supported solver"
+
         solver.enable_output(False)
 
         self.model = model

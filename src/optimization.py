@@ -89,9 +89,11 @@ class AntaresProblem:
         solver.EnableOutput()
 
         parameters = pywraplp.MPSolverParameters()
-        parameters.SetIntegerParam(parameters.PRESOLVE, parameters.PRESOLVE_OFF)
-        parameters.SetDoubleParam(parameters.DUAL_TOLERANCE, 1e-7)
-        parameters.SetDoubleParam(parameters.PRIMAL_TOLERANCE, 1e-7)
+        if name_solver == "XPRESS_LP":
+            parameters.SetIntegerParam(parameters.PRESOLVE, parameters.PRESOLVE_OFF)
+            parameters.SetIntegerParam(parameters.SCALING, 0)
+            parameters.SetDoubleParam(parameters.DUAL_TOLERANCE, 1e-7)
+            parameters.SetDoubleParam(parameters.PRIMAL_TOLERANCE, 1e-7)
         self.solver_parameters = parameters
 
         solver.LoadModelFromProtoWithUniqueNamesOrDie(model_proto)
@@ -327,8 +329,8 @@ class AntaresProblem:
         if solve_status == pywraplp.Solver.OPTIMAL:
             beta = float(self.solver.Objective().Value())
             lamb = float(self.binding_id.dual_value())
-            # TODO : gérer le nombre d'itérations du simplexe
-            itr = 0  # self.model.attributes.SIMPLEXITER
+
+            itr = self.solver.Iterations()
 
             # TODO : gérer les bases
             # self.model.getbasis(rbas, cbas)
@@ -456,8 +458,7 @@ def solve_problem_with_Bellman_values(
         ):  # week != bellman_value_calculation.time_scenario_param.len_week - 1:
             cout += -z - y
 
-        # TODO : gérer le nombre d'itérations du simplexe
-        itr = 0  # m.model.attributes.SIMPLEXITER
+        itr = m.solver.Iterations()
 
     else:
         print(f"Failed at upper bound : {solve_status}")

@@ -100,6 +100,8 @@ class AntaresProblem:
 
         self.solver = solver
 
+        self.store_basis = True if name_solver == "XPRESS_LP" else False
+
         self.basis: List = []
         self.control_basis: List = []
 
@@ -120,6 +122,26 @@ class AntaresProblem:
         """
         self.basis.append(basis)
         self.control_basis.append(control_basis)
+
+    def get_basis(self) -> tuple[List, List]:
+        var_basis = []
+        con_basis = []
+        for var in self.solver.variables():
+            var_basis.append(var.basis_status())
+        for con in self.solver.constraints():
+            con_basis.append(con.basis_status())
+        return var_basis, con_basis
+
+    def load_basis(self, basis: Basis) -> None:
+        len_cons = len(self.solver.constraints())
+        len_vars = len(self.solver.variables())
+        if len_vars > len(basis.rstatus):
+            basis.rstatus += [0] * (len_vars - len(basis.rstatus))
+        if len_cons > len(basis.cstatus):
+            basis.cstatus += [0] * (len_cons - len(basis.cstatus))
+        self.solver.SetStartingLpBasis(
+            basis.rstatus[:len_vars], basis.cstatus[:len_cons]
+        )
 
     def find_closest_basis(self, control: float) -> Basis:
         """
@@ -309,17 +331,13 @@ class AntaresProblem:
         t:float :
             Time spent solving the problem
         """
+        if self.store_basis:
+            if (prev_basis.not_empty()) & (i == 0):
+                self.load_basis(prev_basis)
 
-        # TODO : gérer les bases
-        # if (prev_basis.not_empty()) & (i == 0):
-        #     self.model.loadbasis(prev_basis.rstatus, prev_basis.cstatus)
-
-        # if i >= 1:
-        #     basis = self.find_closest_basis(control=control)
-        #     self.model.loadbasis(basis.rstatus, basis.cstatus)
-
-        rbas: List = []
-        cbas: List = []
+            if i >= 1:
+                basis = self.find_closest_basis(control=control)
+                self.load_basis(basis)
 
         self.binding_id.SetBounds(lb=control, ub=control)
         debut_1 = time()
@@ -332,9 +350,8 @@ class AntaresProblem:
 
             itr = self.solver.Iterations()
 
-            # TODO : gérer les bases
-            # self.model.getbasis(rbas, cbas)
-            # self.add_basis(basis=Basis(rbas, cbas), control_basis=control)
+            rbas, cbas = self.get_basis()
+            self.add_basis(basis=Basis(rbas, cbas), control_basis=control)
 
             if i == 0:
                 prev_basis.rstatus = rbas
@@ -367,24 +384,6 @@ def solve_problem_with_Bellman_values(
     m.solver.Objective().SetCoefficient(m.y, 1)
     m.solver.Objective().SetCoefficient(m.z, 1)
 
-    if find_optimal_basis:
-        if len(m.control_basis) >= 1:
-            if len(m.control_basis) >= 2:
-                V_fut = interp1d(X, V[:, week + 1])
-
-                _, _, likely_control = (
-                    bellman_value_calculation.solve_weekly_problem_with_approximation(
-                        level_i=level_i,
-                        V_fut=V_fut,
-                        week=week,
-                        scenario=scenario,
-                    )
-                )
-            else:
-                likely_control = 0
-            basis = m.find_closest_basis(likely_control)
-            # TODO : gérer les bases
-        # m.model.loadbasis(basis.rstatus, basis.cstatus)
     additional_constraint: List = []
 
     for j in range(len(X) - 1):
@@ -421,22 +420,37 @@ def solve_problem_with_Bellman_values(
             m.x_s == level_i,
             name=f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
         )
-    # additional_constraint.append(cst_initial_level)
 
-    rbas: List = []
-    cbas: List = []
+    if find_optimal_basis:
+        if len(m.control_basis) >= 1:
+            if len(m.control_basis) >= 2:
+                V_fut = interp1d(X, V[:, week + 1])
+
+                _, _, likely_control = (
+                    bellman_value_calculation.solve_weekly_problem_with_approximation(
+                        level_i=level_i,
+                        V_fut=V_fut,
+                        week=week,
+                        scenario=scenario,
+                    )
+                )
+            else:
+                likely_control = 0
+            basis = m.find_closest_basis(likely_control)
+            m.load_basis(basis)
 
     debut_1 = time()
     solve_status = m.solver.Solve(m.solver_parameters)
     fin_1 = time()
 
     if solve_status == pywraplp.Solver.OPTIMAL:
-        # TODO : gérer les bases
-        # m.model.getbasis(rbas, cbas)
-        # m.add_basis(
-        #     basis=Basis(rbas[:nb_cons], cbas),
-        #     control_basis=m.model.getSolution(m.U),
-        # )
+        itr = m.solver.Iterations()
+        if m.store_basis:
+            rbas, cbas = m.get_basis()
+            m.add_basis(
+                basis=Basis(rbas, cbas),
+                control_basis=m.U.solution_value(),
+            )
 
         beta = float(m.solver.Objective().Value())
         xf = float(m.x_s_1.solution_value())
@@ -457,8 +471,6 @@ def solve_problem_with_Bellman_values(
             take_into_account_z_and_y
         ):  # week != bellman_value_calculation.time_scenario_param.len_week - 1:
             cout += -z - y
-
-        itr = m.solver.Iterations()
 
     else:
         print(f"Failed at upper bound : {solve_status}")

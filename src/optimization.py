@@ -90,6 +90,7 @@ class AntaresProblem:
 
         parameters = pywraplp.MPSolverParameters()
         if name_solver == "XPRESS_LP":
+            solver.SetSolverSpecificParametersAsString("THREADS 1")
             parameters.SetIntegerParam(parameters.PRESOLVE, parameters.PRESOLVE_OFF)
             parameters.SetIntegerParam(parameters.SCALING, 0)
             parameters.SetDoubleParam(parameters.DUAL_TOLERANCE, 1e-7)

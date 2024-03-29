@@ -209,6 +209,7 @@ def itr_control(
     X: Array1D,
     N: int,
     tol_gap: float,
+    solver: str = "GLOP",
 ) -> tuple[
     Array2D,
     Dict[TimeScenarioIndex, RewardApproximation],
@@ -261,7 +262,7 @@ def itr_control(
         bellman_value_calculation,
         gap,
         G,
-    ) = init_iterative_calculation(param, reservoir_management, output_path, X)
+    ) = init_iterative_calculation(param, reservoir_management, output_path, X, solver)
     i = 0
 
     while (gap >= tol_gap and gap >= 0) and i < N:  # and (i<3):
@@ -313,6 +314,7 @@ def init_iterative_calculation(
     reservoir_management: ReservoirManagement,
     output_path: str,
     X: Array1D,
+    solver: str,
 ) -> tuple[
     List,
     Dict[TimeScenarioIndex, AntaresProblem],
@@ -333,7 +335,13 @@ def init_iterative_calculation(
     list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
     for week in range(len_week):
         for scenario in range(len_scenario):
-            m = AntaresProblem(scenario=scenario, week=week, path=output_path, itr=1)
+            m = AntaresProblem(
+                scenario=scenario,
+                week=week,
+                path=output_path,
+                itr=1,
+                name_solver=solver,
+            )
             m.create_weekly_problem_itr(
                 param=param,
                 reservoir_management=reservoir_management,

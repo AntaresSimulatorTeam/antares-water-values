@@ -49,7 +49,14 @@ class Basis:
 class AntaresProblem:
     """Class to store an Xpress optimization problem describing the problem solved by Antares for one week and one scenario."""
 
-    def __init__(self, scenario: int, week: int, path: str, itr: int = 1) -> None:
+    def __init__(
+        self,
+        scenario: int,
+        week: int,
+        path: str,
+        itr: int = 1,
+        name_solver: str = "GLOP",
+    ) -> None:
         """
         Create a new Xpress problem and load the problem stored in the associated mps file.
 
@@ -77,9 +84,15 @@ class AntaresProblem:
         model.import_from_mps_file(mps_path)
         model_proto = model.export_to_proto()
 
-        solver = pywraplp.Solver.CreateSolver("GLOP")
+        solver = pywraplp.Solver.CreateSolver(name_solver)
         assert solver, "Couldn't find any supported solver"
         solver.EnableOutput()
+
+        parameters = pywraplp.MPSolverParameters()
+        parameters.SetIntegerParam(parameters.PRESOLVE, parameters.PRESOLVE_OFF)
+        parameters.SetDoubleParam(parameters.DUAL_TOLERANCE, 1e-7)
+        parameters.SetDoubleParam(parameters.PRIMAL_TOLERANCE, 1e-7)
+        self.solver_parameters = parameters
 
         solver.LoadModelFromProtoWithUniqueNamesOrDie(model_proto)
 
@@ -202,7 +215,7 @@ class AntaresProblem:
         )
 
         y = model.Var(
-            lb=0, ub=float("inf"), integer=False, name="y"
+            lb=0, ub=model.Infinity(), integer=False, name="y"
         )  # Penality for violating guide curves
 
         if self.week != len_week - 1 or not reservoir_management.final_level:
@@ -233,7 +246,7 @@ class AntaresProblem:
             )
 
         z = model.Var(
-            lb=float("-inf"), ub=float("inf"), integer=False, name="z"
+            lb=-model.Infinity(), ub=model.Infinity(), integer=False, name="z"
         )  # Auxiliar variable to introduce the piecewise representation of the future cost
 
         self.binding_id = cst[binding_id[0]]
@@ -250,8 +263,8 @@ class AntaresProblem:
         assert len(var_id) in [0, hours_in_week]
         if len(var_id) == hours_in_week:
             for i in var_id:
-                var[i].SetLb(float("-inf"))
-                var[i].SetUb(float("inf"))
+                var[i].SetLb(-model.Infinity())
+                var[i].SetUb(model.Infinity())
                 model.Objective().SetCoefficient(var[i], 0)
 
     def delete_constraint(self, hours_in_week: int, name_constraint: str) -> None:
@@ -263,7 +276,8 @@ class AntaresProblem:
         assert len(cons_id) in [0, hours_in_week]
         if len(cons_id) == hours_in_week:
             for i in cons_id:
-                cons[i].SetBounds(lb=float("-inf"), ub=float("inf"))
+                cons[i].Clear()
+                cons[i].SetBounds(lb=0, ub=0)
 
     def modify_weekly_problem_itr(
         self, control: float, i: int, prev_basis: Basis = Basis()
@@ -307,7 +321,7 @@ class AntaresProblem:
 
         self.binding_id.SetBounds(lb=control, ub=control)
         debut_1 = time()
-        solve_status = self.solver.Solve()
+        solve_status = self.solver.Solve(self.solver_parameters)
         fin_1 = time()
 
         if solve_status == pywraplp.Solver.OPTIMAL:
@@ -325,7 +339,7 @@ class AntaresProblem:
                 prev_basis.cstatus = cbas
             return (beta, lamb, itr, prev_basis, fin_1 - debut_1)
         else:
-            print(solve_status)
+            print(f"Failed at control fixed : {solve_status}")
             raise (ValueError)
 
 
@@ -411,7 +425,7 @@ def solve_problem_with_Bellman_values(
     cbas: List = []
 
     debut_1 = time()
-    solve_status = m.solver.Solve()
+    solve_status = m.solver.Solve(m.solver_parameters)
     fin_1 = time()
 
     if solve_status == pywraplp.Solver.OPTIMAL:
@@ -426,8 +440,11 @@ def solve_problem_with_Bellman_values(
         xf = float(m.x_s_1.solution_value())
         z = float(m.z.solution_value())
         y = float(m.y.solution_value())
+        for cst in additional_constraint:
+            cst.SetLb(0)
         cst_initial_level.SetBounds(
-            lb=0, ub=bellman_value_calculation.reservoir_management.reservoir.capacity
+            lb=bellman_value_calculation.reservoir_management.reservoir.capacity,
+            ub=bellman_value_calculation.reservoir_management.reservoir.capacity,
         )
         m.binding_id.SetCoefficient(m.U, 0)
 
@@ -443,7 +460,7 @@ def solve_problem_with_Bellman_values(
         itr = 0  # m.model.attributes.SIMPLEXITER
 
     else:
-        print(solve_status)
+        print(f"Failed at upper bound : {solve_status}")
         raise (ValueError)
     return (
         fin_1 - debut_1,

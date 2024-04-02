@@ -1,7 +1,7 @@
 import re
 from calculate_reward_and_bellman_values import (
-    ReservoirManagement,
     BellmanValueCalculation,
+    MultiStockManagement,
 )
 from read_antares_data import TimeScenarioParameter
 import numpy as np
@@ -9,7 +9,7 @@ from time import time
 from scipy.interpolate import interp1d
 from ortools.linear_solver.python import model_builder
 import ortools.linear_solver.pywraplp as pywraplp
-from type_definition import Array1D, Array2D, Array3D, Array4D, List
+from type_definition import Array2D, List, Dict, Array1D
 
 
 class Basis:
@@ -103,7 +103,7 @@ class AntaresProblem:
         self.basis: List = []
         self.control_basis: List = []
 
-    def add_basis(self, basis: Basis, control_basis: float) -> None:
+    def add_basis(self, basis: Basis, control_basis: Dict[str, float]) -> None:
         """
         Store a new basis for the optimization problem.
 
@@ -141,7 +141,7 @@ class AntaresProblem:
             basis.rstatus[:len_vars], basis.cstatus[:len_cons]
         )
 
-    def find_closest_basis(self, control: float) -> Basis:
+    def find_closest_basis(self, control: Dict[str, float]) -> Basis:
         """
         Among stored basis, return the closest one to the given control.
 
@@ -163,7 +163,7 @@ class AntaresProblem:
     def create_weekly_problem_itr(
         self,
         param: TimeScenarioParameter,
-        reservoir_management: ReservoirManagement,
+        multi_stock_management: MultiStockManagement,
     ) -> None:
         """
         Modify the Xpress problem to take into account reservoir constraints and manage reservoir with Bellman values and penalties on rule curves.
@@ -172,64 +172,68 @@ class AntaresProblem:
         ----------
         param:AntaresParameter :
             Time-related parameters
-        reservoir_management:ReservoirManagement :
+        reservoir_management:MultiStockManagement :
             Considered reservoir and its paramters
 
         Returns
         -------
         None
         """
+        self.stored_variables_and_constraints = {}
+        self.range_reservoir = multi_stock_management.dict_reservoirs.keys()
+        for area in multi_stock_management.dict_reservoirs:
+            reservoir_management = multi_stock_management.dict_reservoirs[area]
 
-        hours_in_week = reservoir_management.reservoir.hours_in_week
-        len_week = param.len_week
+            hours_in_week = reservoir_management.reservoir.hours_in_week
+            len_week = param.len_week
 
-        model = self.solver
+            model = self.solver
 
-        self.delete_variable(
-            hours_in_week=hours_in_week,
-            name_variable=f"^HydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
-        )
-        self.delete_variable(
-            hours_in_week=hours_in_week,
-            name_variable=f"^Overflow::area<{reservoir_management.reservoir.area}>::hour<.",
-        )
-        self.delete_constraint(
-            hours_in_week=hours_in_week,
-            name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
-        )
-
-        cst = model.constraints()
-        binding_id = [
-            i
-            for i in range(len(cst))
-            if re.search(
-                f"^HydroPower::area<{reservoir_management.reservoir.area}>::week<.",
-                cst[i].name(),
+            self.delete_variable(
+                hours_in_week=hours_in_week,
+                name_variable=f"^HydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
             )
-        ]
-        assert len(binding_id) == 1
+            self.delete_variable(
+                hours_in_week=hours_in_week,
+                name_variable=f"^Overflow::area<{reservoir_management.reservoir.area}>::hour<.",
+            )
+            self.delete_constraint(
+                hours_in_week=hours_in_week,
+                name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
+            )
 
-        x_s = model.Var(
-            lb=0,
-            ub=reservoir_management.reservoir.capacity,
-            integer=False,
-            name="x_s",
-        )
+            cst = model.constraints()
+            binding_id = [
+                i
+                for i in range(len(cst))
+                if re.search(
+                    f"^HydroPower::area<{reservoir_management.reservoir.area}>::week<.",
+                    cst[i].name(),
+                )
+            ]
+            assert len(binding_id) == 1
 
-        x_s_1 = model.Var(
-            lb=0,
-            ub=reservoir_management.reservoir.capacity,
-            integer=False,
-            name="x_s_1",
-        )
+            x_s = model.Var(
+                lb=0,
+                ub=reservoir_management.reservoir.capacity,
+                integer=False,
+                name=f"InitialLevel::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+            )
 
-        U = model.Var(
-            lb=-reservoir_management.reservoir.max_pumping[self.week]
-            * reservoir_management.reservoir.efficiency,
-            ub=reservoir_management.reservoir.max_generating[self.week],
-            integer=False,
-            name="u",
-        )
+            x_s_1 = model.Var(
+                lb=0,
+                ub=reservoir_management.reservoir.capacity,
+                integer=False,
+                name=f"FinalLevel::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+            )
+
+            U = model.Var(
+                lb=-reservoir_management.reservoir.max_pumping[self.week]
+                * reservoir_management.reservoir.efficiency,
+                ub=reservoir_management.reservoir.max_generating[self.week],
+                integer=False,
+                name=f"Control::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+            )
 
         if reservoir_management.overflow:
             model.Add(
@@ -248,47 +252,61 @@ class AntaresProblem:
                 name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
 
-        y = model.Var(
-            lb=0, ub=model.Infinity(), integer=False, name="y"
-        )  # Penality for violating guide curves
+            y = model.Var(
+                lb=0,
+                ub=model.Infinity(),
+                integer=False,
+                name=f"Penalties::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+            )  # Penality for violating guide curves
 
-        if self.week != len_week - 1 or not reservoir_management.final_level:
-            model.Add(
-                y
-                >= -reservoir_management.penalty_bottom_rule_curve
-                * (x_s_1 - reservoir_management.reservoir.bottom_rule_curve[self.week]),
-                name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-            )
-            model.Add(
-                y
-                >= reservoir_management.penalty_upper_rule_curve
-                * (x_s_1 - reservoir_management.reservoir.upper_rule_curve[self.week]),
-                name=f"PenaltyForViolatingUpperRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-            )
-        else:
-            model.Add(
-                y
-                >= -reservoir_management.penalty_final_level
-                * (x_s_1 - reservoir_management.final_level),
-                name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-            )
-            model.Add(
-                y
-                >= reservoir_management.penalty_final_level
-                * (x_s_1 - reservoir_management.final_level),
-                name=f"PenaltyForViolatingUpperRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-            )
+            if self.week != len_week - 1 or not reservoir_management.final_level:
+                model.Add(
+                    y
+                    >= -reservoir_management.penalty_bottom_rule_curve
+                    * (
+                        x_s_1
+                        - reservoir_management.reservoir.bottom_rule_curve[self.week]
+                    ),
+                    name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+                )
+                model.Add(
+                    y
+                    >= reservoir_management.penalty_upper_rule_curve
+                    * (
+                        x_s_1
+                        - reservoir_management.reservoir.upper_rule_curve[self.week]
+                    ),
+                    name=f"PenaltyForViolatingUpperRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+                )
+            else:
+                model.Add(
+                    y
+                    >= -reservoir_management.penalty_final_level
+                    * (x_s_1 - reservoir_management.final_level),
+                    name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+                )
+                model.Add(
+                    y
+                    >= reservoir_management.penalty_final_level
+                    * (x_s_1 - reservoir_management.final_level),
+                    name=f"PenaltyForViolatingUpperRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+                )
 
-        z = model.Var(
-            lb=-model.Infinity(), ub=model.Infinity(), integer=False, name="z"
-        )  # Auxiliar variable to introduce the piecewise representation of the future cost
+            z = model.Var(
+                lb=-model.Infinity(),
+                ub=model.Infinity(),
+                integer=False,
+                name=f"BellmanValue::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+            )  # Auxiliar variable to introduce the piecewise representation of the future cost
 
-        self.binding_id = cst[binding_id[0]]
-        self.U = U
-        self.x_s = x_s
-        self.x_s_1 = x_s_1
-        self.z = z
-        self.y = y
+            self.stored_variables_and_constraints[area] = {
+                "energy_constraint": cst[binding_id[0]],
+                "reservoir_control": U,
+                "initial_level": x_s,
+                "final_level": x_s_1,
+                "penalties": y,
+                "final_bellman_value": z,
+            }
 
     def delete_variable(self, hours_in_week: int, name_variable: str) -> None:
         model = self.solver
@@ -314,8 +332,8 @@ class AntaresProblem:
                 cons[i].SetBounds(lb=0, ub=0)
 
     def solve_with_predefined_controls(
-        self, control: float, prev_basis: Basis = Basis()
-    ) -> tuple[float, float, int, float]:
+        self, control: Dict[str, float], prev_basis: Basis = Basis()
+    ) -> tuple[float, Dict[str, float], int, float]:
         """
         Modify and solve problem to evaluate weekly cost associated with a particular control of the reservoir.
 
@@ -346,22 +364,32 @@ class AntaresProblem:
                 basis = self.find_closest_basis(control=control)
                 self.load_basis(basis)
 
-        self.set_constraints_predefined_control(control)
+        for area in self.range_reservoir:
+            self.set_constraints_predefined_control(control[area], area)
         beta, lamb, _, _, _, itr, computing_time = self.solve_problem()
         return beta, lamb, itr, computing_time
 
-    def set_constraints_predefined_control(self, control: float) -> None:
-        self.binding_id.SetBounds(lb=control, ub=control)
+    def set_constraints_predefined_control(self, control: float, area: str) -> None:
+
+        self.stored_variables_and_constraints[area]["energy_constraint"].SetBounds(
+            lb=control, ub=control
+        )
 
     def set_constraints_initial_level_and_bellman_values(
         self, level_i: float, X: Array1D, bellman_value: Array1D, area: str
     ) -> List[pywraplp.Constraint]:
-        self.binding_id.SetCoefficient(self.U, -1)
-        self.binding_id.SetLb(0.0)
-        self.binding_id.SetUb(0.0)
+        self.stored_variables_and_constraints[area]["energy_constraint"].SetCoefficient(
+            self.stored_variables_and_constraints[area]["reservoir_control"], -1
+        )
+        self.stored_variables_and_constraints[area]["energy_constraint"].SetLb(0.0)
+        self.stored_variables_and_constraints[area]["energy_constraint"].SetUb(0.0)
 
-        self.solver.Objective().SetCoefficient(self.y, 1)
-        self.solver.Objective().SetCoefficient(self.z, 1)
+        self.solver.Objective().SetCoefficient(
+            self.stored_variables_and_constraints[area]["penalties"], 1
+        )
+        self.solver.Objective().SetCoefficient(
+            self.stored_variables_and_constraints[area]["final_bellman_value"], 1
+        )
 
         bellman_constraint: List = []
 
@@ -410,20 +438,27 @@ class AntaresProblem:
         self,
         bellman_value_calculation: BellmanValueCalculation,
         additional_constraint: List[pywraplp.Constraint],
+        area: str,
     ) -> None:
         for cst in additional_constraint:
             cst.SetLb(0)
         cst_initial_level = self.solver.LookupConstraint(
-            f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{self.week}>"
+            f"InitialLevelReservoir::area<{area}>::week<{self.week}>"
         )
         cst_initial_level.SetBounds(
             lb=bellman_value_calculation.reservoir_management.reservoir.capacity,
             ub=bellman_value_calculation.reservoir_management.reservoir.capacity,
         )
-        self.binding_id.SetCoefficient(self.U, 0)
+        self.stored_variables_and_constraints[area]["energy_constraint"].SetCoefficient(
+            self.stored_variables_and_constraints[area]["reservoir_control"], 0
+        )
 
-        self.solver.Objective().SetCoefficient(self.y, 0)
-        self.solver.Objective().SetCoefficient(self.z, 0)
+        self.solver.Objective().SetCoefficient(
+            self.stored_variables_and_constraints[area]["penalties"], 0
+        )
+        self.solver.Objective().SetCoefficient(
+            self.stored_variables_and_constraints[area]["final_bellman_value"], 0
+        )
 
     def solve_problem(self) -> tuple[float, float, float, float, float, int, float]:
 
@@ -437,19 +472,41 @@ class AntaresProblem:
                 rbas, cbas = self.get_basis()
                 self.add_basis(
                     basis=Basis(rbas, cbas),
-                    control_basis=self.U.solution_value(),
+                    control_basis=self.get_solution_value("reservoir_control"),
                 )
 
             beta = float(self.solver.Objective().Value())
-            xf = float(self.x_s_1.solution_value())
-            z = float(self.z.solution_value())
-            y = float(self.y.solution_value())
-            lamb = float(self.binding_id.dual_value())
+            xf = self.get_solution_value("final_level")
+            z = self.get_solution_value("final_bellman_value")
+            y = self.get_solution_value("penalties")
+            lamb = self.get_dual_value("energy_constraint")
 
             return (beta, lamb, xf, y, z, itr, end - start)
         else:
             print(f"Failed to solve : {solve_status}")
             raise (ValueError)
+
+    def get_dual_value(self, name_constraint: str) -> Dict[str, float]:
+        value = {}
+        for area in self.range_reservoir:
+            value[area] = float(
+                self.stored_variables_and_constraints[area][
+                    name_constraint
+                ].dual_value()
+            )
+
+        return value
+
+    def get_solution_value(self, name_variable: str) -> Dict[str, float]:
+        value = {}
+        for area in self.range_reservoir:
+            value[area] = float(
+                self.stored_variables_and_constraints[area][
+                    name_variable
+                ].solution_value()
+            )
+
+        return value
 
     def solve_problem_with_bellman_values(
         self,
@@ -474,41 +531,44 @@ class AntaresProblem:
 
         if find_optimal_basis:
             if len(self.control_basis) >= 1:
+                dict_likely_control = {}
                 if len(self.control_basis) >= 2:
-                    V_fut = interp1d(X, V[:, self.week + 1])
+                    for area in self.range_reservoir:
+                        V_fut = interp1d(X, V[:, self.week + 1])
 
-                    _, _, likely_control = (
-                        bellman_value_calculation.solve_weekly_problem_with_approximation(
-                            level_i=level_i,
-                            V_fut=V_fut,
-                            week=self.week,
-                            scenario=self.scenario,
+                        _, _, likely_control = (
+                            bellman_value_calculation.solve_weekly_problem_with_approximation(
+                                level_i=level_i,
+                                V_fut=V_fut,
+                                week=self.week,
+                                scenario=self.scenario,
+                            )
                         )
-                    )
+                        dict_likely_control[area] = likely_control
+                    basis = self.find_closest_basis(dict_likely_control)
                 else:
-                    likely_control = 0
-                basis = self.find_closest_basis(likely_control)
+                    basis = self.basis[0]
                 self.load_basis(basis)
 
         beta, _, xf, y, z, itr, t = self.solve_problem()
 
         self.remove_bellman_constraints(
-            bellman_value_calculation, additional_constraint
+            bellman_value_calculation, additional_constraint, area
         )
         cout += beta
         if not (take_into_account_z_and_y):
-            cout += -z - y
+            cout += -sum(z.values()) - sum(y.values())
 
         return (
             t,
             itr,
             cout,
             -(
-                xf
+                min(xf.values())
                 - level_i
                 - bellman_value_calculation.reservoir_management.reservoir.inflow[
                     self.week, self.scenario
                 ]
             ),
-            xf,
+            min(xf.values()),
         )

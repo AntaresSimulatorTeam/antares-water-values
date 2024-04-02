@@ -1,7 +1,7 @@
 from read_antares_data import TimeScenarioParameter, Reservoir, TimeScenarioIndex
 from scipy.interpolate import interp1d
 import numpy as np
-from type_definition import Array1D, Array2D, Optional, Dict, Callable
+from type_definition import Array1D, Array2D, Optional, Dict, Callable, List
 
 
 class ReservoirManagement:
@@ -89,6 +89,14 @@ class ReservoirManagement:
                 ],
             )
         return pen
+
+
+class MultiStockManagement:
+
+    def __init__(self, list_reservoirs: List[ReservoirManagement]) -> None:
+        self.dict_reservoirs = {}
+        for res in list_reservoirs:
+            self.dict_reservoirs[res.reservoir.area] = res
 
 
 class RewardApproximation:

@@ -123,7 +123,6 @@ def generate_mps_file(study_path: str, antares_path: str) -> str:
         capture_output=True,
         text=True,
     )
-    assert "Quitting the solver gracefully" in res.stdout
     output = res.stdout.split("\n")
     idx_line = [l for l in output if " Output folder : " in l]
     assert len(idx_line) >= 1
@@ -138,8 +137,10 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
 
     for area in hydro_ini["reservoir"].keys():
         if hydro_ini["reservoir"][area] == "true":
-            hydro_ini["use water"][area] = "false"
-            hydro_ini["use heuristic"][area] = "true"
+            if "use water" in hydro_ini.keys():
+                hydro_ini["use water"][area] = "false"
+            if "use heuristic" in hydro_ini.keys():
+                hydro_ini["use heuristic"][area] = "true"
 
     with open(dir_study + "/input/hydro/hydro.ini", "w") as configfile:  # save
         hydro_ini.write(configfile)

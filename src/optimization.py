@@ -1,6 +1,7 @@
 import re
 from calculate_reward_and_bellman_values import (
     BellmanValueCalculation,
+    MultiStockBellmanValueCalculation,
     MultiStockManagement,
 )
 from read_antares_data import TimeScenarioParameter
@@ -105,7 +106,7 @@ class AntaresProblem:
 
     def add_basis(self, basis: Basis, control_basis: Dict[str, float]) -> None:
         """
-        Store a new basis for the optimization problem.
+        Store a new basis for the optimization probleself.
 
         Parameters
         ----------
@@ -515,35 +516,42 @@ class AntaresProblem:
 
     def solve_problem_with_bellman_values(
         self,
-        bellman_value_calculation: BellmanValueCalculation,
-        V: Array2D,
-        level_i: float,
+        multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
+        V: Dict[str, Array2D],
+        level_i: Dict[str, float],
         take_into_account_z_and_y: bool,
         find_optimal_basis: bool = True,
-    ) -> tuple[float, int, float, float, float]:
+    ) -> tuple[float, int, float, Dict[str, float], Dict[str, float]]:
 
         cout = 0.0
 
-        X = bellman_value_calculation.stock_discretization
-
         additional_constraint = []
-        additional_constraint += self.set_constraints_initial_level_and_bellman_values(
-            level_i=level_i,
-            X=X,
-            bellman_value=V[:, self.week + 1],
-            area=bellman_value_calculation.reservoir_management.reservoir.area,
-        )
+        for area in self.range_reservoir:
+            additional_constraint += (
+                self.set_constraints_initial_level_and_bellman_values(
+                    level_i=level_i[area],
+                    X=multi_bellman_value_calculation.dict_reservoirs[
+                        area
+                    ].stock_discretization,
+                    bellman_value=V[area][:, self.week + 1],
+                    area=area,
+                )
+            )
 
         if find_optimal_basis:
             if len(self.control_basis) >= 1:
                 dict_likely_control = {}
                 if len(self.control_basis) >= 2:
                     for area in self.range_reservoir:
-                        V_fut = interp1d(X, V[:, self.week + 1])
+                        bellman_value_calculation = (
+                            multi_bellman_value_calculation.dict_reservoirs[area]
+                        )
+                        X = bellman_value_calculation.stock_discretization
+                        V_fut = interp1d(X, V[area][:, self.week + 1])
 
                         _, _, likely_control = (
                             bellman_value_calculation.solve_weekly_problem_with_approximation(
-                                level_i=level_i,
+                                level_i=level_i[area],
                                 V_fut=V_fut,
                                 week=self.week,
                                 scenario=self.scenario,
@@ -557,10 +565,16 @@ class AntaresProblem:
 
         beta, _, xf, y, z, itr, t = self.solve_problem()
 
-        self.remove_bellman_constraints(
-            bellman_value_calculation, additional_constraint, area
-        )
-        cout += beta
+        optimal_controls = {}
+        for area in self.range_reservoir:
+            optimal_controls[area] = -(
+                xf[area]
+                - level_i[area]
+                - multi_bellman_value_calculation.dict_reservoirs[
+                    area
+                ].reservoir_management.reservoir.inflow[self.week, self.scenario]
+            )
+
         if not (take_into_account_z_and_y):
             cout += -sum(z.values()) - sum(y.values())
 
@@ -568,12 +582,6 @@ class AntaresProblem:
             t,
             itr,
             cout,
-            -(
-                min(xf.values())
-                - level_i
-                - bellman_value_calculation.reservoir_management.reservoir.inflow[
-                    self.week, self.scenario
-                ]
-            ),
-            min(xf.values()),
+            optimal_controls,
+            xf,
         )

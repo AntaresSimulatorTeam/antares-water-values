@@ -390,3 +390,11 @@ class BellmanValueCalculation:
                 axis=1,
             )
         return np.mean(V, axis=2)
+
+
+class MultiStockBellmanValueCalculation:
+
+    def __init__(self, list_reservoirs: List[BellmanValueCalculation]) -> None:
+        self.dict_reservoirs = {}
+        for res in list_reservoirs:
+            self.dict_reservoirs[res.reservoir_management.reservoir.area] = res

@@ -11,6 +11,7 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     BellmanValueCalculation,
     MultiStockManagement,
+    MultiStockBellmanValueCalculation,
 )
 from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
 
@@ -115,15 +116,21 @@ def compute_upper_bound(
     controls = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
     for scenario in range(param.len_scenario):
 
-        level_i = bellman_value_calculation.reservoir_management.reservoir.initial_level
+        level_i = {
+            bellman_value_calculation.reservoir_management.reservoir.area: bellman_value_calculation.reservoir_management.reservoir.initial_level
+        }
         for week in range(param.len_week):
             print(f"{scenario} {week}", end="\r")
             m = list_models[TimeScenarioIndex(week, scenario)]
 
             computational_time, itr, current_cost, control, level_i = (
                 m.solve_problem_with_bellman_values(
-                    bellman_value_calculation=bellman_value_calculation,
-                    V=V,
+                    multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+                        [bellman_value_calculation]
+                    ),
+                    V={
+                        bellman_value_calculation.reservoir_management.reservoir.area: V
+                    },
                     level_i=level_i,
                     take_into_account_z_and_y=(
                         week
@@ -132,7 +139,9 @@ def compute_upper_bound(
                 )
             )
             cout += current_cost
-            controls[week, scenario] = control
+            controls[week, scenario] = control[
+                bellman_value_calculation.reservoir_management.reservoir.area
+            ]
             current_itr[week, scenario] = (itr, computational_time)
 
         upper_bound = cout / param.len_scenario

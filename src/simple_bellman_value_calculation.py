@@ -3,6 +3,7 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     BellmanValueCalculation,
     MultiStockManagement,
+    MultiStockBellmanValueCalculation,
 )
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
 from optimization import AntaresProblem
@@ -228,9 +229,11 @@ def calculate_bellman_value_directly(
 
             for i in range(len(X)):
                 _, _, Vu, _, _ = m.solve_problem_with_bellman_values(
-                    bellman_value_calculation=bellman_value_calculation,
-                    V=V,
-                    level_i=X[i],
+                    multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+                        [bellman_value_calculation]
+                    ),
+                    V={reservoir_management.reservoir.area: V},
+                    level_i={reservoir_management.reservoir.area: X[i]},
                     find_optimal_basis=False,
                     take_into_account_z_and_y=True,
                 )

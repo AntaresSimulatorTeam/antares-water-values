@@ -123,6 +123,8 @@ class Reservoir:
 
 
 def generate_mps_file(study_path: str, antares_path: str) -> str:
+    change_hydro_management_to_heuristic(dir_study=study_path)
+
     name_solver = antares_path.split("/")[-1]
     assert "solver" in name_solver
     assert float(name_solver.split("-")[1]) >= 8.7
@@ -138,3 +140,16 @@ def generate_mps_file(study_path: str, antares_path: str) -> str:
     output_folder = idx_line[0].split(" Output folder : ")[1]
     output_folder = output_folder.replace("\\", "/")
     return output_folder
+
+
+def change_hydro_management_to_heuristic(dir_study: str) -> None:
+    hydro_ini = ConfigParser()
+    hydro_ini.read(dir_study + "/input/hydro/hydro.ini")
+
+    for area in hydro_ini["reservoir"].keys():
+        if hydro_ini["reservoir"][area] == "true":
+            hydro_ini["use water"][area] = "false"
+            hydro_ini["use heuristic"][area] = "true"
+
+    with open(dir_study + "/input/hydro/hydro.ini", "w") as configfile:  # save
+        hydro_ini.write(configfile)

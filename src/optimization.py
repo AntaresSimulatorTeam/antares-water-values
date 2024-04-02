@@ -55,7 +55,7 @@ class AntaresProblem:
         week: int,
         path: str,
         itr: int = 1,
-        name_solver: str = "GLOP",
+        name_solver: str = "CLP",
     ) -> None:
         """
         Create a new Xpress problem and load the problem stored in the associated mps file.

@@ -155,7 +155,12 @@ class AntaresProblem:
 
         """
         if len(self.basis) >= 1:
-            u = np.argmin(np.abs(np.array(self.control_basis) - control))
+            gap = np.zeros(len(self.control_basis))
+            for area in control.keys():
+                gap += np.abs(
+                    np.array([u[area] for u in self.control_basis]) - control[area]
+                )
+            u = np.argmin(gap)
             return self.basis[u]
         else:
             return Basis()

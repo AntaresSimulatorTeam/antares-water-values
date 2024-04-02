@@ -41,16 +41,8 @@ class ReservoirManagement:
         ----------
         week:int :
             Week considered
-        param.len_week:int :
+        len_week:int :
             Total number of weeks
-        reservoir:Reservoir :
-            Reservoir considered
-        pen_final:float :
-            Penalty for violating final rule curves
-        pen_low:float :
-            Penalty for violating bottom rule curve
-        pen_high:float :
-            Penalty for violating top rule curve
 
         Returns
         -------
@@ -122,15 +114,6 @@ class RewardApproximation:
     ) -> None:
         """
         Update reward approximation by adding a new cut
-
-        Parameters
-        ----------
-        lamb:float :
-            Total cost that defined reward at the given control
-        beta:float :
-            Dual value associated with the control constraint, gives the slope of reward
-        new_control:float :
-            Control evaluated
 
         Returns
         -------
@@ -270,30 +253,10 @@ class BellmanValueCalculation:
 
         Parameters
         ----------
-        points:list :
-            Breaking points in reward approximation
-        X:np.array :
-            Breaking points in Bellman values approximation
-        inflow:float :
-            Inflow in the reservoir during the week
-        lb:float :
-            Lower possible bound on control
-        ub:float :
-            Upper possible bound on control
         level_i:float :
             Initial level of reservoir at the beginning of the week
-        xmax:float :
-            Upper rule curve at the end of the week
-        xmin:float :
-            Bottom rule curve an the end of the week
-        cap:float :
-            Capacity of the reservoir
-        pen:callable :
-            Penalties for violating rule curves at the end of the week
         V_fut:callable :
             Bellman values at the end of the week
-        Gs:callable :
-            Reward approximation for the current week
 
         Returns
         -------
@@ -366,20 +329,6 @@ class BellmanValueCalculation:
 
         Parameters
         ----------
-        param:AntaresParameter :
-            Time-related parameters
-        reward:list[list[RewardApproximation]] :
-            Reward approximation for every week and every scenario
-        reservoir:Reservoir :
-            Reservoir considered
-        X:np.array :
-            Discretization of stock levels
-        pen_low:float :
-            Penalty for violating bottom rule curve
-        pen_high:float :
-            Penalty for violating top rule curve
-        pen_final:float :
-            Penalty for violating final rule curves
 
         Returns
         -------

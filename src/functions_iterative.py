@@ -31,24 +31,12 @@ def compute_x_multi_scenario(
 
     Parameters
     ----------
-    param:AntaresParameter :
-        Time-related parameters
-    reservoir:Reservoir :
-        Reservoir considered
-    X:np.array :
-        Discretization of stock levels
+    bellman_value_calculation:BellmanValueCalculation:
+        Parameters to use to calculate Bellman values
     V:np.array :
         Bellman values
-    reward:list[list[RewardApproximation]] :
-        Reward approximation for every week and every scenario
-    pen_low:float :
-        Penalty for violating bottom rule curve
-    pen_high:float :
-        Penalty for violating top rule curve
-    pen_final:float :
-        Penalty for violating final rule curves
     itr:int :
-        Iteration of iterative algorithm
+        Iteration of iterative algorithm used to generate seed
 
     Returns
     -------
@@ -109,32 +97,20 @@ def compute_upper_bound(
 
     Parameters
     ----------
-    param:AntaresParameter :
-        Time-related parameters
-    reservoir:Reservoir :
-        Reservoir considered
-    list_models:list[list[AntaresProblem]] :
+    bellman_value_calculation: BellmanValueCalculation :
+        Parameters to use to calculate Bellman values
+    list_models:Dict[TimeScenarioIndex, AntaresProblem] :
         Optimization problems for every week and every scenario
-    X:np.array :
-        Discretization of Bellman values
-    V:np.array :
+    V:Array2D :
         Bellman values
-    G:list[list[RewardApproximation]] :
-        Reward approximation for every week and every scenario
-    pen_low:float :
-        Penalty for violating bottom rule curve
-    pen_high:float :
-        Penalty for violating top rule curve
-    pen_final:float :
-        Penalty for violating final rule curves
 
     Returns
     -------
     upper_bound:float :
         Upper bound on the overall problem
-    controls:np.array :
+    controls:Array2D :
         Optimal controls for every week and every scenario
-    current_itr:np.array :
+    current_itr:Array2D :
         Time and simplex iterations used to solve the problem
     """
     param = bellman_value_calculation.time_scenario_param
@@ -186,20 +162,20 @@ def calculate_reward(
     ----------
     param:AntaresParameter :
         Time-related parameters
-    controls:list[list[float]] :
+    controls:Array2D :
         Set of controls to evaluate
-    list_models:list[list[AntaresProblem]] :
+    list_models:Dict[TimeScenarioIndex, AntaresProblem] :
         Optimization problems for every week and every scenario
-    G:list[list[RewardApproximation]] :
+    G:Dict[TimeScenarioIndex, RewardApproximation] :
         Reward approximation to update for every week and every scenario
     i:int :
         Iteration of iterative algorithm
 
     Returns
     -------
-    current_itr:np.array :
+    current_itr:Array3D :
         Time and simplex iterations used to solve the problem
-    G:list[list[RewardApproximation]] :
+    G:Dict[TimeScenarioIndex, RewardApproximation] :
         Updated reward approximation
     """
 
@@ -246,22 +222,16 @@ def itr_control(
 
     Parameters
     ----------
-    param:AntaresParameter :
+    param:TimeScenarioParameter :
         Time-related parameters for the Antares study
-    reservoir:Reservoir :
+    reservoir_management:ReservoirManagement :
         Reservoir considered for Bellman values
     output_path:str :
         Path to mps files describing optimization problems
-    pen_low:float :
-        Penalty for violating bottom rule curve
-    pen_high:float :
-        Penalty for violating top rule curve
-    X:np.array :
+    X:Array1D :
         Discretization of sotck levels for Bellman values
     N:int :
         Maximum number of iteration to do
-    pen_final:float :
-        Penalty for violating final rule curves
     tol_gap:float :
         Relative tolerance gap for the termination of the algorithm
 
@@ -269,7 +239,7 @@ def itr_control(
     -------
     V:np.array :
         Bellman values
-    G:list[list[RewardApproximation]] :
+    G:Dict[TimeScenarioIndex, RewardApproximation] :
         Reward approximation
     itr:np.array :
         Time and simplex iterations used to solve optimization problems at each iteration

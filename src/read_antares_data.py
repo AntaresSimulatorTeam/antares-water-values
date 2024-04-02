@@ -35,20 +35,10 @@ class Reservoir:
 
         Parameters
         ----------
-        param:AntaresParameter :
-            Time-related parameters
-        capacity:float :
-            Capacity of the reservoir (in MWh)
-        efficiency:float :
-            Efficiency of the pumping (between 0 and 1)
         dir_study:str :
             Path to the Antares study
         name_area:str :
             Name of the area where is located the reservoir
-        name:str :
-            Name of the reservoir
-        final_level:bool :
-            True if final level should be egal to initial level (Default value = True)
 
         Returns
         -------

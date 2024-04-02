@@ -30,9 +30,9 @@ class Basis:
         Parameters
         ----------
         rstatus:list :
-            Row basis obtained with problem.getbasis() (Default value = [])
+            Row basis (Default value = [])
         cstatus:list :
-            Column basis obtained with problem.getbasis() (Default value = [])
+            Column basis (Default value = [])
 
         Returns
         -------
@@ -56,7 +56,7 @@ class AntaresProblem:
 
         Parameters
         ----------
-        year:int :
+        scenario:int :
             Scenario considered
         week:int :
             Week considered
@@ -134,14 +134,8 @@ class AntaresProblem:
         ----------
         param:AntaresParameter :
             Time-related parameters
-        reservoir:Reservoir :
-            Considered reservoir
-        pen_low:float :
-            Penalty for violating bottom rule curve (Default value = 0)
-        pen_high:float :
-            Penalty for violating top rule curve (Default value = 0)
-        pen_final:float :
-            Penalty for violating rule curves at the end of the year (Default value = 0)
+        reservoir_management:ReservoirManagement :
+            Considered reservoir and its paramters
 
         Returns
         -------

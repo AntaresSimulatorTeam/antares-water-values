@@ -2,6 +2,7 @@ from calculate_reward_and_bellman_values import (
     RewardApproximation,
     ReservoirManagement,
     BellmanValueCalculation,
+    MultiStockManagement,
 )
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
 from optimization import AntaresProblem
@@ -46,12 +47,13 @@ def calculate_complete_reward(
             m = AntaresProblem(scenario=scenario, week=week, path=output_path, itr=1)
             m.create_weekly_problem_itr(
                 param=param,
-                reservoir_management=reservoir_management,
+                multi_stock_management=MultiStockManagement([reservoir_management]),
             )
 
             for u in controls[week]:
                 beta, lamb, itr, computation_time = m.solve_with_predefined_controls(
-                    control=u, prev_basis=basis_0
+                    control={reservoir_management.reservoir.area: u},
+                    prev_basis=basis_0,
                 )
                 if m.store_basis:
                     basis_0 = m.basis[-1]
@@ -59,8 +61,9 @@ def calculate_complete_reward(
                     basis_0 = Basis()
 
                 reward[TimeScenarioIndex(week, scenario)].update_reward_approximation(
-                    slope_new_cut=-lamb,
-                    intercept_new_cut=-beta + lamb * u,
+                    slope_new_cut=-lamb[reservoir_management.reservoir.area],
+                    intercept_new_cut=-beta
+                    + lamb[reservoir_management.reservoir.area] * u,
                 )
 
     return reward
@@ -115,7 +118,7 @@ def calculate_bellman_value_with_precalculated_reward(
             )
             m.create_weekly_problem_itr(
                 param=param,
-                reservoir_management=reservoir_management,
+                multi_stock_management=MultiStockManagement([reservoir_management]),
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 
@@ -195,7 +198,7 @@ def calculate_bellman_value_directly(
             )
             m.create_weekly_problem_itr(
                 param=param,
-                reservoir_management=reservoir_management,
+                multi_stock_management=MultiStockManagement([reservoir_management]),
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 

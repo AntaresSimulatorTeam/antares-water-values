@@ -10,6 +10,7 @@ from calculate_reward_and_bellman_values import (
     RewardApproximation,
     ReservoirManagement,
     BellmanValueCalculation,
+    MultiStockManagement,
 )
 from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
 
@@ -144,6 +145,7 @@ def calculate_reward(
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     G: Dict[TimeScenarioIndex, RewardApproximation],
     i: int,
+    name_reservoir: str,
 ) -> tuple[Array3D, Dict[TimeScenarioIndex, RewardApproximation]]:
     """
     Evaluate reward for a set of given controls for each week and each scenario to update reward approximation.
@@ -179,7 +181,7 @@ def calculate_reward(
             beta, lamb, itr, computation_time = list_models[
                 TimeScenarioIndex(week, scenario)
             ].solve_with_predefined_controls(
-                control=float(controls[week][scenario]),
+                control={name_reservoir: float(controls[week][scenario])},
                 prev_basis=basis_0 if i == 0 else Basis(),
             )
             if list_models[TimeScenarioIndex(week, scenario)].store_basis:
@@ -188,8 +190,9 @@ def calculate_reward(
                 basis_0 = Basis()
 
             G[TimeScenarioIndex(week, scenario)].update_reward_approximation(
-                slope_new_cut=-lamb,
-                intercept_new_cut=-beta + lamb * controls[week][scenario],
+                slope_new_cut=-lamb[name_reservoir],
+                intercept_new_cut=-beta
+                + lamb[name_reservoir] * controls[week][scenario],
             )
 
             current_itr[week, scenario] = (itr, computation_time)
@@ -273,7 +276,12 @@ def itr_control(
         traj.append(np.array(initial_x))
 
         current_itr, G = calculate_reward(
-            param=param, controls=controls, list_models=list_models, G=G, i=i
+            param=param,
+            controls=controls,
+            list_models=list_models,
+            G=G,
+            i=i,
+            name_reservoir=reservoir_management.reservoir.area,
         )
         itr_tot.append(current_itr)
 
@@ -346,7 +354,7 @@ def init_iterative_calculation(
             )
             m.create_weekly_problem_itr(
                 param=param,
-                reservoir_management=reservoir_management,
+                multi_stock_management=MultiStockManagement([reservoir_management]),
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 

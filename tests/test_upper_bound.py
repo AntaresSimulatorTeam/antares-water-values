@@ -8,6 +8,7 @@ from functions_iterative import (
 )
 from optimization import AntaresProblem
 from read_antares_data import Reservoir
+from calculate_reward_and_bellman_values import MultiStockManagement
 import pytest
 import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
@@ -25,7 +26,8 @@ def test_upper_bound() -> None:
         force_final_level=True,
     )
     problem.create_weekly_problem_itr(
-        param=param, reservoir_management=reservoir_management
+        param=param,
+        multi_stock_management=MultiStockManagement([reservoir_management]),
     )
     bellman_value_calculation = BellmanValueCalculation(
         param=param,
@@ -101,7 +103,8 @@ def test_upper_bound_with_xpress() -> None:
             force_final_level=True,
         )
         problem.create_weekly_problem_itr(
-            param=param, reservoir_management=reservoir_management
+            param=param,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
         )
         bellman_value_calculation = BellmanValueCalculation(
             param=param,

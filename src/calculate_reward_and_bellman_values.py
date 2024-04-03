@@ -1,7 +1,8 @@
 from read_antares_data import TimeScenarioParameter, Reservoir, TimeScenarioIndex
 from scipy.interpolate import interp1d
 import numpy as np
-from type_definition import Array1D, Array2D, Optional, Dict, Callable, List
+from type_definition import Array1D, Array2D, Optional, Dict, Callable, List, Iterable
+from itertools import product
 
 
 class ReservoirManagement:
@@ -398,3 +399,11 @@ class MultiStockBellmanValueCalculation:
         self.dict_reservoirs = {}
         for res in list_reservoirs:
             self.dict_reservoirs[res.reservoir_management.reservoir.area] = res
+
+    def get_product_stock_discretization(self) -> Iterable:
+        return product(
+            *[
+                [i for i in range(len(res_man.stock_discretization))]
+                for res_man in self.dict_reservoirs.values()
+            ]
+        )

@@ -11,7 +11,7 @@ import pytest
 import numpy as np
 
 
-def test_bellman_value_precalculated_reward() -> None:
+def test_bellman_value_exact() -> None:
 
     param = TimeScenarioParameter(len_week=5, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")

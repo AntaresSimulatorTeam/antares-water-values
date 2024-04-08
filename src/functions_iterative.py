@@ -80,7 +80,7 @@ def compute_x_multi_scenario(
     return (initial_x, controls)
 
 
-def compute_upper_bound(
+def compute_upper_bound_with_stored_models(
     bellman_value_calculation: BellmanValueCalculation,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     V: Array2D,
@@ -118,6 +118,14 @@ def compute_upper_bound(
         for week in range(param.len_week):
             print(f"{scenario} {week}", end="\r")
             m = list_models[TimeScenarioIndex(week, scenario)]
+            basis = find_basis(
+                bellman_value_calculation,
+                V[:, week + 1],
+                scenario,
+                level_i,
+                week,
+                m,
+            )
 
             computational_time, itr, current_cost, control, level_i = (
                 m.solve_problem_with_bellman_values(
@@ -128,6 +136,7 @@ def compute_upper_bound(
                         week
                         == bellman_value_calculation.time_scenario_param.len_week - 1
                     ),
+                    basis=basis,
                 )
             )
             cout += current_cost
@@ -289,7 +298,7 @@ def itr_control(
         V_fut = interp1d(X, V[:, 0])
         V0 = V_fut(reservoir_management.reservoir.initial_level)
 
-        upper_bound, controls, current_itr = compute_upper_bound(
+        upper_bound, controls, current_itr = compute_upper_bound_with_stored_models(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,
@@ -388,3 +397,130 @@ def init_iterative_calculation(
         gap,
         G,
     )
+
+
+def create_model(
+    param: TimeScenarioParameter,
+    reservoir_management: ReservoirManagement,
+    output_path: str,
+    week: int,
+    scenario: int,
+    solver: str,
+) -> AntaresProblem:
+    m = AntaresProblem(
+        scenario=scenario, week=week, path=output_path, itr=1, name_solver=solver
+    )
+    m.create_weekly_problem_itr(
+        param=param,
+        reservoir_management=reservoir_management,
+    )
+
+    return m
+
+
+def find_basis(
+    bellman_value_calculation: BellmanValueCalculation,
+    V: Array1D,
+    scenario: int,
+    level_i: float,
+    week: int,
+    m: AntaresProblem,
+) -> Basis:
+
+    basis = Basis()
+
+    if len(m.control_basis) >= 1:
+        if len(m.control_basis) >= 2:
+            V_fut = interp1d(
+                bellman_value_calculation.stock_discretization,
+                V,
+            )
+
+            _, _, likely_control = (
+                bellman_value_calculation.solve_weekly_problem_with_approximation(
+                    level_i=level_i,
+                    V_fut=V_fut,
+                    week=week,
+                    scenario=scenario,
+                )
+            )
+        else:
+            likely_control = 0
+        basis = m.find_closest_basis(likely_control)
+    return basis
+
+
+def compute_upper_bound_without_stored_models(
+    bellman_value_calculation: BellmanValueCalculation,
+    V: Array2D,
+    output_path: str,
+    store_basis: bool = False,
+    solver: str = "CLP",
+) -> tuple[float, Array2D, Array3D]:
+    """
+    Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
+
+    Parameters
+    ----------
+    bellman_value_calculation: BellmanValueCalculation :
+        Parameters to use to calculate Bellman values
+    list_models:Dict[TimeScenarioIndex, AntaresProblem] :
+        Optimization problems for every week and every scenario
+    V:Array2D :
+        Bellman values
+
+    Returns
+    -------
+    upper_bound:float :
+        Upper bound on the overall problem
+    controls:Array2D :
+        Optimal controls for every week and every scenario
+    current_itr:Array2D :
+        Time and simplex iterations used to solve the problem
+    """
+    param = bellman_value_calculation.time_scenario_param
+
+    current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
+
+    cout = 0.0
+    controls = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
+
+    dict_basis: Dict[int, Basis] = {}
+    for scenario in range(param.len_scenario):
+        dict_basis[scenario] = Basis()
+
+    for scenario in range(param.len_scenario):
+
+        level_i = bellman_value_calculation.reservoir_management.reservoir.initial_level
+        for week in range(param.len_week):
+            print(f"{scenario} {week}", end="\r")
+
+            m = create_model(
+                param=param,
+                reservoir_management=bellman_value_calculation.reservoir_management,
+                output_path=output_path,
+                week=week,
+                scenario=scenario,
+                solver=solver,
+            )
+
+            computational_time, itr, current_cost, control, level_i = (
+                m.solve_problem_with_bellman_values(
+                    bellman_value_calculation=bellman_value_calculation,
+                    V=V,
+                    level_i=level_i,
+                    take_into_account_z_and_y=(
+                        week
+                        == bellman_value_calculation.time_scenario_param.len_week - 1
+                    ),
+                    basis=dict_basis[scenario],
+                )
+            )
+            if store_basis:
+                dict_basis[scenario] = m.find_closest_basis(0)
+            cout += current_cost
+            controls[week, scenario] = control
+            current_itr[week, scenario] = (itr, computational_time)
+
+        upper_bound = cout / param.len_scenario
+    return (upper_bound, controls, current_itr)

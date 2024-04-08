@@ -83,7 +83,7 @@ class AntaresProblem:
 
         solver = pywraplp.Solver.CreateSolver(name_solver)
         assert solver, "Couldn't find any supported solver"
-        solver.EnableOutput()
+        solver.SuppressOutput()
 
         parameters = pywraplp.MPSolverParameters()
         if name_solver == "XPRESS_LP":
@@ -457,7 +457,7 @@ class AntaresProblem:
         V: Array2D,
         level_i: float,
         take_into_account_z_and_y: bool,
-        find_optimal_basis: bool = True,
+        basis: Basis = Basis(),
     ) -> tuple[float, int, float, float, float]:
 
         cout = 0.0
@@ -472,23 +472,8 @@ class AntaresProblem:
             area=bellman_value_calculation.reservoir_management.reservoir.area,
         )
 
-        if find_optimal_basis:
-            if len(self.control_basis) >= 1:
-                if len(self.control_basis) >= 2:
-                    V_fut = interp1d(X, V[:, self.week + 1])
-
-                    _, _, likely_control = (
-                        bellman_value_calculation.solve_weekly_problem_with_approximation(
-                            level_i=level_i,
-                            V_fut=V_fut,
-                            week=self.week,
-                            scenario=self.scenario,
-                        )
-                    )
-                else:
-                    likely_control = 0
-                basis = self.find_closest_basis(likely_control)
-                self.load_basis(basis)
+        if basis.not_empty():
+            self.load_basis(basis)
 
         beta, _, xf, y, z, itr, t = self.solve_problem()
 

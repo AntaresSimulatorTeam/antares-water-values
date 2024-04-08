@@ -40,7 +40,7 @@ def calculate_bellman_values(
 
     if method == "direct":
         # Compute Bellman values directly
-        vb = calculate_bellman_value_directly(
+        vb, _, _ = calculate_bellman_value_directly(
             param=param,
             reservoir_management=reservoir_management,
             output_path=output_path,

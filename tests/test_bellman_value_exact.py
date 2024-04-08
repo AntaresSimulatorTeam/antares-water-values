@@ -25,7 +25,7 @@ def test_bellman_value_exact() -> None:
     xNsteps = 20
     X = np.linspace(0, reservoir.capacity, num=xNsteps)
 
-    vb = calculate_bellman_value_directly(
+    vb, _, _ = calculate_bellman_value_directly(
         param=param,
         reservoir_management=reservoir_management,
         output_path="test_data/one_node",

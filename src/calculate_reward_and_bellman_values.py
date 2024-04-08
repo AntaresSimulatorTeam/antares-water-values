@@ -226,9 +226,9 @@ class BellmanValueCalculation:
     def __init__(
         self,
         param: TimeScenarioParameter,
-        reward: Dict[TimeScenarioIndex, RewardApproximation],
         reservoir_management: ReservoirManagement,
         stock_discretization: Array1D,
+        reward: Dict[TimeScenarioIndex, RewardApproximation] = {},
     ) -> None:
         self.time_scenario_param = param
         self.reward_approximation = reward
@@ -237,18 +237,19 @@ class BellmanValueCalculation:
 
         self.reward_fn: Dict[TimeScenarioIndex, Callable] = {}
         self.penalty_fn: Dict[TimeScenarioIndex, Callable] = {}
-        for week in range(self.time_scenario_param.len_week):
-            for scenario in range(self.time_scenario_param.len_scenario):
-                self.reward_fn[TimeScenarioIndex(week=week, scenario=scenario)] = (
-                    self.reward_approximation[
-                        TimeScenarioIndex(week=week, scenario=scenario)
-                    ].reward_function()
-                )
-                self.penalty_fn[TimeScenarioIndex(week=week, scenario=scenario)] = (
-                    self.reservoir_management.get_penalty(
-                        week=week, len_week=param.len_week
+        if reward != {}:
+            for week in range(self.time_scenario_param.len_week):
+                for scenario in range(self.time_scenario_param.len_scenario):
+                    self.reward_fn[TimeScenarioIndex(week=week, scenario=scenario)] = (
+                        self.reward_approximation[
+                            TimeScenarioIndex(week=week, scenario=scenario)
+                        ].reward_function()
                     )
-                )
+                    self.penalty_fn[TimeScenarioIndex(week=week, scenario=scenario)] = (
+                        self.reservoir_management.get_penalty(
+                            week=week, len_week=param.len_week
+                        )
+                    )
 
     def solve_weekly_problem_with_approximation(
         self,

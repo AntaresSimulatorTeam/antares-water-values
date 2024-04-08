@@ -1,6 +1,6 @@
 from functions_iterative import (
     TimeScenarioParameter,
-    compute_upper_bound,
+    compute_upper_bound_with_stored_models,
     RewardApproximation,
     TimeScenarioIndex,
     ReservoirManagement,
@@ -57,7 +57,7 @@ def test_upper_bound() -> None:
     assert len(problem.solver.constraints()) == 3535
     assert len(problem.solver.variables()) == 3533
 
-    upper_bound, controls, _ = compute_upper_bound(
+    upper_bound, controls, _ = compute_upper_bound_with_stored_models(
         bellman_value_calculation=bellman_value_calculation,
         list_models=list_models,
         V=V,
@@ -69,7 +69,7 @@ def test_upper_bound() -> None:
     assert len(problem.solver.variables()) == 3533
 
     V[:, 1] = np.linspace(-5e9, -3e9, num=20)
-    upper_bound, controls, _ = compute_upper_bound(
+    upper_bound, controls, _ = compute_upper_bound_with_stored_models(
         bellman_value_calculation=bellman_value_calculation,
         list_models=list_models,
         V=V,
@@ -133,7 +133,7 @@ def test_upper_bound_with_xpress() -> None:
         assert len(problem.solver.constraints()) == 3535
         assert len(problem.solver.variables()) == 3533
 
-        upper_bound, controls, _ = compute_upper_bound(
+        upper_bound, controls, _ = compute_upper_bound_with_stored_models(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,
@@ -145,7 +145,7 @@ def test_upper_bound_with_xpress() -> None:
         assert len(problem.solver.variables()) == 3533
 
         V[:, 1] = np.linspace(-5e9, -3e9, num=20)
-        upper_bound, controls, _ = compute_upper_bound(
+        upper_bound, controls, _ = compute_upper_bound_with_stored_models(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,

@@ -8,8 +8,13 @@ from optimization import AntaresProblem
 from optimization import Basis
 import numpy as np
 from scipy.interpolate import interp1d
-from functions_iterative import compute_upper_bound
-from type_definition import Array1D, Array2D, Dict
+from functions_iterative import (
+    compute_upper_bound_without_stored_models,
+    create_model,
+    compute_upper_bound_with_stored_models,
+)
+from time import time
+from type_definition import Array1D, Array2D, Dict, Array4D
 
 
 def calculate_complete_reward(
@@ -138,7 +143,7 @@ def calculate_bellman_value_with_precalculated_reward(
     V_fut = interp1d(X, V[:, 0])
     V0 = V_fut(reservoir_management.reservoir.initial_level)
 
-    upper_bound, controls, current_itr = compute_upper_bound(
+    upper_bound, controls, current_itr = compute_upper_bound_with_stored_models(
         bellman_value_calculation=bellman_value_calculation,
         list_models=list_models,
         V=V,
@@ -156,7 +161,7 @@ def calculate_bellman_value_directly(
     output_path: str,
     X: Array1D,
     solver: str = "CLP",
-) -> Array2D:
+) -> tuple[Array2D, Array2D, Array4D]:
     """
     Algorithm to evaluate Bellman values directly.
 
@@ -181,68 +186,68 @@ def calculate_bellman_value_directly(
     -------
     V:np.array :
         Bellman values
+    tot_t: np.array :
+        Computing time for each week
+    pert : np.array :
+        Number of simplex iterations for each week and each scenario
     """
-
-    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
-    for week in range(param.len_week):
-        for scenario in range(param.len_scenario):
-            m = AntaresProblem(
-                scenario=scenario,
-                week=week,
-                path=output_path,
-                itr=1,
-                name_solver=solver,
-            )
-            m.create_weekly_problem_itr(
-                param=param,
-                reservoir_management=reservoir_management,
-            )
-            list_models[TimeScenarioIndex(week, scenario)] = m
-
-    reward: Dict[TimeScenarioIndex, RewardApproximation] = {}
-    for week in range(param.len_week):
-        for scenario in range(param.len_scenario):
-            r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week],
-                ub_control=reservoir_management.reservoir.max_generating[week],
-                ub_reward=0,
-            )
-            reward[TimeScenarioIndex(week, scenario)] = r
 
     bellman_value_calculation = BellmanValueCalculation(
         param=param,
-        reward=reward,
         reservoir_management=reservoir_management,
         stock_discretization=X,
     )
 
+    dict_basis: Dict[int, Basis] = {}
+    for scenario in range(param.len_scenario):
+        dict_basis[scenario] = Basis()
+
     V = np.zeros((len(X), param.len_week + 1), dtype=np.float32)
+    tot_t = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
+    perf = np.zeros((param.len_week, param.len_scenario, len(X), 2), dtype=np.float32)
 
     for week in range(param.len_week - 1, -1, -1):
         for scenario in range(param.len_scenario):
             print(f"{week} {scenario}", end="\r")
-            m = list_models[TimeScenarioIndex(week, scenario)]
+            debut = time()
+            m = create_model(
+                param, reservoir_management, output_path, week, scenario, solver
+            )
 
             for i in range(len(X)):
-                _, _, Vu, _, _ = m.solve_problem_with_bellman_values(
+                if i == 1:
+                    m.solver_parameters.SetIntegerParam(
+                        m.solver_parameters.PRESOLVE, m.solver_parameters.PRESOLVE_OFF
+                    )
+                t, itr, Vu, _, _ = m.solve_problem_with_bellman_values(
                     bellman_value_calculation=bellman_value_calculation,
                     V=V,
                     level_i=X[i],
-                    find_optimal_basis=False,
                     take_into_account_z_and_y=True,
+                    basis=dict_basis[scenario] if m.store_basis else Basis(),
                 )
+
+                if m.store_basis:
+                    basis = m.basis[-1]
+                    dict_basis[scenario] = basis
+
                 V[i, week] += -Vu / param.len_scenario
+                perf[week, scenario, i] = (t, itr)
+            fin = time()
+            tot_t[week, scenario] = fin - debut
 
     V_fut = interp1d(X, V[:, 0])
     V0 = V_fut(reservoir_management.reservoir.initial_level)
 
-    upper_bound, controls, current_itr = compute_upper_bound(
+    upper_bound, controls, current_itr = compute_upper_bound_without_stored_models(
         bellman_value_calculation=bellman_value_calculation,
-        list_models=list_models,
         V=V,
+        output_path=output_path,
+        store_basis=m.store_basis,
+        solver=solver,
     )
 
     gap = upper_bound + V0
     print(gap, upper_bound, -V0)
 
-    return V
+    return V, tot_t, perf

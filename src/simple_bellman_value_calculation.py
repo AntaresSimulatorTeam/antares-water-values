@@ -14,6 +14,8 @@ from functions_iterative import (
     compute_upper_bound_with_stored_models,
 )
 from time import time
+from multiprocessing import Process, Pool
+from functools import partial
 from type_definition import Array1D, Array2D, Dict, Array4D
 
 
@@ -44,30 +46,75 @@ def calculate_complete_reward(
         ]
     )
 
-    for scenario in range(param.len_scenario):
-        basis_0 = Basis([], [])
-        for week in range(param.len_week):
-            print(f"{scenario} {week}", end="\r")
-            m = AntaresProblem(scenario=scenario, week=week, path=output_path, itr=1)
-            m.create_weekly_problem_itr(
+    with Pool() as pool:
+        print(pool)
+        scenario_reward = pool.map(
+            partial(
+                calculate_reward_for_one_scenario,
                 param=param,
                 reservoir_management=reservoir_management,
+                output_path=output_path,
+                controls=controls,
+            ),
+            range(param.len_scenario),
+        )
+
+    for scenario in range(param.len_scenario):
+        for week in range(param.len_week):
+            reward[TimeScenarioIndex(week, scenario)] = scenario_reward[scenario][
+                TimeScenarioIndex(week, scenario)
+            ]
+
+    return reward
+
+
+def calculate_reward_for_one_scenario(
+    scenario: int,
+    param: TimeScenarioParameter,
+    reservoir_management: ReservoirManagement,
+    output_path: str,
+    controls: Array2D,
+) -> Dict[TimeScenarioIndex, RewardApproximation]:
+
+    reward: Dict[TimeScenarioIndex, RewardApproximation] = {}
+    for week in range(param.len_week):
+        r = RewardApproximation(
+            lb_control=-reservoir_management.reservoir.max_pumping[week],
+            ub_control=reservoir_management.reservoir.max_generating[week],
+            ub_reward=float("inf"),
+        )
+        reward[TimeScenarioIndex(week, scenario)] = r
+
+    basis_0 = Basis([], [])
+    for week in range(param.len_week):
+        print(f"{scenario} {week}")
+        m = AntaresProblem(
+            scenario=scenario,
+            week=week,
+            path=output_path,
+            itr=1,
+            name_scenario=(
+                param.name_scenario[scenario] if len(param.name_scenario) > 1 else -1
+            ),
+        )
+        m.create_weekly_problem_itr(
+            param=param,
+            reservoir_management=reservoir_management,
+        )
+
+        for u in controls[week]:
+            beta, lamb, itr, computation_time = m.solve_with_predefined_controls(
+                control=u, prev_basis=basis_0
             )
+            if m.store_basis:
+                basis_0 = m.basis[-1]
+            else:
+                basis_0 = Basis([], [])
 
-            for u in controls[week]:
-                beta, lamb, itr, computation_time = m.solve_with_predefined_controls(
-                    control=u, prev_basis=basis_0
-                )
-                if m.store_basis:
-                    basis_0 = m.basis[-1]
-                else:
-                    basis_0 = Basis([], [])
-
-                reward[TimeScenarioIndex(week, scenario)].update_reward_approximation(
-                    slope_new_cut=-lamb,
-                    intercept_new_cut=-beta + lamb * u,
-                )
-
+            reward[TimeScenarioIndex(week, scenario)].update_reward_approximation(
+                slope_new_cut=-lamb,
+                intercept_new_cut=-beta + lamb * u,
+            )
     return reward
 
 
@@ -78,10 +125,7 @@ def calculate_bellman_value_with_precalculated_reward(
     output_path: str,
     X: Array1D,
     solver: str = "CLP",
-) -> tuple[
-    Array2D,
-    Dict[TimeScenarioIndex, RewardApproximation],
-]:
+) -> tuple[Array2D, Dict[TimeScenarioIndex, RewardApproximation], Array2D]:
     """
     Algorithm to evaluate Bellman values. First reward is approximated thanks to multiple simulations. Then, Bellman values are computed with the reward approximation.
 
@@ -106,23 +150,9 @@ def calculate_bellman_value_with_precalculated_reward(
         Bellman values
     G:Dict[TimeScenarioIndex, RewardApproximation] :
         Reward approximation
+    controls:Array2D :
+        Controls found in upper bound computation
     """
-
-    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
-    for week in range(param.len_week):
-        for scenario in range(param.len_scenario):
-            m = AntaresProblem(
-                scenario=scenario,
-                week=week,
-                path=output_path,
-                itr=1,
-                name_solver=solver,
-            )
-            m.create_weekly_problem_itr(
-                param=param,
-                reservoir_management=reservoir_management,
-            )
-            list_models[TimeScenarioIndex(week, scenario)] = m
 
     reward = calculate_complete_reward(
         len_controls=len_controls,
@@ -143,16 +173,16 @@ def calculate_bellman_value_with_precalculated_reward(
     V_fut = interp1d(X, V[:, 0])
     V0 = V_fut(reservoir_management.reservoir.initial_level)
 
-    upper_bound, controls, current_itr = compute_upper_bound_with_stored_models(
+    upper_bound, controls, current_itr = compute_upper_bound_without_stored_models(
         bellman_value_calculation=bellman_value_calculation,
-        list_models=list_models,
         V=V,
+        output_path=output_path,
     )
 
     gap = upper_bound + V0
     print(gap, upper_bound, -V0)
 
-    return (V, reward)
+    return (V, reward, controls)
 
 
 def calculate_bellman_value_directly(

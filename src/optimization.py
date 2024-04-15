@@ -168,6 +168,7 @@ class AntaresProblem:
         self,
         param: TimeScenarioParameter,
         reservoir_management: ReservoirManagement,
+        overflow: bool = True,
     ) -> None:
         """
         Modify the Xpress problem to take into account reservoir constraints and manage reservoir with Bellman values and penalties on rule curves.
@@ -235,13 +236,22 @@ class AntaresProblem:
             name="u",
         )
 
-        model.Add(
-            x_s_1
-            <= x_s
-            - U
-            + reservoir_management.reservoir.inflow[self.week, self.scenario],
-            name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-        )
+        if overflow:
+            model.Add(
+                x_s_1
+                <= x_s
+                - U
+                + reservoir_management.reservoir.inflow[self.week, self.scenario],
+                name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+            )
+        else:
+            model.Add(
+                x_s_1
+                == x_s
+                - U
+                + reservoir_management.reservoir.inflow[self.week, self.scenario],
+                name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+            )
 
         y = model.Var(
             lb=0, ub=model.Infinity(), integer=False, name="y"

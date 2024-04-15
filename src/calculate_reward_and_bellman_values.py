@@ -247,6 +247,7 @@ class BellmanValueCalculation:
         scenario: int,
         level_i: float,
         V_fut: Callable,
+        overflow: bool = True,
     ) -> tuple[float, float, float]:
         """
         Optimize control of reservoir during a week based on reward approximation and current Bellman values.
@@ -279,19 +280,19 @@ class BellmanValueCalculation:
 
         for i_fut in range(len(X)):
             u = -X[i_fut] + level_i + stock.inflow[week, scenario]
-            if -stock.max_pumping[week] <= u <= stock.max_generating[week]:
-                G = reward_fn(u)
-                penalty = pen(X[i_fut])
-                if (G + V_fut(X[i_fut]) + penalty) > Vu:
-                    Vu = G + V_fut(X[i_fut]) + penalty
-                    xf = X[i_fut]
-                    control = u
+            if -stock.max_pumping[week] <= u:
+                if overflow or u <= stock.max_generating[week]:
+                    u = min(u, stock.max_generating[week])
+                    G = reward_fn(u)
+                    penalty = pen(X[i_fut])
+                    if (G + V_fut(X[i_fut]) + penalty) > Vu:
+                        Vu = G + V_fut(X[i_fut]) + penalty
+                        xf = X[i_fut]
+                        control = u
 
         for u in range(len(points)):
-            state_fut = min(
-                stock.capacity, level_i - points[u] + stock.inflow[week, scenario]
-            )
-            if 0 <= state_fut:
+            state_fut = level_i - points[u] + stock.inflow[week, scenario]
+            if 0 <= state_fut <= stock.capacity:
                 penalty = pen(state_fut)
                 G = reward_fn(points[u])
                 if (G + V_fut(state_fut) + penalty) > Vu:
@@ -326,6 +327,7 @@ class BellmanValueCalculation:
     def calculate_VU(
         self,
         final_values: Array1D = np.zeros(1, dtype=np.float32),
+        overflow: bool = True,
     ) -> Array2D:
         """
         Calculate Bellman values for every week based on reward approximation
@@ -360,6 +362,7 @@ class BellmanValueCalculation:
                         V_fut=V_fut,
                         week=week,
                         scenario=scenario,
+                        overflow=overflow,
                     )
 
                     V[i, week, scenario] = Vu + V[i, week, scenario]

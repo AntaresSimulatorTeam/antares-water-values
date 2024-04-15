@@ -84,7 +84,8 @@ def test_basis_with_upper_bound() -> None:
             force_final_level=True,
         )
         problem.create_weekly_problem_itr(
-            param=param, reservoir_management=reservoir_management
+            param=param,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
         )
 
         list_models = {TimeScenarioIndex(0, 0): problem}

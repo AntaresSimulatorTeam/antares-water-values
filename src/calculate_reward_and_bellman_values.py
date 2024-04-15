@@ -95,6 +95,11 @@ class ReservoirManagement:
 class MultiStockManagement:
 
     def __init__(self, list_reservoirs: List[ReservoirManagement]) -> None:
+        """Describes reservoir management for all stocks
+
+        Args:
+            list_reservoirs (List[ReservoirManagement]): List of reservoir management
+        """
         self.dict_reservoirs = {}
         for res in list_reservoirs:
             self.dict_reservoirs[res.reservoir.area] = res

@@ -323,7 +323,10 @@ class BellmanValueCalculation:
         )
         return (Vu, xf, control)
 
-    def calculate_VU(self) -> Array2D:
+    def calculate_VU(
+        self,
+        final_values: Array1D = np.zeros(1, dtype=np.float32),
+    ) -> Array2D:
         """
         Calculate Bellman values for every week based on reward approximation
 
@@ -342,6 +345,9 @@ class BellmanValueCalculation:
                 self.time_scenario_param.len_scenario,
             )
         )
+        if len(final_values) == len(X):
+            for scenario in range(self.time_scenario_param.len_scenario):
+                V[:, self.time_scenario_param.len_week, scenario] = final_values
 
         for week in range(self.time_scenario_param.len_week - 1, -1, -1):
 

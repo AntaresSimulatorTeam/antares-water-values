@@ -408,7 +408,14 @@ def create_model(
     solver: str,
 ) -> AntaresProblem:
     m = AntaresProblem(
-        scenario=scenario, week=week, path=output_path, itr=1, name_solver=solver
+        scenario=scenario,
+        week=week,
+        path=output_path,
+        itr=1,
+        name_solver=solver,
+        name_scenario=(
+            param.name_scenario[scenario] if len(param.name_scenario) > 1 else -1
+        ),
     )
     m.create_weekly_problem_itr(
         param=param,

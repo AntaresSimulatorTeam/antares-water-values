@@ -24,6 +24,7 @@ def calculate_complete_reward(
     param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
     output_path: str,
+    solver: str = "CLP",
 ) -> Dict[TimeScenarioIndex, RewardApproximation]:
     reward: Dict[TimeScenarioIndex, RewardApproximation] = {}
     for week in range(param.len_week):
@@ -55,6 +56,7 @@ def calculate_complete_reward(
                 reservoir_management=reservoir_management,
                 output_path=output_path,
                 controls=controls,
+                solver=solver,
             ),
             range(param.len_scenario),
         )
@@ -74,6 +76,7 @@ def calculate_reward_for_one_scenario(
     reservoir_management: ReservoirManagement,
     output_path: str,
     controls: Array2D,
+    solver: str,
 ) -> Dict[TimeScenarioIndex, RewardApproximation]:
 
     reward: Dict[TimeScenarioIndex, RewardApproximation] = {}
@@ -96,6 +99,7 @@ def calculate_reward_for_one_scenario(
             name_scenario=(
                 param.name_scenario[scenario] if len(param.name_scenario) > 1 else -1
             ),
+            name_solver=solver,
         )
         m.create_weekly_problem_itr(
             param=param,
@@ -177,6 +181,7 @@ def calculate_bellman_value_with_precalculated_reward(
         bellman_value_calculation=bellman_value_calculation,
         V=V,
         output_path=output_path,
+        solver=solver,
     )
 
     gap = upper_bound + V0

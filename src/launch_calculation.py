@@ -50,7 +50,7 @@ def calculate_bellman_values(
 
     elif method == "precalculated":
         # or with precalulated reward
-        vb, G = calculate_bellman_value_with_precalculated_reward(
+        vb, G, _ = calculate_bellman_value_with_precalculated_reward(
             len_controls=len_controls,
             param=param,
             reservoir_management=reservoir_management,

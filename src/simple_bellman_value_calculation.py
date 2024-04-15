@@ -28,7 +28,7 @@ def calculate_complete_reward(
             r = RewardApproximation(
                 lb_control=-reservoir_management.reservoir.max_pumping[week],
                 ub_control=reservoir_management.reservoir.max_generating[week],
-                ub_reward=0,
+                ub_reward=float("inf"),
             )
             reward[TimeScenarioIndex(week, scenario)] = r
 

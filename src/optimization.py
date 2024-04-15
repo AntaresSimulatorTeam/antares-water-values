@@ -242,22 +242,22 @@ class AntaresProblem:
                 name=f"Control::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
 
-        if reservoir_management.overflow:
-            model.Add(
-                x_s_1
-                <= x_s
-                - U
-                + reservoir_management.reservoir.inflow[self.week, self.scenario],
-                name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-            )
-        else:
-            model.Add(
-                x_s_1
-                == x_s
-                - U
-                + reservoir_management.reservoir.inflow[self.week, self.scenario],
-                name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-            )
+            if reservoir_management.overflow:
+                model.Add(
+                    x_s_1
+                    <= x_s
+                    - U
+                    + reservoir_management.reservoir.inflow[self.week, self.scenario],
+                    name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+                )
+            else:
+                model.Add(
+                    x_s_1
+                    == x_s
+                    - U
+                    + reservoir_management.reservoir.inflow[self.week, self.scenario],
+                    name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
+                )
 
             y = model.Var(
                 lb=0,

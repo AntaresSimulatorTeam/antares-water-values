@@ -23,7 +23,6 @@ def calculate_bellman_value_multi_stock(
     multi_stock_management: MultiStockManagement,
     output_path: str,
     X: Dict[str, Array1D],
-    overflow: bool = True,
     name_solver: str = "CLP",
 ) -> Dict[int, Dict[str, npt.NDArray[np.float32]]]:
     """Function to calculate multivariate Bellman values
@@ -33,7 +32,6 @@ def calculate_bellman_value_multi_stock(
         multi_stock_management (MultiStockManagement): Stocks considered for Bellman values
         output_path (str): Path to mps files describing optimization problems
         X (Dict[str, Array1D]): Discretization of sotck levels for Bellman values for each reservoir
-        overflow (bool): Whether overflow is possible
         name_solver (str, optional): Solver to use with ortools. Defaults to "CLP".
 
     Returns:
@@ -53,7 +51,6 @@ def calculate_bellman_value_multi_stock(
             m.create_weekly_problem_itr(
                 param=param,
                 multi_stock_management=multi_stock_management,
-                overflow=overflow,
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 

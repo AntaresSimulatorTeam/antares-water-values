@@ -6,6 +6,8 @@ import numpy as np
 
 @dataclass
 class TimeScenarioParameter:
+    """Describes time and scenario related parameters"""
+
     len_week: int = 52
     len_scenario: int = 1
     name_scenario: list = field(default_factory=list)

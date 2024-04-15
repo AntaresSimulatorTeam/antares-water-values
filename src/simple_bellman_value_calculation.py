@@ -74,16 +74,50 @@ def calculate_bellman_value_with_precalculated_reward(
     reservoir_management: ReservoirManagement,
     output_path: str,
     X: Array1D,
+    solver: str = "CLP",
     overflow: bool = True,
 ) -> tuple[
     Array2D,
     Dict[TimeScenarioIndex, RewardApproximation],
 ]:
+    """
+    Algorithm to evaluate Bellman values. First reward is approximated thanks to multiple simulations. Then, Bellman values are computed with the reward approximation.
+
+    Parameters
+    ----------
+    len_controls:int :
+        Number of controls to evaluate to build reward approximation
+    param:TimeScenarioParameter :
+        Time-related parameters for the Antares study
+    reservoir_management:ReservoirManagement :
+        Reservoir considered for Bellman values
+    output_path:str :
+        Path to mps files describing optimization problems
+    X:Array1D :
+        Discretization of sotck levels for Bellman values
+    solver:str :
+        Solver to use (default is CLP) with ortools
+    overflow:bool :
+        Whether overflow is possible or forbiden
+
+    Returns
+    -------
+    V:np.array :
+        Bellman values
+    G:Dict[TimeScenarioIndex, RewardApproximation] :
+        Reward approximation
+    """
 
     list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
     for week in range(param.len_week):
         for scenario in range(param.len_scenario):
-            m = AntaresProblem(scenario=scenario, week=week, path=output_path, itr=1)
+            m = AntaresProblem(
+                scenario=scenario,
+                week=week,
+                path=output_path,
+                itr=1,
+                name_solver=solver,
+            )
             m.create_weekly_problem_itr(
                 param=param,
                 reservoir_management=reservoir_management,
@@ -129,13 +163,47 @@ def calculate_bellman_value_directly(
     reservoir_management: ReservoirManagement,
     output_path: str,
     X: Array1D,
+    solver: str = "CLP",
     overflow: bool = True,
 ) -> Array2D:
+    """
+    Algorithm to evaluate Bellman values directly.
+
+    Parameters
+    ----------
+    param:TimeScenarioParameter :
+        Time-related parameters for the Antares study
+    reservoir_management:ReservoirManagement :
+        Reservoir considered for Bellman values
+    output_path:str :
+        Path to mps files describing optimization problems
+    X:Array1D :
+        Discretization of sotck levels for Bellman values
+    N:int :
+        Maximum number of iteration to do
+    tol_gap:float :
+        Relative tolerance gap for the termination of the algorithm
+    solver:str :
+        Solver to use (default is CLP) with ortools
+    overflow:bool :
+        Whether overflow is possible or forbiden
+
+    Returns
+    -------
+    V:np.array :
+        Bellman values
+    """
 
     list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
     for week in range(param.len_week):
         for scenario in range(param.len_scenario):
-            m = AntaresProblem(scenario=scenario, week=week, path=output_path, itr=1)
+            m = AntaresProblem(
+                scenario=scenario,
+                week=week,
+                path=output_path,
+                itr=1,
+                name_solver=solver,
+            )
             m.create_weekly_problem_itr(
                 param=param,
                 reservoir_management=reservoir_management,

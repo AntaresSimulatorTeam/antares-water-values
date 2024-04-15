@@ -19,6 +19,16 @@ class ReservoirManagement:
         force_final_level: bool = False,
         final_level: Optional[float] = None,
     ) -> None:
+        """Class to describe reservoir management parameters.
+
+        Args:
+            reservoir (Reservoir): Reservoir in question
+            penalty_bottom_rule_curve (float, optional): Penalty for violating bottom rule curve. Defaults to 0.
+            penalty_upper_rule_curve (float, optional): Penalty for violating upper rule curve. Defaults to 0.
+            penalty_final_level (float, optional): Penalty for not respecting final level. Defaults to 0.
+            force_final_level (bool, optional): Whether final level is imposed. Defaults to False.
+            final_level (Optional[float], optional): Final level to impose, if not specified is equal to initial level. Defaults to None.
+        """
 
         self.reservoir = reservoir
         self.penalty_bottom_rule_curve = penalty_bottom_rule_curve

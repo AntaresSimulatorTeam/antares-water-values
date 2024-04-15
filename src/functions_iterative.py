@@ -224,7 +224,7 @@ def itr_control(
     list[Array2D],
 ]:
     """
-    Algorithm to evaluate Bellman values. Each iteration of the algorithm consists in computing optimal trajectories based on reward approximation then evaluating rewards for those trajectories and finally updating reward approximation and calculating Bellman values. The algorithm stops when a certain number of iteratin is done or when the gap between the lower bound and the upper bound is small enough.
+    Algorithm to evaluate Bellman values. Each iteration of the algorithm consists in computing optimal trajectories based on reward approximation then evaluating rewards for those trajectories and finally updating reward approximation and calculating Bellman values. The algorithm stops when a certain number of iterations is done or when the gap between the lower bound and the upper bound is small enough.
 
     Parameters
     ----------
@@ -240,6 +240,10 @@ def itr_control(
         Maximum number of iteration to do
     tol_gap:float :
         Relative tolerance gap for the termination of the algorithm
+    solver:str :
+        Solver to use (default is CLP) with ortools
+    overflow:bool :
+        Whether overflow is possible or forbiden
 
     Returns
     -------

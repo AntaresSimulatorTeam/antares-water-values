@@ -18,6 +18,7 @@ class ReservoirManagement:
         penalty_final_level: float = 0,
         force_final_level: bool = False,
         final_level: Optional[float] = None,
+        overflow: bool = True,
     ) -> None:
         """Class to describe reservoir management parameters.
 
@@ -28,11 +29,13 @@ class ReservoirManagement:
             penalty_final_level (float, optional): Penalty for not respecting final level. Defaults to 0.
             force_final_level (bool, optional): Whether final level is imposed. Defaults to False.
             final_level (Optional[float], optional): Final level to impose, if not specified is equal to initial level. Defaults to None.
+            overflow (bool, optional) : Whether overflow is possible or forbiden. Defaults to True.
         """
 
         self.reservoir = reservoir
         self.penalty_bottom_rule_curve = penalty_bottom_rule_curve
         self.penalty_upper_rule_curve = penalty_upper_rule_curve
+        self.overflow = overflow
 
         if force_final_level:
             self.penalty_final_level = penalty_final_level
@@ -257,7 +260,6 @@ class BellmanValueCalculation:
         scenario: int,
         level_i: float,
         V_fut: Callable,
-        overflow: bool,
     ) -> tuple[float, float, float]:
         """
         Optimize control of reservoir during a week based on reward approximation and current Bellman values.
@@ -291,7 +293,10 @@ class BellmanValueCalculation:
         for i_fut in range(len(X)):
             u = -X[i_fut] + level_i + stock.inflow[week, scenario]
             if -stock.max_pumping[week] <= u:
-                if overflow or u <= stock.max_generating[week]:
+                if (
+                    self.reservoir_management.overflow
+                    or u <= stock.max_generating[week]
+                ):
                     u = min(u, stock.max_generating[week])
                     G = reward_fn(u)
                     penalty = pen(X[i_fut])
@@ -336,7 +341,6 @@ class BellmanValueCalculation:
 
     def calculate_VU(
         self,
-        overflow: bool,
         final_values: Array1D = np.zeros(1, dtype=np.float32),
     ) -> Array2D:
         """
@@ -372,7 +376,6 @@ class BellmanValueCalculation:
                         V_fut=V_fut,
                         week=week,
                         scenario=scenario,
-                        overflow=overflow,
                     )
 
                     V[i, week, scenario] = Vu + V[i, week, scenario]

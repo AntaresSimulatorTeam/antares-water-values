@@ -25,7 +25,7 @@ def test_upper_bound() -> None:
         force_final_level=True,
     )
     problem.create_weekly_problem_itr(
-        param=param, reservoir_management=reservoir_management, overflow=True
+        param=param, reservoir_management=reservoir_management
     )
     bellman_value_calculation = BellmanValueCalculation(
         param=param,
@@ -61,7 +61,6 @@ def test_upper_bound() -> None:
         bellman_value_calculation=bellman_value_calculation,
         list_models=list_models,
         V=V,
-        overflow=True,
     )
 
     assert upper_bound == pytest.approx(380492940.000565)
@@ -74,7 +73,6 @@ def test_upper_bound() -> None:
         bellman_value_calculation=bellman_value_calculation,
         list_models=list_models,
         V=V,
-        overflow=True,
     )
 
     assert upper_bound == pytest.approx(5046992854.133574)
@@ -103,7 +101,7 @@ def test_upper_bound_with_xpress() -> None:
             force_final_level=True,
         )
         problem.create_weekly_problem_itr(
-            param=param, reservoir_management=reservoir_management, overflow=True
+            param=param, reservoir_management=reservoir_management
         )
         bellman_value_calculation = BellmanValueCalculation(
             param=param,
@@ -139,7 +137,6 @@ def test_upper_bound_with_xpress() -> None:
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,
-            overflow=True,
         )
 
         assert upper_bound == pytest.approx(380492940.000565)
@@ -152,7 +149,6 @@ def test_upper_bound_with_xpress() -> None:
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,
-            overflow=True,
         )
 
         assert upper_bound == pytest.approx(5046992854.133574)

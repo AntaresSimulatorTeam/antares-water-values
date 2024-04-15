@@ -17,7 +17,7 @@ def test_create_and_modify_weekly_problem() -> None:
         force_final_level=True,
     )
     problem.create_weekly_problem_itr(
-        param=param, reservoir_management=reservoir_management, overflow=True
+        param=param, reservoir_management=reservoir_management
     )
 
     beta, lamb, _, _, _ = problem.modify_weekly_problem_itr(
@@ -28,7 +28,7 @@ def test_create_and_modify_weekly_problem() -> None:
 
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
-        param=param, reservoir_management=reservoir_management, overflow=True
+        param=param, reservoir_management=reservoir_management
     )
     beta, lamb, _, _, _ = problem.modify_weekly_problem_itr(
         control=8400000, i=0, prev_basis=Basis()
@@ -38,7 +38,7 @@ def test_create_and_modify_weekly_problem() -> None:
 
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
-        param=param, reservoir_management=reservoir_management, overflow=True
+        param=param, reservoir_management=reservoir_management
     )
     beta, lamb, _, _, _ = problem.modify_weekly_problem_itr(
         control=-8400000, i=0, prev_basis=Basis()
@@ -69,7 +69,7 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
             force_final_level=True,
         )
         problem.create_weekly_problem_itr(
-            param=param, reservoir_management=reservoir_management, overflow=True
+            param=param, reservoir_management=reservoir_management
         )
 
         beta, lamb, _, _, _ = problem.modify_weekly_problem_itr(
@@ -86,7 +86,7 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
             name_solver="XPRESS_LP",
         )
         problem.create_weekly_problem_itr(
-            param=param, reservoir_management=reservoir_management, overflow=True
+            param=param, reservoir_management=reservoir_management
         )
         beta, lamb, _, _, _ = problem.modify_weekly_problem_itr(
             control=8400000, i=0, prev_basis=Basis()
@@ -96,7 +96,7 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
 
         problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
         problem.create_weekly_problem_itr(
-            param=param, reservoir_management=reservoir_management, overflow=True
+            param=param, reservoir_management=reservoir_management
         )
         beta, lamb, _, _, _ = problem.modify_weekly_problem_itr(
             control=-8400000, i=0, prev_basis=Basis()

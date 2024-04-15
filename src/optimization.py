@@ -56,6 +56,7 @@ class AntaresProblem:
         path: str,
         itr: int = 1,
         name_solver: str = "CLP",
+        name_scenario: int = -1,
     ) -> None:
         """
         Create a new Xpress problem and load the problem stored in the associated mps file.
@@ -79,7 +80,10 @@ class AntaresProblem:
         self.week = week
         self.path = path
 
-        mps_path = path + f"/problem-{scenario+1}-{week+1}--optim-nb-{itr}.mps"
+        if name_scenario == -1:
+            name_scenario = scenario + 1
+
+        mps_path = path + f"/problem-{name_scenario}-{week+1}--optim-nb-{itr}.mps"
         model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
         model.import_from_mps_file(mps_path)
         model_proto = model.export_to_proto()

@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import subprocess
 from configparser import ConfigParser
 import numpy as np
@@ -8,6 +8,7 @@ import numpy as np
 class TimeScenarioParameter:
     len_week: int = 52
     len_scenario: int = 1
+    name_scenario: list = field(default_factory=list)
 
 
 @dataclass(frozen=True)

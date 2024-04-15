@@ -168,7 +168,7 @@ class AntaresProblem:
         self,
         param: TimeScenarioParameter,
         reservoir_management: ReservoirManagement,
-        overflow: bool = True,
+        overflow: bool,
     ) -> None:
         """
         Modify the Xpress problem to take into account reservoir constraints and manage reservoir with Bellman values and penalties on rule curves.
@@ -385,6 +385,7 @@ def solve_problem_with_Bellman_values(
     week: int,
     m: AntaresProblem,
     take_into_account_z_and_y: bool,
+    overflow: bool,
     find_optimal_basis: bool = True,
 ) -> tuple[float, int, float, float, float]:
 
@@ -447,6 +448,7 @@ def solve_problem_with_Bellman_values(
                         V_fut=V_fut,
                         week=week,
                         scenario=scenario,
+                        overflow=overflow,
                     )
                 )
             else:

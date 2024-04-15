@@ -25,6 +25,7 @@ def compute_x_multi_scenario(
     bellman_value_calculation: BellmanValueCalculation,
     V: Array2D,
     itr: int,
+    overflow: bool,
 ) -> tuple[Array2D, Array2D]:
     """
     Compute several optimal trajectories for the level of stock based on reward approximation and Bellman values. The number of trajectories is equal to the number of scenarios but trajectories doesn't depend on Monte Carlo years, ie for a given trajectory each week correspond to a random scenario.
@@ -78,6 +79,7 @@ def compute_x_multi_scenario(
                     scenario=scenario,
                     level_i=initial_x[week, trajectory],
                     V_fut=V_fut,
+                    overflow=overflow,
                 )
             )
 
@@ -91,6 +93,7 @@ def compute_upper_bound(
     bellman_value_calculation: BellmanValueCalculation,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     V: Array2D,
+    overflow: bool,
 ) -> tuple[float, Array2D, Array3D]:
     """
     Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
@@ -134,6 +137,7 @@ def compute_upper_bound(
                     level_i=level_i,
                     week=week,
                     m=m,
+                    overflow=overflow,
                     take_into_account_z_and_y=(
                         week
                         == bellman_value_calculation.time_scenario_param.len_week - 1
@@ -210,6 +214,7 @@ def itr_control(
     N: int,
     tol_gap: float,
     solver: str = "GLOP",
+    overflow: bool = True,
 ) -> tuple[
     Array2D,
     Dict[TimeScenarioIndex, RewardApproximation],
@@ -262,7 +267,9 @@ def itr_control(
         bellman_value_calculation,
         gap,
         G,
-    ) = init_iterative_calculation(param, reservoir_management, output_path, X, solver)
+    ) = init_iterative_calculation(
+        param, reservoir_management, output_path, X, solver, overflow
+    )
     i = 0
 
     while (gap >= tol_gap and gap >= 0) and i < N:  # and (i<3):
@@ -272,6 +279,7 @@ def itr_control(
             bellman_value_calculation=bellman_value_calculation,
             V=V,
             itr=i,
+            overflow=overflow,
         )
         traj.append(np.array(initial_x))
 
@@ -287,7 +295,7 @@ def itr_control(
             stock_discretization=X,
         )
 
-        V = bellman_value_calculation.calculate_VU()
+        V = bellman_value_calculation.calculate_VU(overflow=overflow)
 
         V_fut = interp1d(X, V[:, 0])
         V0 = V_fut(reservoir_management.reservoir.initial_level)
@@ -296,6 +304,7 @@ def itr_control(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,
+            overflow=overflow,
         )
         itr_tot.append(current_itr)
         controls_upper.append(controls)
@@ -315,6 +324,7 @@ def init_iterative_calculation(
     output_path: str,
     X: Array1D,
     solver: str,
+    overflow: bool,
 ) -> tuple[
     List,
     Dict[TimeScenarioIndex, AntaresProblem],
@@ -350,6 +360,7 @@ def init_iterative_calculation(
             m.create_weekly_problem_itr(
                 param=param,
                 reservoir_management=reservoir_management,
+                overflow=overflow,
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 

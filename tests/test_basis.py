@@ -34,7 +34,7 @@ def test_basis_with_xpress() -> None:
             force_final_level=True,
         )
         problem.create_weekly_problem_itr(
-            param=param, reservoir_management=reservoir_management
+            param=param, reservoir_management=reservoir_management, overflow=True
         )
 
         beta_1, _, itr_without_basis, basis, _ = problem.modify_weekly_problem_itr(
@@ -49,7 +49,7 @@ def test_basis_with_xpress() -> None:
             name_solver="XPRESS_LP",
         )
         problem.create_weekly_problem_itr(
-            param=param, reservoir_management=reservoir_management
+            param=param, reservoir_management=reservoir_management, overflow=True
         )
         beta_2, _, itr_with_basis, _, _ = problem.modify_weekly_problem_itr(
             control=8400000, i=0, prev_basis=basis
@@ -79,7 +79,7 @@ def test_basis_with_upper_bound() -> None:
             force_final_level=True,
         )
         problem.create_weekly_problem_itr(
-            param=param, reservoir_management=reservoir_management
+            param=param, reservoir_management=reservoir_management, overflow=True
         )
 
         list_models = {TimeScenarioIndex(0, 0): problem}
@@ -106,6 +106,7 @@ def test_basis_with_upper_bound() -> None:
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,
+            overflow=True,
         )
 
         _, _, _, _, _ = problem.modify_weekly_problem_itr(
@@ -116,6 +117,7 @@ def test_basis_with_upper_bound() -> None:
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,
+            overflow=True,
         )
         assert upper_bound_2 == pytest.approx(upper_bound_1)
         assert itr_with_basis[0, 0, 0] == 0

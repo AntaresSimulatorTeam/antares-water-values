@@ -247,7 +247,7 @@ class BellmanValueCalculation:
         scenario: int,
         level_i: float,
         V_fut: Callable,
-        overflow: bool = True,
+        overflow: bool,
     ) -> tuple[float, float, float]:
         """
         Optimize control of reservoir during a week based on reward approximation and current Bellman values.
@@ -326,8 +326,8 @@ class BellmanValueCalculation:
 
     def calculate_VU(
         self,
+        overflow: bool,
         final_values: Array1D = np.zeros(1, dtype=np.float32),
-        overflow: bool = True,
     ) -> Array2D:
         """
         Calculate Bellman values for every week based on reward approximation

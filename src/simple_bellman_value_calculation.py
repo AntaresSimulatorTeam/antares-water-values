@@ -21,6 +21,7 @@ def calculate_complete_reward(
     param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
     output_path: str,
+    overflow: bool,
 ) -> Dict[TimeScenarioIndex, RewardApproximation]:
     reward: Dict[TimeScenarioIndex, RewardApproximation] = {}
     for week in range(param.len_week):
@@ -51,6 +52,7 @@ def calculate_complete_reward(
             m.create_weekly_problem_itr(
                 param=param,
                 reservoir_management=reservoir_management,
+                overflow=overflow,
             )
 
             for u in controls[week]:
@@ -72,6 +74,7 @@ def calculate_bellman_value_with_precalculated_reward(
     reservoir_management: ReservoirManagement,
     output_path: str,
     X: Array1D,
+    overflow: bool = True,
 ) -> tuple[
     Array2D,
     Dict[TimeScenarioIndex, RewardApproximation],
@@ -84,6 +87,7 @@ def calculate_bellman_value_with_precalculated_reward(
             m.create_weekly_problem_itr(
                 param=param,
                 reservoir_management=reservoir_management,
+                overflow=overflow,
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 
@@ -92,6 +96,7 @@ def calculate_bellman_value_with_precalculated_reward(
         param=param,
         reservoir_management=reservoir_management,
         output_path=output_path,
+        overflow=overflow,
     )
 
     bellman_value_calculation = BellmanValueCalculation(
@@ -101,7 +106,7 @@ def calculate_bellman_value_with_precalculated_reward(
         stock_discretization=X,
     )
 
-    V = bellman_value_calculation.calculate_VU()
+    V = bellman_value_calculation.calculate_VU(overflow=overflow)
 
     V_fut = interp1d(X, V[:, 0])
     V0 = V_fut(reservoir_management.reservoir.initial_level)
@@ -110,6 +115,7 @@ def calculate_bellman_value_with_precalculated_reward(
         bellman_value_calculation=bellman_value_calculation,
         list_models=list_models,
         V=V,
+        overflow=overflow,
     )
 
     gap = upper_bound + V0
@@ -123,6 +129,7 @@ def calculate_bellman_value_directly(
     reservoir_management: ReservoirManagement,
     output_path: str,
     X: Array1D,
+    overflow: bool = True,
 ) -> Array2D:
 
     list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
@@ -132,6 +139,7 @@ def calculate_bellman_value_directly(
             m.create_weekly_problem_itr(
                 param=param,
                 reservoir_management=reservoir_management,
+                overflow=overflow,
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 
@@ -168,6 +176,7 @@ def calculate_bellman_value_directly(
                     week=week,
                     m=m,
                     find_optimal_basis=False,
+                    overflow=overflow,
                     take_into_account_z_and_y=True,
                 )
                 V[i, week] += -Vu / param.len_scenario
@@ -179,6 +188,7 @@ def calculate_bellman_value_directly(
         bellman_value_calculation=bellman_value_calculation,
         list_models=list_models,
         V=V,
+        overflow=overflow,
     )
 
     gap = upper_bound + V0

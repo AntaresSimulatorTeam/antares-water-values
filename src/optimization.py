@@ -1,22 +1,15 @@
 import re
-from typing import List, Annotated, Literal
 from calculate_reward_and_bellman_values import (
-    RewardApproximation,
     ReservoirManagement,
     BellmanValueCalculation,
 )
-from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
+from read_antares_data import TimeScenarioParameter
 import numpy as np
-import numpy.typing as npt
 from time import time
 from scipy.interpolate import interp1d
 from ortools.linear_solver.python import model_builder
 import ortools.linear_solver.pywraplp as pywraplp
-
-Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
-Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
-Array3D = Annotated[npt.NDArray[np.float32], Literal["N", "N", "N"]]
-Array4D = Annotated[npt.NDArray[np.float32], Literal["N", "N", "N", "N"]]
+from type_definition import Array1D, Array2D, Array3D, Array4D, List
 
 
 class Basis:

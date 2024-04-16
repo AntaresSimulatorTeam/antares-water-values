@@ -3,14 +3,9 @@ from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
 from functions_iterative import itr_control
-from typing import Annotated, Literal
-import numpy.typing as npt
-import numpy as np
 from read_antares_data import TimeScenarioParameter
 from calculate_reward_and_bellman_values import ReservoirManagement
-
-Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
-Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
+from type_definition import Array1D, Array2D
 
 
 def calculate_bellman_values(

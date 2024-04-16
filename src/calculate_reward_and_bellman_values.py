@@ -1,11 +1,7 @@
-from typing import Callable, Annotated, Literal, Optional, Dict
 from read_antares_data import TimeScenarioParameter, Reservoir, TimeScenarioIndex
 from scipy.interpolate import interp1d
 import numpy as np
-import numpy.typing as npt
-
-Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
-Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
+from type_definition import Array1D, Array2D, Optional, Dict, Callable
 
 
 class ReservoirManagement:

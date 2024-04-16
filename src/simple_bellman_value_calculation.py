@@ -5,15 +5,11 @@ from calculate_reward_and_bellman_values import (
 )
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
 from optimization import AntaresProblem
-from typing import Annotated, Literal, Dict
 from optimization import Basis, solve_problem_with_Bellman_values
-import numpy.typing as npt
 import numpy as np
 from scipy.interpolate import interp1d
 from functions_iterative import compute_upper_bound
-
-Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
-Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
+from type_definition import Array1D, Array2D, Dict
 
 
 def calculate_complete_reward(

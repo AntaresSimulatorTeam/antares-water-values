@@ -1,8 +1,6 @@
 import numpy as np
 from scipy.interpolate import interp1d
 from time import time
-from typing import Annotated, Literal, Dict, List
-import numpy.typing as npt
 from optimization import (
     AntaresProblem,
     solve_problem_with_Bellman_values,
@@ -14,11 +12,7 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     BellmanValueCalculation,
 )
-
-Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
-Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
-Array3D = Annotated[npt.NDArray[np.float32], Literal["N", "N", "N"]]
-Array4D = Annotated[npt.NDArray[np.float32], Literal["N", "N", "N", "N"]]
+from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
 
 
 def compute_x_multi_scenario(

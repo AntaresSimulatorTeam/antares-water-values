@@ -37,22 +37,22 @@ def test_basis_with_xpress() -> None:
             param=param, reservoir_management=reservoir_management
         )
 
-        beta_1, _, itr_without_basis, basis, _ = problem.modify_weekly_problem_itr(
-            control=8400000, i=0, prev_basis=Basis()
+        beta_1, _, itr_without_basis, _ = problem.solve_with_predefined_controls(
+            control=8400000, prev_basis=Basis()
         )
 
-        problem = AntaresProblem(
+        problem_2 = AntaresProblem(
             scenario=0,
             week=0,
             path="test_data/one_node",
             itr=1,
             name_solver="XPRESS_LP",
         )
-        problem.create_weekly_problem_itr(
+        problem_2.create_weekly_problem_itr(
             param=param, reservoir_management=reservoir_management
         )
-        beta_2, _, itr_with_basis, _, _ = problem.modify_weekly_problem_itr(
-            control=8400000, i=0, prev_basis=basis
+        beta_2, _, itr_with_basis, _ = problem_2.solve_with_predefined_controls(
+            control=8400000, prev_basis=problem.basis[-1]
         )
 
         assert itr_with_basis == 0
@@ -98,8 +98,8 @@ def test_basis_with_upper_bound() -> None:
             stock_discretization=np.linspace(0, reservoir.capacity, num=20),
         )
 
-        _, _, _, _, _ = problem.modify_weekly_problem_itr(
-            control=0, i=0, prev_basis=Basis()
+        _, _, _, _ = problem.solve_with_predefined_controls(
+            control=0, prev_basis=Basis()
         )
 
         upper_bound_1, _, itr_without_basis = compute_upper_bound(
@@ -108,8 +108,8 @@ def test_basis_with_upper_bound() -> None:
             V=V,
         )
 
-        _, _, _, _, _ = problem.modify_weekly_problem_itr(
-            control=8400000, i=0, prev_basis=Basis()
+        _, _, _, _ = problem.solve_with_predefined_controls(
+            control=8400000, prev_basis=Basis()
         )
 
         upper_bound_2, _, itr_with_basis = compute_upper_bound(

@@ -3,7 +3,6 @@ from scipy.interpolate import interp1d
 from time import time
 from optimization import (
     AntaresProblem,
-    solve_problem_with_bellman_values,
     Basis,
 )
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
@@ -121,13 +120,10 @@ def compute_upper_bound(
             m = list_models[TimeScenarioIndex(week, scenario)]
 
             computational_time, itr, current_cost, control, level_i = (
-                solve_problem_with_bellman_values(
+                m.solve_problem_with_bellman_values(
                     bellman_value_calculation=bellman_value_calculation,
                     V=V,
-                    scenario=scenario,
                     level_i=level_i,
-                    week=week,
-                    m=m,
                     take_into_account_z_and_y=(
                         week
                         == bellman_value_calculation.time_scenario_param.len_week - 1
@@ -180,11 +176,16 @@ def calculate_reward(
         for week in range(param.len_week):
             print(f"{scenario} {week}", end="\r")
 
-            beta, lamb, itr, basis_0, computation_time = list_models[
+            beta, lamb, itr, computation_time = list_models[
                 TimeScenarioIndex(week, scenario)
-            ].modify_weekly_problem_itr(
-                control=float(controls[week][scenario]), i=i, prev_basis=basis_0
+            ].solve_with_predefined_controls(
+                control=float(controls[week][scenario]),
+                prev_basis=basis_0 if i == 0 else Basis(),
             )
+            if list_models[TimeScenarioIndex(week, scenario)].store_basis:
+                basis_0 = list_models[TimeScenarioIndex(week, scenario)].basis[-1]
+            else:
+                basis_0 = Basis()
 
             G[TimeScenarioIndex(week, scenario)].update_reward_approximation(
                 slope_new_cut=-lamb,

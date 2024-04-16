@@ -154,8 +154,11 @@ class AntaresProblem:
         -------
 
         """
-        u = np.argmin(np.abs(np.array(self.control_basis) - control))
-        return self.basis[u]
+        if len(self.basis) >= 1:
+            u = np.argmin(np.abs(np.array(self.control_basis) - control))
+            return self.basis[u]
+        else:
+            return Basis()
 
     def create_weekly_problem_itr(
         self,
@@ -310,9 +313,9 @@ class AntaresProblem:
                 cons[i].Clear()
                 cons[i].SetBounds(lb=0, ub=0)
 
-    def modify_weekly_problem_itr(
-        self, control: float, i: int, prev_basis: Basis = Basis()
-    ) -> tuple[float, float, int, Basis, float]:
+    def solve_with_predefined_controls(
+        self, control: float, prev_basis: Basis = Basis()
+    ) -> tuple[float, float, int, float]:
         """
         Modify and solve problem to evaluate weekly cost associated with a particular control of the reservoir.
 
@@ -333,165 +336,179 @@ class AntaresProblem:
             Dual value associated to the control constraint
         itr:int :
             Total number of simplex iterations used to solve the problem
-        prev_basis:Basis :
-            Basis output by the resolution
         t:float :
             Time spent solving the problem
         """
         if self.store_basis:
-            if (prev_basis.not_empty()) & (i == 0):
+            if prev_basis.not_empty():
                 self.load_basis(prev_basis)
-
-            if i >= 1:
+            else:
                 basis = self.find_closest_basis(control=control)
                 self.load_basis(basis)
 
+        self.set_constraints_predefined_control(control)
+        beta, lamb, _, _, _, itr, computing_time = self.solve_problem()
+        return beta, lamb, itr, computing_time
+
+    def set_constraints_predefined_control(self, control: float) -> None:
         self.binding_id.SetBounds(lb=control, ub=control)
-        debut_1 = time()
-        solve_status = self.solver.Solve(self.solver_parameters)
-        fin_1 = time()
 
-        if solve_status == pywraplp.Solver.OPTIMAL:
-            beta = float(self.solver.Objective().Value())
-            lamb = float(self.binding_id.dual_value())
+    def set_constraints_initial_level_and_bellman_values(
+        self, level_i: float, X: Array1D, bellman_value: Array1D, area: str
+    ) -> List[pywraplp.Constraint]:
+        self.binding_id.SetCoefficient(self.U, -1)
+        self.binding_id.SetLb(0.0)
+        self.binding_id.SetUb(0.0)
 
-            itr = self.solver.Iterations()
+        self.solver.Objective().SetCoefficient(self.y, 1)
+        self.solver.Objective().SetCoefficient(self.z, 1)
 
-            rbas, cbas = self.get_basis()
-            self.add_basis(basis=Basis(rbas, cbas), control_basis=control)
+        bellman_constraint: List = []
 
-            if i == 0:
-                prev_basis.rstatus = rbas
-                prev_basis.cstatus = cbas
-            return (beta, lamb, itr, prev_basis, fin_1 - debut_1)
-        else:
-            print(f"Failed at control fixed : {solve_status}")
-            raise (ValueError)
-
-
-def solve_problem_with_bellman_values(
-    bellman_value_calculation: BellmanValueCalculation,
-    V: Array2D,
-    scenario: int,
-    level_i: float,
-    week: int,
-    m: AntaresProblem,
-    take_into_account_z_and_y: bool,
-    find_optimal_basis: bool = True,
-) -> tuple[float, int, float, float, float]:
-
-    cout = 0.0
-
-    X = bellman_value_calculation.stock_discretization
-
-    m.binding_id.SetCoefficient(m.U, -1)
-    m.binding_id.SetLb(0.0)
-    m.binding_id.SetUb(0.0)
-
-    m.solver.Objective().SetCoefficient(m.y, 1)
-    m.solver.Objective().SetCoefficient(m.z, 1)
-
-    additional_constraint: List = []
-
-    for j in range(len(X) - 1):
-        if (V[j + 1, week + 1] < float("inf")) & (V[j, week + 1] < float("inf")):
-            cst = m.solver.LookupConstraint(
-                f"BellmanValueBetween{j}And{j+1}::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>"
-            )
-            if cst:
-                cst.SetCoefficient(
-                    m.x_s_1, -(-V[j + 1, week + 1] + V[j, week + 1]) / (X[j + 1] - X[j])
+        for j in range(len(X) - 1):
+            if (bellman_value[j + 1] < float("inf")) & (
+                bellman_value[j] < float("inf")
+            ):
+                cst = self.solver.LookupConstraint(
+                    f"BellmanValueBetween{j}And{j+1}::area<{area}>::week<{self.week}>"
                 )
-                cst.SetLb(
-                    (-V[j + 1, week + 1] + V[j, week + 1]) / (X[j + 1] - X[j]) * (-X[j])
-                    - V[j, week + 1]
-                )
-            else:
-                cst = m.solver.Add(
-                    m.z
-                    >= (-V[j + 1, week + 1] + V[j, week + 1])
-                    / (X[j + 1] - X[j])
-                    * (m.x_s_1 - X[j])
-                    - V[j, week + 1],
-                    name=f"BellmanValueBetween{j}And{j+1}::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
-                )
-            additional_constraint.append(cst)
-
-    cst_initial_level = m.solver.LookupConstraint(
-        f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>"
-    )
-    if cst_initial_level:
-        cst_initial_level.SetBounds(lb=level_i, ub=level_i)
-    else:
-        cst_initial_level = m.solver.Add(
-            m.x_s == level_i,
-            name=f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{m.week}>",
-        )
-
-    if find_optimal_basis:
-        if len(m.control_basis) >= 1:
-            if len(m.control_basis) >= 2:
-                V_fut = interp1d(X, V[:, week + 1])
-
-                _, _, likely_control = (
-                    bellman_value_calculation.solve_weekly_problem_with_approximation(
-                        level_i=level_i,
-                        V_fut=V_fut,
-                        week=week,
-                        scenario=scenario,
+                if cst:
+                    cst.SetCoefficient(
+                        self.x_s_1,
+                        -(-bellman_value[j + 1] + bellman_value[j]) / (X[j + 1] - X[j]),
                     )
-                )
-            else:
-                likely_control = 0
-            basis = m.find_closest_basis(likely_control)
-            m.load_basis(basis)
+                    cst.SetLb(
+                        (-bellman_value[j + 1] + bellman_value[j])
+                        / (X[j + 1] - X[j])
+                        * (-X[j])
+                        - bellman_value[j]
+                    )
+                else:
+                    cst = self.solver.Add(
+                        self.z
+                        >= (-bellman_value[j + 1] + bellman_value[j])
+                        / (X[j + 1] - X[j])
+                        * (self.x_s_1 - X[j])
+                        - bellman_value[j],
+                        name=f"BellmanValueBetween{j}And{j+1}::area<{area}>::week<{self.week}>",
+                    )
+                bellman_constraint.append(cst)
 
-    debut_1 = time()
-    solve_status = m.solver.Solve(m.solver_parameters)
-    fin_1 = time()
-
-    if solve_status == pywraplp.Solver.OPTIMAL:
-        itr = m.solver.Iterations()
-        if m.store_basis:
-            rbas, cbas = m.get_basis()
-            m.add_basis(
-                basis=Basis(rbas, cbas),
-                control_basis=m.U.solution_value(),
+        cst_initial_level = self.solver.LookupConstraint(
+            f"InitialLevelReservoir::area<{area}>::week<{self.week}>"
+        )
+        if cst_initial_level:
+            cst_initial_level.SetBounds(lb=level_i, ub=level_i)
+        else:
+            cst_initial_level = self.solver.Add(
+                self.x_s == level_i,
+                name=f"InitialLevelReservoir::area<{area}>::week<{self.week}>",
             )
+        return bellman_constraint
 
-        beta = float(m.solver.Objective().Value())
-        xf = float(m.x_s_1.solution_value())
-        z = float(m.z.solution_value())
-        y = float(m.y.solution_value())
+    def remove_bellman_constraints(
+        self,
+        bellman_value_calculation: BellmanValueCalculation,
+        additional_constraint: List[pywraplp.Constraint],
+    ) -> None:
         for cst in additional_constraint:
             cst.SetLb(0)
+        cst_initial_level = self.solver.LookupConstraint(
+            f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{self.week}>"
+        )
         cst_initial_level.SetBounds(
             lb=bellman_value_calculation.reservoir_management.reservoir.capacity,
             ub=bellman_value_calculation.reservoir_management.reservoir.capacity,
         )
-        m.binding_id.SetCoefficient(m.U, 0)
+        self.binding_id.SetCoefficient(self.U, 0)
 
-        m.solver.Objective().SetCoefficient(m.y, 0)
-        m.solver.Objective().SetCoefficient(m.z, 0)
+        self.solver.Objective().SetCoefficient(self.y, 0)
+        self.solver.Objective().SetCoefficient(self.z, 0)
+
+    def solve_problem(self) -> tuple[float, float, float, float, float, int, float]:
+
+        start = time()
+        solve_status = self.solver.Solve(self.solver_parameters)
+        end = time()
+
+        if solve_status == pywraplp.Solver.OPTIMAL:
+            itr = self.solver.Iterations()
+            if self.store_basis:
+                rbas, cbas = self.get_basis()
+                self.add_basis(
+                    basis=Basis(rbas, cbas),
+                    control_basis=self.U.solution_value(),
+                )
+
+            beta = float(self.solver.Objective().Value())
+            xf = float(self.x_s_1.solution_value())
+            z = float(self.z.solution_value())
+            y = float(self.y.solution_value())
+            lamb = float(self.binding_id.dual_value())
+
+            return (beta, lamb, xf, y, z, itr, end - start)
+        else:
+            print(f"Failed to solve : {solve_status}")
+            raise (ValueError)
+
+    def solve_problem_with_bellman_values(
+        self,
+        bellman_value_calculation: BellmanValueCalculation,
+        V: Array2D,
+        level_i: float,
+        take_into_account_z_and_y: bool,
+        find_optimal_basis: bool = True,
+    ) -> tuple[float, int, float, float, float]:
+
+        cout = 0.0
+
+        X = bellman_value_calculation.stock_discretization
+
+        additional_constraint = []
+        additional_constraint += self.set_constraints_initial_level_and_bellman_values(
+            level_i=level_i,
+            X=X,
+            bellman_value=V[:, self.week + 1],
+            area=bellman_value_calculation.reservoir_management.reservoir.area,
+        )
+
+        if find_optimal_basis:
+            if len(self.control_basis) >= 1:
+                if len(self.control_basis) >= 2:
+                    V_fut = interp1d(X, V[:, self.week + 1])
+
+                    _, _, likely_control = (
+                        bellman_value_calculation.solve_weekly_problem_with_approximation(
+                            level_i=level_i,
+                            V_fut=V_fut,
+                            week=self.week,
+                            scenario=self.scenario,
+                        )
+                    )
+                else:
+                    likely_control = 0
+                basis = self.find_closest_basis(likely_control)
+                self.load_basis(basis)
+
+        beta, _, xf, y, z, itr, t = self.solve_problem()
+
+        self.remove_bellman_constraints(
+            bellman_value_calculation, additional_constraint
+        )
         cout += beta
-        if not (
-            take_into_account_z_and_y
-        ):  # week != bellman_value_calculation.time_scenario_param.len_week - 1:
+        if not (take_into_account_z_and_y):
             cout += -z - y
 
-    else:
-        print(f"Failed at upper bound : {solve_status}")
-        raise (ValueError)
-    return (
-        fin_1 - debut_1,
-        itr,
-        cout,
-        -(
-            xf
-            - level_i
-            - bellman_value_calculation.reservoir_management.reservoir.inflow[
-                week, scenario
-            ]
-        ),
-        xf,
-    )
+        return (
+            t,
+            itr,
+            cout,
+            -(
+                xf
+                - level_i
+                - bellman_value_calculation.reservoir_management.reservoir.inflow[
+                    self.week, self.scenario
+                ]
+            ),
+            xf,
+        )

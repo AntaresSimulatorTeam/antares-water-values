@@ -3,7 +3,7 @@ from scipy.interpolate import interp1d
 from time import time
 from optimization import (
     AntaresProblem,
-    solve_problem_with_Bellman_values,
+    solve_problem_with_bellman_values,
     Basis,
 )
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
@@ -121,7 +121,7 @@ def compute_upper_bound(
             m = list_models[TimeScenarioIndex(week, scenario)]
 
             computational_time, itr, current_cost, control, level_i = (
-                solve_problem_with_Bellman_values(
+                solve_problem_with_bellman_values(
                     bellman_value_calculation=bellman_value_calculation,
                     V=V,
                     scenario=scenario,

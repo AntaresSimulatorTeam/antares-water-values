@@ -369,7 +369,7 @@ class AntaresProblem:
             raise (ValueError)
 
 
-def solve_problem_with_Bellman_values(
+def solve_problem_with_bellman_values(
     bellman_value_calculation: BellmanValueCalculation,
     V: Array2D,
     scenario: int,

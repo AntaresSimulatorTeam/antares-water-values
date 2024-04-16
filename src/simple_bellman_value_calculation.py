@@ -5,7 +5,7 @@ from calculate_reward_and_bellman_values import (
 )
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
 from optimization import AntaresProblem
-from optimization import Basis, solve_problem_with_Bellman_values
+from optimization import Basis, solve_problem_with_bellman_values
 import numpy as np
 from scipy.interpolate import interp1d
 from functions_iterative import compute_upper_bound
@@ -220,7 +220,7 @@ def calculate_bellman_value_directly(
             m = list_models[TimeScenarioIndex(week, scenario)]
 
             for i in range(len(X)):
-                _, _, Vu, _, _ = solve_problem_with_Bellman_values(
+                _, _, Vu, _, _ = solve_problem_with_bellman_values(
                     bellman_value_calculation=bellman_value_calculation,
                     V=V,
                     scenario=scenario,

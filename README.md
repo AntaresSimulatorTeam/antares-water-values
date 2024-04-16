@@ -33,32 +33,18 @@ X = np.linspace(0, reservoir.capacity, num=xNsteps)
 # Generate mps files 
 generate_mps_file(study_path=study_path,antares_path=antares_path)
 
-# Compute Bellman values directly
-vb = calculate_bellman_value_directly(
+# Compute Bellman values 
+vb = calculate_bellman_values(
     param=param,
     reservoir_management=reservoir_management,
     output_path="test_data/one_node",
     X=X,
+    method=["direct", "precalculated", "iterative"][0],
+    N=3,
+    tol_gap=1e-4,
+    len_controls=20
 )
 
-# or with precalulated reward
-vb, G = calculate_bellman_value_with_precalculated_reward(
-        len_controls=20,
-        param=param,
-        reservoir_management=reservoir_management,
-        output_path="test_data/one_node",
-        X=X,
-    )
-
-# or with iterative algorithm
-vb, G, _, _, controls_upper, traj = itr_control(
-        param=param,
-        reservoir_management=reservoir_management,
-        output_path="test_data/one_node",
-        X=X,
-        N=3,
-        tol_gap=1e-4,
-    )
 ```
 ## Structure
 

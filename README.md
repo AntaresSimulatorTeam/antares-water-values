@@ -13,6 +13,8 @@ git clone https://github.com/AntaresSimulatorTeam/antares-water-values.git
 ## Usage
 
 ```python
+from src import *
+import numpy as np 
 # Define time and scenario parameters
 param = TimeScenarioParameter(len_week=5, len_scenario=1)
 

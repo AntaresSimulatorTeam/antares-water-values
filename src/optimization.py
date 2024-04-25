@@ -607,14 +607,14 @@ class AntaresProblem:
 def solve_problem_with_multivariate_bellman_values(
     multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
     V: Dict[str, npt.NDArray[np.float32]],
-    scenario: int,
     level_i: Dict[str, float],
-    week: int,
     m: AntaresProblem,
     take_into_account_z_and_y: bool,
 ) -> tuple[float, int, float, Dict[str, float], Dict[str, float]]:
 
     cout = 0.0
+
+    len_reservoir = len(m.range_reservoir)
 
     for area in m.range_reservoir:
         m.stored_variables_and_constraints[area]["energy_constraint"].SetCoefficient(
@@ -627,40 +627,68 @@ def solve_problem_with_multivariate_bellman_values(
             m.stored_variables_and_constraints[area]["penalties"], 1
         )
         m.solver.Objective().SetCoefficient(
-            m.stored_variables_and_constraints[area]["final_bellman_value"], 1
+            m.stored_variables_and_constraints[area]["final_bellman_value"],
+            1 / len_reservoir,
         )
 
     additional_constraint: List = []
     iterate_stock_discretization = (
         multi_bellman_value_calculation.get_product_stock_discretization()
     )
-    len_reservoir = len(m.range_reservoir)
-    for idx in iterate_stock_discretization:
-        for area in m.range_reservoir:
 
+    for idx in iterate_stock_discretization:
+
+        for a in m.range_reservoir:
             cst = m.solver.LookupConstraint(
-                f"BellmanValue{idx}::area<all_areas>::week<{m.week}>"
+                f"BellmanValue{idx}::area<{a}>::week<{m.week}>"
             )
+
             if cst:
+
                 cst.SetCoefficient(
-                    m.stored_variables_and_constraints[area]["final_level"],
-                    float(-V[f"slope_{area}"][idx]),
+                    m.stored_variables_and_constraints[a]["final_bellman_value"],
+                    1.0,
                 )
-                cst.SetCoefficient(
-                    m.stored_variables_and_constraints[area]["final_bellman_value"],
-                    float(1 / len_reservoir),
+                cst.SetLb(
+                    float(
+                        V["intercept"][idx]
+                        - sum(
+                            [
+                                V[f"slope_{area}"][idx]
+                                * multi_bellman_value_calculation.dict_reservoirs[
+                                    area
+                                ].stock_discretization[idx[i]]
+                                for i, area in enumerate(m.range_reservoir)
+                            ]
+                        )
+                    )
                 )
-                cst.SetLb(float(V["intercept"][idx]))
+
+                for i, area in enumerate(m.range_reservoir):
+                    cst.SetCoefficient(
+                        m.stored_variables_and_constraints[area]["final_level"],
+                        float(-V[f"slope_{area}"][idx]),
+                    )
+
             else:
                 cst = m.solver.Add(
-                    m.stored_variables_and_constraints[area]["final_bellman_value"]
-                    / len_reservoir
-                    >= V[f"slope_{area}"][idx]
-                    * m.stored_variables_and_constraints[area]["final_level"]
+                    m.stored_variables_and_constraints[a]["final_bellman_value"]
+                    >= sum(
+                        [
+                            V[f"slope_{area}"][idx]
+                            * (
+                                m.stored_variables_and_constraints[area]["final_level"]
+                                - multi_bellman_value_calculation.dict_reservoirs[
+                                    area
+                                ].stock_discretization[idx[i]]
+                            )
+                            for i, area in enumerate(m.range_reservoir)
+                        ]
+                    )
                     + V["intercept"][idx],
-                    name=f"BellmanValue{idx}::area<all_areas>::week<{m.week}>",
+                    name=f"BellmanValue{idx}::area<{a}>::week<{m.week}>",
                 )
-        additional_constraint.append(cst)
+            additional_constraint.append(cst)
 
     for area in m.range_reservoir:
         cst_initial_level = m.solver.LookupConstraint(
@@ -719,7 +747,7 @@ def solve_problem_with_multivariate_bellman_values(
 
         cout += beta
         if not (take_into_account_z_and_y):
-            cout += -sum(z.values()) - sum(y.values())
+            cout += -sum(z.values()) / len_reservoir - sum(y.values())
 
     else:
         print(f"Failed at upper bound : {solve_status}")

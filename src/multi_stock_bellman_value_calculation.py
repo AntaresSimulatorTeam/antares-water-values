@@ -24,7 +24,7 @@ def calculate_bellman_value_multi_stock(
     output_path: str,
     X: Dict[str, Array1D],
     name_solver: str = "CLP",
-) -> Dict[int, Dict[str, npt.NDArray[np.float32]]]:
+) -> tuple[Dict[int, Dict[str, npt.NDArray[np.float32]]], float, float]:
     """Function to calculate multivariate Bellman values
 
     Args:
@@ -104,14 +104,12 @@ def calculate_bellman_value_multi_stock(
                 _, _, Vu, slope, _ = solve_problem_with_multivariate_bellman_values(
                     multi_bellman_value_calculation=multi_bellman_value_calculation,
                     V=V[week + 1],
-                    scenario=scenario,
                     level_i={
                         area: multi_bellman_value_calculation.dict_reservoirs[
                             area
                         ].stock_discretization[idx[i]]
                         for i, area in enumerate(m.range_reservoir)
                     },
-                    week=week,
                     m=m,
                     take_into_account_z_and_y=True,
                 )
@@ -119,16 +117,71 @@ def calculate_bellman_value_multi_stock(
                 for area in m.range_reservoir:
                     V[week][f"slope_{area}"][idx] += slope[area] / param.len_scenario
 
-    # V_fut = interp1d(X, V[:, 0])
-    # V0 = V_fut(reservoir_management.reservoir.initial_level)
+    lower_bound = max(
+        [
+            sum(
+                [
+                    V[0][f"slope_{area}"][idx]
+                    * (
+                        multi_bellman_value_calculation.dict_reservoirs[
+                            area
+                        ].reservoir_management.reservoir.initial_level
+                        - multi_bellman_value_calculation.dict_reservoirs[
+                            area
+                        ].stock_discretization[idx[i]]
+                    )
+                    for i, area in enumerate(
+                        multi_bellman_value_calculation.dict_reservoirs.keys()
+                    )
+                ]
+            )
+            + V[0]["intercept"][idx]
+            for idx in multi_bellman_value_calculation.get_product_stock_discretization()
+        ]
+    )
 
-    # upper_bound, controls, current_itr = compute_upper_bound(
-    #     bellman_value_calculation=bellman_value_calculation,
-    #     list_models=list_models,
-    #     V=V,
-    # )
+    upper_bound = compute_upper_bound_multi_stock(
+        param=param,
+        multi_bellman_value_calculation=multi_bellman_value_calculation,
+        list_models=list_models,
+        V=V,
+    )
 
-    # gap = upper_bound + V0
-    # print(gap, upper_bound, -V0)
+    return V, lower_bound, upper_bound
 
-    return V
+
+def compute_upper_bound_multi_stock(
+    param: TimeScenarioParameter,
+    multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
+    list_models: Dict[TimeScenarioIndex, AntaresProblem],
+    V: Dict[int, Dict[str, npt.NDArray[np.float32]]],
+) -> float:
+
+    cout = 0.0
+    for scenario in range(param.len_scenario):
+
+        level_i = {
+            area: multi_bellman_value_calculation.dict_reservoirs[
+                area
+            ].reservoir_management.reservoir.initial_level
+            for area in multi_bellman_value_calculation.dict_reservoirs.keys()
+        }
+
+        for week in range(param.len_week):
+            print(f"{scenario} {week}", end="\r")
+            m = list_models[TimeScenarioIndex(week, scenario)]
+
+            _, _, current_cost, _, level_i = (
+                solve_problem_with_multivariate_bellman_values(
+                    multi_bellman_value_calculation=multi_bellman_value_calculation,
+                    V=V[week + 1],
+                    level_i=level_i,
+                    m=m,
+                    take_into_account_z_and_y=(week == param.len_week - 1),
+                )
+            )
+            cout += current_cost
+
+    upper_bound = cout / param.len_scenario
+
+    return upper_bound

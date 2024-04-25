@@ -592,6 +592,15 @@ class AntaresProblem:
                 ].reservoir_management.reservoir.inflow[self.week, self.scenario]
             )
 
+        for area in self.range_reservoir:
+            self.remove_bellman_constraints(
+                bellman_value_calculation=multi_bellman_value_calculation.dict_reservoirs[
+                    area
+                ],
+                additional_constraint=additional_constraint,
+                area=area,
+            )
+
         if not (take_into_account_z_and_y):
             cout += -sum(z.values()) - sum(y.values())
 

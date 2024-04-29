@@ -434,7 +434,7 @@ def find_basis(
     m: AntaresProblem,
 ) -> Basis:
 
-    basis = Basis()
+    basis = Basis([], [])
 
     if len(m.control_basis) >= 1:
         if len(m.control_basis) >= 2:
@@ -494,7 +494,7 @@ def compute_upper_bound_without_stored_models(
 
     dict_basis: Dict[int, Basis] = {}
     for scenario in range(param.len_scenario):
-        dict_basis[scenario] = Basis()
+        dict_basis[scenario] = Basis([], [])
 
     for scenario in range(param.len_scenario):
 

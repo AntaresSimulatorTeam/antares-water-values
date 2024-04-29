@@ -254,7 +254,7 @@ def calculate_bellman_value_directly(
 
     dict_basis: Dict[int, Basis] = {}
     for scenario in range(param.len_scenario):
-        dict_basis[scenario] = Basis()
+        dict_basis[scenario] = Basis([], [])
 
     V = np.zeros((len(X), param.len_week + 1), dtype=np.float32)
     tot_t = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
@@ -355,7 +355,7 @@ def calculate_bellman_values_for_one_week_and_one_scenario(
             V=V,
             level_i=X[i],
             take_into_account_z_and_y=True,
-            basis=dict_basis[scenario] if m.store_basis else Basis(),
+            basis=dict_basis[scenario] if m.store_basis else Basis([], []),
         )
 
         if m.store_basis:
@@ -370,7 +370,7 @@ def calculate_bellman_values_for_one_week_and_one_scenario(
         "partial_vu": partial_vu,
         "partial_perf": partial_perf,
         "partial_time": fin - debut,
-        "last_basis": basis if m.store_basis else Basis(),
+        "last_basis": basis if m.store_basis else Basis([], []),
     }
 
     return partial_results

@@ -457,7 +457,7 @@ class AntaresProblem:
         V: Array2D,
         level_i: float,
         take_into_account_z_and_y: bool,
-        basis: Basis = Basis(),
+        basis: Basis = Basis([], []),
     ) -> tuple[float, int, float, float, float]:
 
         cout = 0.0

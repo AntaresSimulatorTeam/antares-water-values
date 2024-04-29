@@ -180,12 +180,12 @@ def calculate_reward(
                 TimeScenarioIndex(week, scenario)
             ].solve_with_predefined_controls(
                 control=float(controls[week][scenario]),
-                prev_basis=basis_0 if i == 0 else Basis(),
+                prev_basis=basis_0 if i == 0 else Basis([], []),
             )
             if list_models[TimeScenarioIndex(week, scenario)].store_basis:
                 basis_0 = list_models[TimeScenarioIndex(week, scenario)].basis[-1]
             else:
-                basis_0 = Basis()
+                basis_0 = Basis([], [])
 
             G[TimeScenarioIndex(week, scenario)].update_reward_approximation(
                 slope_new_cut=-lamb,

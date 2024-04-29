@@ -15,7 +15,7 @@ from type_definition import Array1D, Array2D, Array3D, Array4D, List
 class Basis:
     """Class to store basis with Xpress"""
 
-    def __init__(self, rstatus: list = [], cstatus: list = []) -> None:
+    def __init__(self, rstatus: list, cstatus: list) -> None:
         """
         Create a new basis.
 
@@ -158,7 +158,7 @@ class AntaresProblem:
             u = np.argmin(np.abs(np.array(self.control_basis) - control))
             return self.basis[u]
         else:
-            return Basis()
+            return Basis([], [])
 
     def create_weekly_problem_itr(
         self,
@@ -314,7 +314,7 @@ class AntaresProblem:
                 cons[i].SetBounds(lb=0, ub=0)
 
     def solve_with_predefined_controls(
-        self, control: float, prev_basis: Basis = Basis()
+        self, control: float, prev_basis: Basis = Basis([], [])
     ) -> tuple[float, float, int, float]:
         """
         Modify and solve problem to evaluate weekly cost associated with a particular control of the reservoir.

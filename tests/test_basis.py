@@ -38,7 +38,7 @@ def test_basis_with_xpress() -> None:
         )
 
         beta_1, _, itr_without_basis, _ = problem.solve_with_predefined_controls(
-            control=8400000, prev_basis=Basis()
+            control=8400000, prev_basis=Basis([], [])
         )
 
         problem_2 = AntaresProblem(
@@ -99,7 +99,7 @@ def test_basis_with_upper_bound() -> None:
         )
 
         _, _, _, _ = problem.solve_with_predefined_controls(
-            control=0, prev_basis=Basis()
+            control=0, prev_basis=Basis([], [])
         )
 
         upper_bound_1, _, itr_without_basis = compute_upper_bound(
@@ -109,7 +109,7 @@ def test_basis_with_upper_bound() -> None:
         )
 
         _, _, _, _ = problem.solve_with_predefined_controls(
-            control=8400000, prev_basis=Basis()
+            control=8400000, prev_basis=Basis([], [])
         )
 
         upper_bound_2, _, itr_with_basis = compute_upper_bound(

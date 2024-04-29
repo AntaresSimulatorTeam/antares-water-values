@@ -56,7 +56,7 @@ def calculate_complete_reward(
                 if m.store_basis:
                     basis_0 = m.basis[-1]
                 else:
-                    basis_0 = Basis()
+                    basis_0 = Basis([], [])
 
                 reward[TimeScenarioIndex(week, scenario)].update_reward_approximation(
                     slope_new_cut=-lamb,

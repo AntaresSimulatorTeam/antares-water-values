@@ -1,6 +1,6 @@
 import numpy.typing as npt
 import numpy as np
-from typing import Annotated, Literal, Dict, List, Optional, Callable
+from typing import Annotated, Literal, Dict, List, Optional, Callable, Any
 
 Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
 Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]

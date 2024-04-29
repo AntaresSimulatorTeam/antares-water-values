@@ -25,7 +25,7 @@ def test_bellman_value_precalculated_reward() -> None:
     xNsteps = 20
     X = np.linspace(0, reservoir.capacity, num=xNsteps)
 
-    vb, G, _ = calculate_bellman_value_with_precalculated_reward(
+    vb, G, _, _, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
         reservoir_management=reservoir_management,

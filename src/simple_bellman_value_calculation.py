@@ -28,16 +28,15 @@ def calculate_complete_reward(
     processes: Optional[int] = None,
 ) -> tuple[Dict[TimeScenarioIndex, RewardApproximation], Array2D, Array4D]:
 
-    controls = np.array(
-        [
-            np.linspace(
-                -reservoir_management.reservoir.max_pumping[week],
-                reservoir_management.reservoir.max_generating[week],
-                num=len_controls,
-            )
-            for week in range(param.len_week)
-        ]
-    )
+    controls = {
+        TimeScenarioIndex(week=week, scenario=scenario): np.linspace(
+            -reservoir_management.reservoir.max_pumping[week],
+            reservoir_management.reservoir.max_generating[week],
+            num=len_controls,
+        )
+        for week in range(param.len_week)
+        for scenario in range(param.len_scenario)
+    }
 
     with Pool(processes=processes) as pool:
         print(pool)
@@ -75,7 +74,7 @@ def calculate_reward_for_one_scenario(
     param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
     output_path: str,
-    controls: Array2D,
+    controls: Dict[TimeScenarioIndex, Array1D],
     solver: str,
 ) -> tuple[Dict[TimeScenarioIndex, RewardApproximation], Array1D, Array3D]:
 
@@ -89,7 +88,9 @@ def calculate_reward_for_one_scenario(
         reward[TimeScenarioIndex(week, scenario)] = r
 
     tot_t = np.zeros((param.len_week), dtype=np.float32)
-    perf = np.zeros((param.len_week, len(controls[0]), 2), dtype=np.float32)
+    perf = np.zeros(
+        (param.len_week, len(controls[TimeScenarioIndex(0, 0)]), 2), dtype=np.float32
+    )
 
     basis_0 = Basis([], [])
     for week in range(param.len_week):
@@ -110,9 +111,9 @@ def calculate_reward_for_one_scenario(
             reservoir_management=reservoir_management,
         )
 
-        for j, u in enumerate(controls[week]):
+        for j, u in enumerate(controls[TimeScenarioIndex(week, scenario)]):
             beta, lamb, itr, computation_time = m.solve_with_predefined_controls(
-                control=u, prev_basis=basis_0
+                control=float(u), prev_basis=basis_0
             )
             if m.store_basis:
                 basis_0 = m.basis[-1]

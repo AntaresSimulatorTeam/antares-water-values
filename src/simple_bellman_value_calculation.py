@@ -194,10 +194,14 @@ def calculate_bellman_value_with_precalculated_reward(
     V0 = V_fut(reservoir_management.reservoir.initial_level)
 
     upper_bound, controls, current_itr = compute_upper_bound_without_stored_models(
-        bellman_value_calculation=bellman_value_calculation,
+        param=param,
+        stock_discretization=X,
+        reservoir_management=reservoir_management,
         V=V,
         output_path=output_path,
         solver=solver,
+        store_basis=True if solver == "XPRESS_LP" else False,
+        processes=processes,
     )
 
     gap = upper_bound + V0
@@ -245,13 +249,6 @@ def calculate_bellman_value_directly(
     controls :np.array:
         Optimal trajectories found with Bellman values
     """
-
-    bellman_value_calculation = BellmanValueCalculation(
-        param=param,
-        reservoir_management=reservoir_management,
-        stock_discretization=X,
-    )
-
     dict_basis: Dict[int, Basis] = {}
     for scenario in range(param.len_scenario):
         dict_basis[scenario] = Basis([], [])
@@ -272,7 +269,6 @@ def calculate_bellman_value_directly(
                     output_path=output_path,
                     X=X,
                     solver=solver,
-                    bellman_value_calculation=bellman_value_calculation,
                     dict_basis=dict_basis,
                     V=V,
                     week=week,
@@ -288,11 +284,14 @@ def calculate_bellman_value_directly(
     V0 = V_fut(reservoir_management.reservoir.initial_level)
 
     upper_bound, controls, _ = compute_upper_bound_without_stored_models(
-        bellman_value_calculation=bellman_value_calculation,
+        param=param,
+        stock_discretization=X,
+        reservoir_management=reservoir_management,
         V=V,
         output_path=output_path,
         store_basis=True if solver == "XPRESS_LP" else False,
         solver=solver,
+        processes=processes,
     )
 
     gap = upper_bound + V0
@@ -334,7 +333,6 @@ def calculate_bellman_values_for_one_week_and_one_scenario(
     output_path: str,
     X: Array1D,
     solver: str,
-    bellman_value_calculation: BellmanValueCalculation,
     dict_basis: Dict[int, Basis],
     V: Array2D,
     week: int,
@@ -351,7 +349,8 @@ def calculate_bellman_values_for_one_week_and_one_scenario(
                 m.solver_parameters.PRESOLVE, m.solver_parameters.PRESOLVE_OFF
             )
         t, itr, Vu, _, _ = m.solve_problem_with_bellman_values(
-            bellman_value_calculation=bellman_value_calculation,
+            stock_discretization=X,
+            reservoir_management=reservoir_management,
             V=V,
             level_i=X[i],
             take_into_account_z_and_y=True,

@@ -408,17 +408,17 @@ class AntaresProblem:
 
     def remove_bellman_constraints(
         self,
-        bellman_value_calculation: BellmanValueCalculation,
+        reservoir_management: ReservoirManagement,
         additional_constraint: List[pywraplp.Constraint],
     ) -> None:
         for cst in additional_constraint:
             cst.SetLb(0)
         cst_initial_level = self.solver.LookupConstraint(
-            f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{self.week}>"
+            f"InitialLevelReservoir::area<{reservoir_management.reservoir.area}>::week<{self.week}>"
         )
         cst_initial_level.SetBounds(
-            lb=bellman_value_calculation.reservoir_management.reservoir.capacity,
-            ub=bellman_value_calculation.reservoir_management.reservoir.capacity,
+            lb=reservoir_management.reservoir.capacity,
+            ub=reservoir_management.reservoir.capacity,
         )
         self.binding_id.SetCoefficient(self.U, 0)
 
@@ -453,7 +453,8 @@ class AntaresProblem:
 
     def solve_problem_with_bellman_values(
         self,
-        bellman_value_calculation: BellmanValueCalculation,
+        stock_discretization: Array1D,
+        reservoir_management: ReservoirManagement,
         V: Array2D,
         level_i: float,
         take_into_account_z_and_y: bool,
@@ -462,14 +463,14 @@ class AntaresProblem:
 
         cout = 0.0
 
-        X = bellman_value_calculation.stock_discretization
+        X = stock_discretization
 
         additional_constraint = []
         additional_constraint += self.set_constraints_initial_level_and_bellman_values(
             level_i=level_i,
             X=X,
             bellman_value=V[:, self.week + 1],
-            area=bellman_value_calculation.reservoir_management.reservoir.area,
+            area=reservoir_management.reservoir.area,
         )
 
         if basis.not_empty():
@@ -478,7 +479,8 @@ class AntaresProblem:
         beta, _, xf, y, z, itr, t = self.solve_problem()
 
         self.remove_bellman_constraints(
-            bellman_value_calculation, additional_constraint
+            reservoir_management=reservoir_management,
+            additional_constraint=additional_constraint,
         )
         cout += beta
         if not (take_into_account_z_and_y):
@@ -491,9 +493,7 @@ class AntaresProblem:
             -(
                 xf
                 - level_i
-                - bellman_value_calculation.reservoir_management.reservoir.inflow[
-                    self.week, self.scenario
-                ]
+                - reservoir_management.reservoir.inflow[self.week, self.scenario]
             ),
             xf,
         )

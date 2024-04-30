@@ -11,7 +11,9 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     BellmanValueCalculation,
 )
-from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
+from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List, Optional
+from multiprocessing import Pool
+from functools import partial
 
 
 def compute_x_multi_scenario(
@@ -129,13 +131,11 @@ def compute_upper_bound_with_stored_models(
 
             computational_time, itr, current_cost, control, level_i = (
                 m.solve_problem_with_bellman_values(
-                    bellman_value_calculation=bellman_value_calculation,
+                    stock_discretization=bellman_value_calculation.stock_discretization,
+                    reservoir_management=bellman_value_calculation.reservoir_management,
                     V=V,
                     level_i=level_i,
-                    take_into_account_z_and_y=(
-                        week
-                        == bellman_value_calculation.time_scenario_param.len_week - 1
-                    ),
+                    take_into_account_z_and_y=(week == param.len_week - 1),
                     basis=basis,
                 )
             )
@@ -214,6 +214,7 @@ def itr_control(
     N: int,
     tol_gap: float,
     solver: str = "GLOP",
+    processes: Optional[int] = None,
 ) -> tuple[
     Array2D,
     Dict[TimeScenarioIndex, RewardApproximation],
@@ -458,11 +459,14 @@ def find_basis(
 
 
 def compute_upper_bound_without_stored_models(
-    bellman_value_calculation: BellmanValueCalculation,
+    param: TimeScenarioParameter,
+    stock_discretization: Array1D,
+    reservoir_management: ReservoirManagement,
     V: Array2D,
     output_path: str,
     store_basis: bool = False,
     solver: str = "CLP",
+    processes: Optional[int] = None,
 ) -> tuple[float, Array2D, Array3D]:
     """
     Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
@@ -485,49 +489,81 @@ def compute_upper_bound_without_stored_models(
     current_itr:Array2D :
         Time and simplex iterations used to solve the problem
     """
-    param = bellman_value_calculation.time_scenario_param
-
     current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
 
     cout = 0.0
     controls = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
 
-    dict_basis: Dict[int, Basis] = {}
-    for scenario in range(param.len_scenario):
-        dict_basis[scenario] = Basis([], [])
-
-    for scenario in range(param.len_scenario):
-
-        level_i = bellman_value_calculation.reservoir_management.reservoir.initial_level
-        for week in range(param.len_week):
-            print(f"{scenario} {week}", end="\r")
-
-            m = create_model(
+    with Pool(processes=processes) as pool:
+        print(pool)
+        intermediate_results = pool.map(
+            partial(
+                solve_one_scenario_with_bellman_values_without_stored_models,
                 param=param,
-                reservoir_management=bellman_value_calculation.reservoir_management,
+                stock_discretization=stock_discretization,
+                reservoir_management=reservoir_management,
+                V=V,
                 output_path=output_path,
-                week=week,
-                scenario=scenario,
+                store_basis=store_basis,
                 solver=solver,
-            )
+            ),
+            range(param.len_scenario),
+        )
 
-            computational_time, itr, current_cost, control, level_i = (
-                m.solve_problem_with_bellman_values(
-                    bellman_value_calculation=bellman_value_calculation,
-                    V=V,
-                    level_i=level_i,
-                    take_into_account_z_and_y=(
-                        week
-                        == bellman_value_calculation.time_scenario_param.len_week - 1
-                    ),
-                    basis=dict_basis[scenario],
-                )
-            )
-            if store_basis:
-                dict_basis[scenario] = m.find_closest_basis(0)
-            cout += current_cost
-            controls[week, scenario] = control
-            current_itr[week, scenario] = (itr, computational_time)
+    for scenario in range(param.len_scenario):
+        cout += intermediate_results[scenario][0]
+        controls[:, scenario] = intermediate_results[scenario][1]
+        current_itr[:, scenario] = intermediate_results[scenario][2]
 
-        upper_bound = cout / param.len_scenario
+    upper_bound = cout / param.len_scenario
     return (upper_bound, controls, current_itr)
+
+
+def solve_one_scenario_with_bellman_values_without_stored_models(
+    scenario: int,
+    param: TimeScenarioParameter,
+    stock_discretization: Array1D,
+    reservoir_management: ReservoirManagement,
+    V: Array2D,
+    output_path: str,
+    store_basis: bool = False,
+    solver: str = "CLP",
+) -> tuple[float, Array1D, Array2D]:
+
+    current_itr = np.zeros((param.len_week, 2), dtype=np.float32)
+
+    cout = 0.0
+    controls = np.zeros((param.len_week), dtype=np.float32)
+
+    basis = Basis([], [])
+
+    level_i = reservoir_management.reservoir.initial_level
+    for week in range(param.len_week):
+        print(f"{scenario} {week}", end="\r")
+
+        m = create_model(
+            param=param,
+            reservoir_management=reservoir_management,
+            output_path=output_path,
+            week=week,
+            scenario=scenario,
+            solver=solver,
+        )
+
+        computational_time, itr, current_cost, control, level_i = (
+            m.solve_problem_with_bellman_values(
+                stock_discretization=stock_discretization,
+                reservoir_management=reservoir_management,
+                V=V,
+                level_i=level_i,
+                take_into_account_z_and_y=(week == param.len_week - 1),
+                basis=basis,
+            )
+        )
+        if store_basis:
+            basis = m.find_closest_basis(0)
+        cout += current_cost
+        controls[week] = control
+        current_itr[week] = (itr, computational_time)
+
+    return (cout, controls, current_itr)

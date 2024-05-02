@@ -356,7 +356,8 @@ def init_iterative_calculation(
     for week in range(len_week):
         for scenario in range(len_scenario):
             r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week],
+                lb_control=-reservoir_management.reservoir.max_pumping[week]
+                * reservoir_management.reservoir.efficiency,
                 ub_control=reservoir_management.reservoir.max_generating[week],
                 ub_reward=0,
             )

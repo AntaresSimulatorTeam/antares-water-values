@@ -41,7 +41,7 @@ def calculate_bellman_values(
 
     if method == "direct":
         # Compute Bellman values directly
-        vb, _, _, _ = calculate_bellman_value_directly(
+        vb, _, _, _, _ = calculate_bellman_value_directly(
             param=param,
             reservoir_management=reservoir_management,
             output_path=output_path,
@@ -52,7 +52,7 @@ def calculate_bellman_values(
 
     elif method == "precalculated":
         # or with precalulated reward
-        vb, _, _, _, _ = calculate_bellman_value_with_precalculated_reward(
+        vb, _, _, _, _, _ = calculate_bellman_value_with_precalculated_reward(
             len_controls=len_controls,
             param=param,
             reservoir_management=reservoir_management,

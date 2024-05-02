@@ -347,6 +347,7 @@ class AntaresProblem:
                 self.load_basis(basis)
 
         self.set_constraints_predefined_control(control)
+        print(control)
         beta, lamb, _, _, _, itr, computing_time = self.solve_problem()
         return beta, lamb, itr, computing_time
 
@@ -448,6 +449,8 @@ class AntaresProblem:
 
             return (beta, lamb, xf, y, z, itr, end - start)
         else:
+            print(self.week)
+            print(self.scenario)
             print(f"Failed to solve : {solve_status}")
             raise (ValueError)
 

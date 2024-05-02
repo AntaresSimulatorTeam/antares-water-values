@@ -366,7 +366,8 @@ def init_iterative_calculation(
     for week in range(len_week):
         for scenario in range(len_scenario):
             r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week],
+                lb_control=-reservoir_management.reservoir.max_pumping[week]
+                * reservoir_management.reservoir.efficiency,
                 ub_control=reservoir_management.reservoir.max_generating[week],
                 ub_reward=0,
             )
@@ -464,10 +465,11 @@ def compute_upper_bound_without_stored_models(
     reservoir_management: ReservoirManagement,
     V: Array2D,
     output_path: str,
+    solver: str,
+    dict_basis: Dict[TimeScenarioIndex, Basis],
     store_basis: bool = False,
-    solver: str = "CLP",
     processes: Optional[int] = None,
-) -> tuple[float, Array2D, Array3D]:
+) -> tuple[float, Array2D, Array3D, Dict[TimeScenarioIndex, Basis]]:
     """
     Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
 
@@ -495,7 +497,7 @@ def compute_upper_bound_without_stored_models(
     controls = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
 
     with Pool(processes=processes) as pool:
-        print(pool)
+
         intermediate_results = pool.map(
             partial(
                 solve_one_scenario_with_bellman_values_without_stored_models,
@@ -506,6 +508,7 @@ def compute_upper_bound_without_stored_models(
                 output_path=output_path,
                 store_basis=store_basis,
                 solver=solver,
+                dict_basis=dict_basis,
             ),
             range(param.len_scenario),
         )
@@ -514,9 +517,13 @@ def compute_upper_bound_without_stored_models(
         cout += intermediate_results[scenario][0]
         controls[:, scenario] = intermediate_results[scenario][1]
         current_itr[:, scenario] = intermediate_results[scenario][2]
+        for week in range(param.len_week):
+            dict_basis[TimeScenarioIndex(week=week, scenario=scenario)] = (
+                intermediate_results[scenario][3][TimeScenarioIndex(week, scenario)]
+            )
 
     upper_bound = cout / param.len_scenario
-    return (upper_bound, controls, current_itr)
+    return (upper_bound, controls, current_itr, dict_basis)
 
 
 def solve_one_scenario_with_bellman_values_without_stored_models(
@@ -526,20 +533,19 @@ def solve_one_scenario_with_bellman_values_without_stored_models(
     reservoir_management: ReservoirManagement,
     V: Array2D,
     output_path: str,
+    solver: str,
+    dict_basis: Dict[TimeScenarioIndex, Basis],
     store_basis: bool = False,
-    solver: str = "CLP",
-) -> tuple[float, Array1D, Array2D]:
+) -> tuple[float, Array1D, Array2D, Dict[TimeScenarioIndex, Basis]]:
 
     current_itr = np.zeros((param.len_week, 2), dtype=np.float32)
 
     cout = 0.0
     controls = np.zeros((param.len_week), dtype=np.float32)
 
-    basis = Basis([], [])
-
     level_i = reservoir_management.reservoir.initial_level
     for week in range(param.len_week):
-        print(f"{scenario} {week}", end="\r")
+        print(f"{scenario} {week}")
 
         m = create_model(
             param=param,
@@ -549,6 +555,18 @@ def solve_one_scenario_with_bellman_values_without_stored_models(
             scenario=scenario,
             solver=solver,
         )
+
+        basis = Basis([], [])
+        if m.store_basis:
+            if dict_basis[TimeScenarioIndex(week, scenario=scenario)].not_empty():
+                basis = dict_basis[TimeScenarioIndex(week=week, scenario=scenario)]
+            elif (
+                week > 0
+                and dict_basis[
+                    TimeScenarioIndex(week - 1, scenario=scenario)
+                ].not_empty()
+            ):
+                basis = dict_basis[TimeScenarioIndex(week - 1, scenario=scenario)]
 
         computational_time, itr, current_cost, control, level_i = (
             m.solve_problem_with_bellman_values(
@@ -560,10 +578,9 @@ def solve_one_scenario_with_bellman_values_without_stored_models(
                 basis=basis,
             )
         )
-        if store_basis:
-            basis = m.find_closest_basis(0)
+
         cout += current_cost
         controls[week] = control
-        current_itr[week] = (itr, computational_time)
+        current_itr[week] = (computational_time, itr)
 
-    return (cout, controls, current_itr)
+    return (cout, controls, current_itr, dict_basis)

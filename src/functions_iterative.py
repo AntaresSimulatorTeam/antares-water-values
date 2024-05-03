@@ -191,12 +191,12 @@ def calculate_reward(
                 TimeScenarioIndex(week, scenario)
             ].solve_with_predefined_controls(
                 control={name_reservoir: float(controls[week][scenario])},
-                prev_basis=basis_0 if i == 0 else Basis(),
+                prev_basis=basis_0 if i == 0 else Basis([], []),
             )
             if list_models[TimeScenarioIndex(week, scenario)].store_basis:
                 basis_0 = list_models[TimeScenarioIndex(week, scenario)].basis[-1]
             else:
-                basis_0 = Basis()
+                basis_0 = Basis([], [])
 
             G[TimeScenarioIndex(week, scenario)].update_reward_approximation(
                 slope_new_cut=-lamb[name_reservoir],
@@ -373,7 +373,8 @@ def init_iterative_calculation(
     for week in range(len_week):
         for scenario in range(len_scenario):
             r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week],
+                lb_control=-reservoir_management.reservoir.max_pumping[week]
+                * reservoir_management.reservoir.efficiency,
                 ub_control=reservoir_management.reservoir.max_generating[week],
                 ub_reward=0,
             )

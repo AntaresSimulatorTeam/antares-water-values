@@ -302,7 +302,7 @@ class BellmanValueCalculation:
 
         for i_fut in range(len(X)):
             u = -X[i_fut] + level_i + stock.inflow[week, scenario]
-            if -stock.max_pumping[week] <= u:
+            if -stock.max_pumping[week] * stock.efficiency <= u:
                 if (
                     self.reservoir_management.overflow
                     or u <= stock.max_generating[week]
@@ -326,7 +326,11 @@ class BellmanValueCalculation:
                     control = points[u]
 
         Umin = level_i + stock.inflow[week, scenario] - stock.bottom_rule_curve[week]
-        if -stock.max_pumping[week] <= Umin <= stock.max_generating[week]:
+        if (
+            -stock.max_pumping[week] * stock.efficiency
+            <= Umin
+            <= stock.max_generating[week]
+        ):
             state_fut = level_i - Umin + stock.inflow[week, scenario]
             penalty = pen(state_fut)
             if (reward_fn(Umin) + V_fut(state_fut) + penalty) > Vu:
@@ -335,7 +339,11 @@ class BellmanValueCalculation:
                 control = Umin
 
         Umax = level_i + stock.inflow[week, scenario] - stock.upper_rule_curve[week]
-        if -stock.max_pumping[week] <= Umax <= stock.max_generating[week]:
+        if (
+            -stock.max_pumping[week] * stock.efficiency
+            <= Umax
+            <= stock.max_generating[week]
+        ):
             state_fut = level_i - Umax + stock.inflow[week, scenario]
             penalty = pen(state_fut)
             if (reward_fn(Umax) + V_fut(state_fut) + penalty) > Vu:

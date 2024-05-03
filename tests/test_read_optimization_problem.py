@@ -26,7 +26,7 @@ def test_create_and_modify_weekly_problem() -> None:
     )
 
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
-        control={"area": 0}, prev_basis=Basis()
+        control={"area": 0}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(943484691.8759749)
     assert lamb["area"] == pytest.approx(-200.08020911704824)
@@ -36,7 +36,7 @@ def test_create_and_modify_weekly_problem() -> None:
         param=param, multi_stock_management=reservoir_management
     )
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
-        control={"area": 8400000}, prev_basis=Basis()
+        control={"area": 8400000}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(38709056.48535345)
     assert lamb["area"] == pytest.approx(0.0004060626000000001)
@@ -46,7 +46,7 @@ def test_create_and_modify_weekly_problem() -> None:
         param=param, multi_stock_management=reservoir_management
     )
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
-        control={"area": -8400000}, prev_basis=Basis()
+        control={"area": -8400000}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(20073124196.898315)
     assert lamb["area"] == pytest.approx(-3000.0013996873)
@@ -82,7 +82,7 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
         )
 
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 0}, prev_basis=Basis()
+            control={"area": 0}, prev_basis=Basis([], [])
         )
         assert beta == pytest.approx(943484691.8759749)
         assert lamb["area"] == pytest.approx(-200.08020911704824)
@@ -98,7 +98,7 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
             param=param, multi_stock_management=reservoir_management
         )
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 8400000}, prev_basis=Basis()
+            control={"area": 8400000}, prev_basis=Basis([], [])
         )
         assert beta == pytest.approx(38709056.48535345)
         assert lamb["area"] == pytest.approx(0.0004060626000000001)
@@ -108,7 +108,7 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
             param=param, multi_stock_management=reservoir_management
         )
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={"area": -8400000}, prev_basis=Basis()
+            control={"area": -8400000}, prev_basis=Basis([], [])
         )
         assert beta == pytest.approx(20073124196.898315)
         assert lamb["area"] == pytest.approx(-3000.0013996873)

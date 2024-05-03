@@ -37,7 +37,7 @@ def test_create_weekly_problem_with_two_stocks() -> None:
     )
 
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
-        control={"area_1": 0, "area_2": 0}, prev_basis=Basis()
+        control={"area_1": 0, "area_2": 0}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(26357713.948390935)
     assert lamb["area_1"] == pytest.approx(-138.85274530229998)
@@ -85,7 +85,7 @@ def test_create_weekly_problem_with_two_stocks_with_xpress() -> None:
         )
 
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={"area_1": 0, "area_2": 0}, prev_basis=Basis()
+            control={"area_1": 0, "area_2": 0}, prev_basis=Basis([], [])
         )
         assert beta == pytest.approx(26357713.948390935)
         assert lamb["area_1"] == pytest.approx(-138.85274530229998)

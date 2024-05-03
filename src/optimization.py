@@ -339,7 +339,7 @@ class AntaresProblem:
 
     def solve_with_predefined_controls(
         self, control: Dict[str, float], prev_basis: Basis = Basis([], [])
-    ) -> tuple[Dict[str, float], float, int, float]:
+    ) -> tuple[float, Dict[str, float], int, float]:
         """
         Modify and solve problem to evaluate weekly cost associated with a particular control of the reservoir.
 

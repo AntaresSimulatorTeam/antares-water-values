@@ -162,6 +162,11 @@ cython_debug/
 
 # Dev
 *.ipynb
-*.whl
 .vscode
 dev/
+
+#Plots
+*.html
+
+#Custom packages
+*.whl

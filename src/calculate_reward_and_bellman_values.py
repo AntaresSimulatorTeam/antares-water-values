@@ -104,7 +104,6 @@ class MultiStockManagement:
         for res in list_reservoirs:
             self.dict_reservoirs[res.reservoir.area] = res
 
-
 class RewardApproximation:
     """Class to store and update reward approximation for a given week and a given scenario"""
 

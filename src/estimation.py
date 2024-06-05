@@ -34,6 +34,33 @@ class LinearInterpolator:
         self.costs = costs.ravel()
         self.duals = np.array([dual.ravel() for dual in duals])
     
+    def update(self, inputs:np.ndarray, costs:np.ndarray, duals:np.ndarray) -> None:
+        """
+        Updates the parameters of the Linear Interpolator
+        
+        Parameters
+        ----------
+            inputs:np.ndarray: The coordinates for which costs / duals are obtained
+                must have the same shape as what we'll call our interpolator with,
+            costs:np.ndarray: Cost for every input,
+            duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
+        """
+        self.inputs = np.concatenate([self.inputs, inputs])
+        self.costs = np.concatenate([self.costs, costs])
+        self.duals = np.concatenate([self.duals, duals])
+        
+    def remove(self, ids:Union[list[int], np.ndarray]) -> None:
+        """
+        Remove some approximation from the Linear Interpolator
+        
+        Parameters
+        ----------
+            ids:np.ndarray: ids of the approximations to remove
+            
+        """
+        self.inputs = np.delete(self.inputs, ids)
+        self.costs = np.delete(self.costs, ids)
+        self.duals = np.delete(self.duals, ids)
 
     def __call__(self, x:np.ndarray) -> Union[np.ndarray, float]:
         """
@@ -46,9 +73,25 @@ class LinearInterpolator:
                 
         Returns
         -------
-            np.ndarray: 'best'/maximum interpolation for every coordinate
+            np.ndarray: 'best'/maximum interpolation for every point given
         """
-        return np.max([self.costs[id] + np.dot(val-x, self.duals[:, id]) for id, val in enumerate(self.inputs)], axis=0)
+        return np.max([self.costs[id] + np.dot(val-x, -self.duals[:, id]) for id, val in enumerate(self.inputs)], axis=0)
+    
+    
+    def get_owner(self, x:np.ndarray) -> Any:
+        """
+        Interpolates between the saved points and returns the id of the subgradient active for each interpolation 
+        
+        Parameters
+        ----------
+            x:np.ndarray: Array of coordinates for which we want to have the interpolation
+                should have the same shape as the inputs
+                
+        Returns
+        -------
+            np.ndarray: id of 'best'/maximum subgradient for every point given
+        """
+        return np.argmax([self.costs[id] + np.dot(val-x, -self.duals[:, id]) for id, val in enumerate(self.inputs)], axis=0)
     
     def alltile(self, x:np.ndarray) -> np.ndarray:
         """
@@ -64,6 +107,68 @@ class LinearInterpolator:
             np.ndarray All possible interpolations
         """
         return np.array([self.costs[id] + np.dot(val-x, self.duals[:, id]) for id, val in enumerate(self.inputs)])
+    
+    def remove_approximations(self, controls:np.ndarray, real_costs:np.ndarray) -> None:
+        """
+        Removes all hyperplanes above the real values at specified controls
+        
+        Parameters
+        ----------
+            controls:np.ndarray: controls at which we know the real costs,
+            real_costs:np.ndarray: real costs at controls
+        """
+        estimated_costs = self.alltile(controls)
+        #Abnormality is when an hyperplane gives an estimation over the real price (when it should be under)
+        are_abnormal = estimated_costs - real_costs[:, None] >= 0
+        has_abnormality = np.sum(are_abnormal, axis=0) > 0
+        ids = [i for i, abn in enumerate(has_abnormality) if abn]
+        self.remove(ids=ids)
+        
+    def limited(self, x:np.ndarray, chosen_pts:Union[list[bool], np.ndarray]) -> Union[np.ndarray, float]:
+        """
+        Interpolates between the chosen points
+        
+        Parameters
+        ----------
+            x:np.ndarray: Array of coordinates for which we want to have the interpolation
+                should have the same shape as the inputs,
+            
+            chosen_pts:Union[list, np.ndarray]: Points allowed to participate to interpolation
+                
+        Returns
+        -------
+            np.ndarray: 'best'/maximum interpolation for every coordinate using those points
+        """
+        return np.max([self.costs[id] + np.dot(val-x, -self.duals[:, id]) for id, (val, chosen) in enumerate(zip(self.inputs, chosen_pts)) if chosen], axis=0)
+    
+    def count_redundant(self, tolerance:float, remove:bool=False) -> tuple[int, list]:
+        """
+        Counts the number of estimation points that are already given by the others
+        
+        Parameters
+        ----------
+            precision:float: Tolerance on how different the points information from the ones we currently 
+            remove:bool: Whether or not we want to delete the observations described as redundant
+        
+        Returns
+        -------
+            n:int: number of points that could be removed without damaging the prediction
+            non_redundants:list: ids of non redundant points
+        """
+        n_inputs =self.inputs.shape[0]
+        
+        # Initiate the good points list
+        non_redundants = [True] + [False]*(n_inputs - 1)
+        #We won't look at the difference in derivative at a point, even though it could be important
+        for i in range(1, n_inputs):
+            non_redundants[i] = np.abs(self.limited(self.inputs[i], non_redundants) - self.costs[i]) >= tolerance
+            
+        redundants = [i for i, not_reddt in enumerate(non_redundants) if not(not_reddt)]
+        #Remove the redundant observations (might be needed if bellman problems become too heavy, might never happen tho)
+        if remove:
+            self.remove(ids=redundants)
+        return len(redundants), non_redundants
+        
 
 class LinearCostEstimator(Estimator):
     """ A class to contain an ensemble of Interpolators for every week and scenario """
@@ -83,7 +188,7 @@ class LinearCostEstimator(Estimator):
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        self.estimators = np.array([[LinearInterpolator(inputs=controls[week, scenario],
+        self.estimators = np.array([[LinearInterpolator(inputs=controls[week],
                                                         costs=costs[week, scenario],
                                                         duals=duals[week, scenario])\
             for scenario in range(param.len_scenario)]\

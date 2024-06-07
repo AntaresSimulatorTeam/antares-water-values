@@ -58,9 +58,9 @@ class LinearInterpolator:
             ids:np.ndarray: ids of the approximations to remove
             
         """
-        self.inputs = np.delete(self.inputs, ids)
+        self.inputs = np.delete(self.inputs, ids, axis=0)
         self.costs = np.delete(self.costs, ids)
-        self.duals = np.delete(self.duals, ids)
+        self.duals = np.delete(self.duals, ids, axis=1)
 
     def __call__(self, x:np.ndarray) -> Union[np.ndarray, float]:
         """
@@ -106,7 +106,7 @@ class LinearInterpolator:
         -------
             np.ndarray All possible interpolations
         """
-        return np.array([self.costs[id] + np.dot(val-x, self.duals[:, id]) for id, val in enumerate(self.inputs)])
+        return np.array([self.costs[id] + np.dot(val-x, -self.duals[:, id]) for id, val in enumerate(self.inputs)])
     
     def remove_approximations(self, controls:np.ndarray, real_costs:np.ndarray) -> None:
         """
@@ -119,7 +119,7 @@ class LinearInterpolator:
         """
         estimated_costs = self.alltile(controls)
         #Abnormality is when an hyperplane gives an estimation over the real price (when it should be under)
-        are_abnormal = estimated_costs - real_costs[:, None] >= 0
+        are_abnormal = estimated_costs.T - real_costs[:, None] >= 0
         has_abnormality = np.sum(are_abnormal, axis=0) > 0
         ids = [i for i, abn in enumerate(has_abnormality) if abn]
         self.remove(ids=ids)

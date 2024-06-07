@@ -1,4 +1,5 @@
 import re
+from typing import Any
 from calculate_reward_and_bellman_values import (
     BellmanValueCalculation,
     MultiStockBellmanValueCalculation,
@@ -123,7 +124,7 @@ class AntaresProblem:
         self.basis.append(basis)
         self.control_basis.append(control_basis)
 
-    def get_basis(self) -> tuple[List, List]:
+    def get_basis(self) -> tuple[list, list]:
         var_basis = []
         con_basis = []
         for var in self.solver.variables():
@@ -784,7 +785,6 @@ def solve_problem_with_multivariate_bellman_values(
         xf,
         z,
     )
-
 
 class WeeklyBellmanProblem:
     """ A Class to manipulate the Dynamic Programming Optimization problem when costs

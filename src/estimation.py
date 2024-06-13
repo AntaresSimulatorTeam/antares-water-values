@@ -6,12 +6,6 @@ class Estimator:
     """ Generic class for estimators/interpolators """
     def __init__(self, param:TimeScenarioParameter) -> None:
         ...
-        
-    def update(self,
-               param:TimeScenarioParameter,
-               objective_values:np.ndarray,
-               control_duals:Dict[str, np.ndarray]) -> None:
-        ...
     
     def __getitem__(self, ws: Union[tuple[int,int], int]) -> Any:
         ...
@@ -32,7 +26,7 @@ class LinearInterpolator:
         """
         self.inputs = inputs
         self.costs = costs.ravel()
-        self.duals = np.array([dual.ravel() for dual in duals])
+        self.duals = duals
     
     def update(self, inputs:np.ndarray, costs:np.ndarray, duals:np.ndarray) -> None:
         """
@@ -60,7 +54,7 @@ class LinearInterpolator:
         """
         self.inputs = np.delete(self.inputs, ids, axis=0)
         self.costs = np.delete(self.costs, ids)
-        self.duals = np.delete(self.duals, ids, axis=1)
+        self.duals = np.delete(self.duals, ids, axis=0)
 
     def __call__(self, x:np.ndarray) -> Union[np.ndarray, float]:
         """
@@ -75,7 +69,7 @@ class LinearInterpolator:
         -------
             np.ndarray: 'best'/maximum interpolation for every point given
         """
-        return np.max([self.costs[id] + np.dot(val-x, -self.duals[:, id]) for id, val in enumerate(self.inputs)], axis=0)
+        return np.max([self.costs[id] + np.dot(val-x, -self.duals[id]) for id, val in enumerate(self.inputs)], axis=0)
     
     
     def get_owner(self, x:np.ndarray) -> Any:
@@ -91,7 +85,7 @@ class LinearInterpolator:
         -------
             np.ndarray: id of 'best'/maximum subgradient for every point given
         """
-        return np.argmax([self.costs[id] + np.dot(val-x, -self.duals[:, id]) for id, val in enumerate(self.inputs)], axis=0)
+        return np.argmax([self.costs[id] + np.dot(val-x, -self.duals[id]) for id, val in enumerate(self.inputs)], axis=0)
     
     def alltile(self, x:np.ndarray) -> np.ndarray:
         """
@@ -106,7 +100,7 @@ class LinearInterpolator:
         -------
             np.ndarray All possible interpolations
         """
-        return np.array([self.costs[id] + np.dot(val-x, -self.duals[:, id]) for id, val in enumerate(self.inputs)])
+        return np.array([self.costs[id] + np.dot(val-x, -self.duals[id]) for id, val in enumerate(self.inputs)])
     
     def remove_approximations(self, controls:np.ndarray, real_costs:np.ndarray) -> None:
         """
@@ -139,7 +133,7 @@ class LinearInterpolator:
         -------
             np.ndarray: 'best'/maximum interpolation for every coordinate using those points
         """
-        return np.max([self.costs[id] + np.dot(val-x, -self.duals[:, id]) for id, (val, chosen) in enumerate(zip(self.inputs, chosen_pts)) if chosen], axis=0)
+        return np.max([self.costs[id] + np.dot(val-x, -self.duals[id]) for id, (val, chosen) in enumerate(zip(self.inputs, chosen_pts)) if chosen], axis=0)
     
     def count_redundant(self, tolerance:float, remove:bool=False) -> tuple[int, list]:
         """
@@ -188,7 +182,7 @@ class LinearCostEstimator(Estimator):
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        self.estimators = np.array([[LinearInterpolator(inputs=controls[week],
+        self.estimators = np.array([[LinearInterpolator(inputs=controls[week, scenario],
                                                         costs=costs[week, scenario],
                                                         duals=duals[week, scenario])\
             for scenario in range(param.len_scenario)]\
@@ -223,3 +217,18 @@ class LinearCostEstimator(Estimator):
             np.ndarray: interpolation(s) at control(s)
         """
         return self.estimators[week, scenario](control=control)
+    
+    def update(self, inputs:np.ndarray, costs:np.ndarray, duals:np.ndarray) -> None:
+        """
+        Updates the parameters of the Linear Interpolators
+        
+        Parameters
+        ----------
+            inputs:np.ndarray: The coordinates for which costs / duals are obtained
+                must have the same shape as what we'll call our interpolator with,
+            costs:np.ndarray: Cost for every input,
+            duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
+        """
+        for week, (inputs_w, costs_w, duals_w) in enumerate(zip(inputs, costs, duals)):
+            for scenario, (inputs, costs, duals) in enumerate(zip(inputs_w, costs_w, duals_w)):
+                self.estimators[week, scenario].update(input=inputs, costs=costs, duals=duals)

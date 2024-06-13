@@ -195,6 +195,7 @@ def initialize_antares_problems(
     output_path:str,
     name_solver:str,
     direct_bellman_calc:bool=True,
+    verbose:bool=False,
     ) -> Dict[TimeScenarioIndex, AntaresProblem]:
     """
         Creates Instances of the Antares problem for every week / scenario
@@ -205,14 +206,18 @@ def initialize_antares_problems(
         multi_stock_management:MultiStockManagement: Management information for every stock ,
         output_path:str: Folder containing the mps files generated for our study,
         name_solver:str: Name of the solver used,
+        direct_bellman_calc:bool: Integrate future costs in the LP formulation
+        verbose:bool: Control displays at runnning time
         
         Returns
         -------
         list_models: Dict[TimeScenarioIndex, AntaresProblem]: Dictionnary with all problems
     """
     list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
-    print(f"=======================[Initialization of Antares Problems]=======================")
-    for week in tqdm(range(param.len_week), desc='Week', colour='Yellow'):
+    week_range = range(param.len_week)
+    if verbose:
+        week_range = tqdm(week_range, desc='Problem initialization', colour='Yellow')
+    for week in week_range:
         for scenario in range(param.len_scenario):
             m = AntaresProblem(
                 scenario=scenario,
@@ -238,7 +243,8 @@ def get_bellman_values_from_costs(
     future_estimator:LinearInterpolator,
     xNsteps:int,
     name_solver:str,
-    )->tuple[np.ndarray, np.ndarray, np.ndarray, LinearInterpolator]:
+    verbose:bool=False,
+    )->tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[LinearInterpolator]]:
     """
     Dynamically solves the problem of minimizing the optimal control problem for every discretized level, 
     balancing between saving costs this week or saving stock to avoid future costs
@@ -251,7 +257,7 @@ def get_bellman_values_from_costs(
         future_estimator:LinearInterpolator: All previously obtained lower bounding hyperplains of future cost estimation,
         xNsteps:int: Discretization level used
         name_solver:str: Solver chosen for the optimization problem, default -> CLP
-        
+        verbose:bool: Controls the displays at running time
         
     Returns
     -------
@@ -268,6 +274,9 @@ def get_bellman_values_from_costs(
         name_solver=name_solver
     )
     
+    #Keeping in memory all future costs approximations
+    future_estimators_l = [future_estimator]
+    
     # Parameters
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     n_weeks = param.len_week
@@ -277,12 +286,15 @@ def get_bellman_values_from_costs(
     levels = np.array([level for level in levels_discretization])
     
     # Initializing controls, costs and duals
-    controls = np.zeros([n_weeks] + [xNsteps**n_reservoirs] + [n_reservoirs]) #Not used
+    controls = np.zeros([n_weeks] + [xNsteps**n_reservoirs] + [n_reservoirs])
     costs = np.zeros([n_weeks] + [xNsteps**n_reservoirs])
-    duals = np.zeros([n_weeks] + [xNsteps**n_reservoirs] +[n_reservoirs])
+    duals = np.zeros([n_weeks] + [xNsteps**n_reservoirs] + [n_reservoirs])
     
     # Starting from last week dynamically solving the optimal control problem (from every starting level)
-    for week in tqdm(range(param.len_week-1, -1, -1), colour="Green", desc="Week"):
+    week_range = range(param.len_week-1, -1, -1)
+    if verbose:
+        week_range = tqdm(week_range, colour="Green", desc="Dynamic Solving")
+    for week in week_range:
         for lvl_id, lvl_init in enumerate(levels):
             
             #Remove previous constraints / vars
@@ -295,25 +307,27 @@ def get_bellman_values_from_costs(
                 future_costs_estimation=future_estimator,
             )
             
-            #Solve, should we make use of previous Bases ?
-            controls_wl, cost_wl, duals_wl = problem.solve(verbose=False)
+            #Solve, should we make use of previous Bases ? Not yet, computations still tractable for n<=2
+            controls_wl, cost_wl, duals_wl = problem.solve(remove_future_costs=False, verbose=False)
             
-            #Wriing down results
+            #Writing down results
             controls[week, lvl_id] = controls_wl
             costs[week, lvl_id] = cost_wl
             duals[week, lvl_id] = duals_wl
 
         # Updating the future estimator
-        future_estimator = LinearInterpolator(inputs=levels, costs=costs[week], duals=np.moveaxis(duals[week],-1,0))
-    return levels, costs, duals, future_estimator
+        future_estimator = LinearInterpolator(inputs=levels, costs=costs[week], duals=duals[week])
+        future_estimators_l.insert(0,future_estimator)
+        # n_rddts, rddants = future_estimator.count_redundant(tolerance=1e7)
+        # future_estimator.remove(1-np.array(rddants))
+    return levels, costs, duals, controls, future_estimators_l
 
 def initialize_future_costs(
     param:TimeScenarioParameter,
-    xNsteps:int,
     multi_stock_management:MultiStockManagement,
     costs_approx:Estimator,
     
-) -> LinearInterpolator:
+) -> LinearInterpolator: #NOT ESTIMATOR ??
     """
     Proposes an estimation of yearly costs based on the precalculated weekly costs, to prevent the model from 
     emptying the stock on the last week as if it was the last
@@ -321,7 +335,6 @@ def initialize_future_costs(
     Parameters
     ----------
         param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
-        xNsteps:int: Discretization level used
         multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
         costs_approx:Estimator: Precalculated weekly costs based on control
         
@@ -331,16 +344,14 @@ def initialize_future_costs(
     """
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     return LinearInterpolator(
-        inputs=np.zeros((xNsteps**n_reservoirs, n_reservoirs)),
-        costs=np.zeros([xNsteps]*n_reservoirs),
-        duals=np.zeros([n_reservoirs]+[xNsteps]*n_reservoirs),
+        inputs=np.zeros((1, n_reservoirs)),
+        costs=np.zeros(1),
+        duals=np.zeros((1, n_reservoirs)),
         )
 
 def get_week_scenario_costs(m:AntaresProblem,
-                            week:int,
-                            xNsteps:int,
                             multi_stock_management:MultiStockManagement,
-                            controls_list:Optional[np.ndarray]
+                            controls_list:np.ndarray,
                             )-> tuple[np.ndarray, np.ndarray, int, list[float]]:
     """
     Takes a control and an initialized Antares problem setup and returns the objective and duals 
@@ -350,9 +361,8 @@ def get_week_scenario_costs(m:AntaresProblem,
     ----------
         m:AntaresProblem: Instance of Antares problem describing the problem currently solved
             (at specified week and scenario),
-        week:int: Week of interest,
-        xNsteps: Discretization level
         multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
+        controls_list:np.ndarray, array of all controls to be checked
         
     Returns
     -------
@@ -365,33 +375,19 @@ def get_week_scenario_costs(m:AntaresProblem,
     tot_iter=0
     times = []
     
-    #Initialize all possible controls if no list given
-    if controls_list is None:
-        controls = np.array([i for i in product(
-                *[np.linspace(-manag.reservoir.max_pumping[week]*manag.reservoir.efficiency,
-                            manag.reservoir.max_generating[week], xNsteps)
-                    for area, manag in multi_stock_management.dict_reservoirs.items()])])[week]
-    else:
-        controls = controls_list[week]
     #Initialize Basis
     basis = Basis([], [])
     
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     
     #Initialize costs
-    costs = np.zeros([xNsteps]*n_reservoirs)
-    slopes = np.zeros([n_reservoirs]+[xNsteps]*n_reservoirs)
-    for i, stock_management in enumerate(controls):
+    n_controls = controls_list.shape[0]
+    costs = np.zeros(n_controls)
+    slopes = np.zeros([n_controls, n_reservoirs])
+    for i, stock_management in enumerate(controls_list):
         
         #Formatting control
         control = {area:cont for area, cont in zip(multi_stock_management.dict_reservoirs, stock_management)}
-
-        #Getting control id
-        ids, id_res=[], i
-        for _ in range(n_reservoirs):
-            ids.append(id_res%xNsteps)
-            id_res = id_res//xNsteps
-        ids_tup = tuple(ids[::-1])
         
         #Solving the problem
         control_cost, control_slopes, itr, time_taken = m.solve_with_predefined_controls(control=control,
@@ -400,9 +396,9 @@ def get_week_scenario_costs(m:AntaresProblem,
         times.append(time_taken)
         
         #Save results
-        costs[ids_tup] = control_cost
-        for i, area in enumerate(multi_stock_management.dict_reservoirs):
-            slopes[i][ids_tup] = control_slopes[area]
+        costs[i] = control_cost
+        for j, area in enumerate(multi_stock_management.dict_reservoirs):
+            slopes[i][j] = control_slopes[area]
         
         #Save basis
         rstatus, cstatus = m.get_basis()
@@ -412,8 +408,8 @@ def get_week_scenario_costs(m:AntaresProblem,
 def get_all_costs(param:TimeScenarioParameter,
                     list_models:Dict[TimeScenarioIndex, AntaresProblem],
                     multi_stock_management:MultiStockManagement,
-                    xNsteps:int,
-                    controls_list:Optional[np.ndarray],
+                    controls_list:np.ndarray,
+                    verbose:bool=False,
                     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Takes a problem and a discretization level and solves the Antares pb for every combination of stock for every week
@@ -423,8 +419,8 @@ def get_all_costs(param:TimeScenarioParameter,
             param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
             list_models:Dict[TimeScenarioIndex, AntaresProblem]: List of models
             multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
-            xNsteps:int: Discretization level used
-            
+            controls_list:np.ndarray: Controls to be evaluated, per week, per scenario
+            verbose:bool:Control the level of outputs show by the function
             
         Returns
         -------
@@ -435,21 +431,28 @@ def get_all_costs(param:TimeScenarioParameter,
     times = []
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     
-    # Initializing the n_weeks*n_scenarios*xNsteps^{n_reservoirs} values to fill
-    costs = np.zeros([param.len_week, param.len_scenario]+[xNsteps]*n_reservoirs)
-    slopes = np.zeros([param.len_week, param.len_scenario]+[n_reservoirs]+[xNsteps]*n_reservoirs)
-    for week in tqdm(range(param.len_week), colour='blue', desc="Week"):
+    # Initializing the n_weeks*n_scenarios*n_controls*n_stocks values to fill
+    shape_controls = list(controls_list.shape)
+    costs = np.zeros(shape_controls[:-1])
+    slopes = np.zeros(shape_controls)
+    week_range = range(param.len_week)
+    if verbose:
+        week_range = tqdm(range(param.len_week), colour='blue', desc="Simulation")
+    for week in week_range:
         for scenario in range(param.len_scenario):
             ts_id = TimeScenarioIndex(week=week, scenario=scenario)
             #Antares problem
             m = list_models[ts_id]
-            costs_ws, slopes_ws, iters, times_ws = get_week_scenario_costs(
-                m=m,
-                week=week,
-                xNsteps=xNsteps,
-                multi_stock_management=multi_stock_management,
-                controls_list=controls_list,
-            )
+            try:
+                costs_ws, slopes_ws, iters, times_ws = get_week_scenario_costs(
+                    m=m,
+                    multi_stock_management=multi_stock_management,
+                    controls_list=controls_list[week, scenario],
+                )
+            except ValueError:
+                reservoirs=[mng.reservoir for mng in multi_stock_management.dict_reservoirs.values()]
+                print(f"Failed at week {week}, the conditions on control were:")
+                # raise ValueError
             tot_iter += iters
             times.append(times_ws)
             costs[week, scenario] = costs_ws
@@ -458,6 +461,7 @@ def get_all_costs(param:TimeScenarioParameter,
     return costs, slopes, np.array(times)
 
 def generate_controls(
+    param:TimeScenarioParameter,
     multi_stock_management:MultiStockManagement,
     controls_looked_up:str,
     xNsteps:int,
@@ -467,6 +471,7 @@ def generate_controls(
     
     Parameters
     ----------
+        param:TimeScenarioParameter: Contains the informations relative to the number of scenario and weeks
         multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
         controls_looked_up:str: 'grid', 'line', 'random', 'oval' description of the controls to generate
         xNsteps:int: Discretization level used
@@ -476,36 +481,45 @@ def generate_controls(
     -------
         Bellman Values:Dict[int, Dict[str, npt.NDArray[np.float32]]]: Bellman values
     """
+    # General parameters
+    weeks = param.len_week
+    n_scenarios = param.len_scenario
     n_res = len(multi_stock_management.dict_reservoirs)
-    # p = 1/(n_res+1)
+    
+    # Useful data on reservoirs
     max_res = np.array([mng.reservoir.max_generating for mng in multi_stock_management.dict_reservoirs.values()])
     min_res = np.array([-mng.reservoir.max_pumping*mng.reservoir.efficiency 
                         for mng in multi_stock_management.dict_reservoirs.values()])
     mean_res = (max_res + min_res) /2
-    weeks = max_res.shape[-1]
+    
+    # Points to start lines at
     start_pts = [min_res + (1/4)*((i+1)/(n_res+1))*(max_res - min_res)*(np.array([j != i for j in range(n_res)])[:,None]) for i in range(n_res)]
     end_points = [start_pt + (max_res - min_res)*(np.array([j == i for j in range(n_res)])[:,None]) for i,start_pt in enumerate(start_pts)]
+    
+    
     if controls_looked_up=="line":
         controls = np.concatenate([np.linspace(strt_pt, end_pt, xNsteps) for strt_pt, end_pt in zip(start_pts, end_points)])
-        controls = np.moveaxis(controls, -1, 0) #Putting the week axis first -> control[week] is a list of controls
+        
     elif controls_looked_up=="random":
         rand_placements = np.random.uniform(0, 1, size=(xNsteps, n_res, weeks))
         rand_placements = min_res[None,:,:] + (max_res - min_res)[None,:,:]*rand_placements
-        controls = np.moveaxis(rand_placements, -1, 0)
+        
     elif controls_looked_up=="oval":
         ...
     elif controls_looked_up=="line+diagonal":
         controls = np.concatenate([np.linspace(strt_pt, end_pt, xNsteps) for strt_pt, end_pt in zip(start_pts, end_points)]+[np.linspace(max_res, min_res, xNsteps)])
-        controls = np.moveaxis(controls, -1, 0)
+        
     elif controls_looked_up=="diagonal":
         controls = np.linspace(max_res, min_res, xNsteps)
-        controls = np.moveaxis(controls, -1, 0)
+        
     else: #Applying default: grid
         controls = np.array([i for i in product(
                 *[np.linspace(-manag.reservoir.max_pumping*manag.reservoir.efficiency,
                             manag.reservoir.max_generating, xNsteps)
                     for area, manag in multi_stock_management.dict_reservoirs.items()])])
-        controls = np.moveaxis(controls, -1, 0)
+
+    controls = np.broadcast_to(controls, shape=[n_scenarios]+list(controls.shape))
+    controls = np.moveaxis(controls, -1, 0) #Should be of shape [n_weeks, n_scenarios, n_controls, n_reservoirs]
     return controls
 
 def precalculated_method(
@@ -516,7 +530,8 @@ def precalculated_method(
     Nsteps_bellman: int = 12,
     name_solver: str = "CLP",
     controls_looked_up: str = 'grid',
-) -> tuple[np.ndarray, LinearCostEstimator, np.ndarray, np.ndarray, np.ndarray]:
+    verbose:bool = False,
+) -> tuple[np.ndarray, LinearCostEstimator, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
     """
     Takes a control and an initialized Antares problem setup and returns the objective and duals 
     for every week and every Scenario
@@ -539,29 +554,36 @@ def precalculated_method(
     # __________________________________________________________________________________________
     
     #Initialize the problems
-    list_models = initialize_antares_problems(param=param,
-                                              multi_stock_management=multi_stock_management,
-                                              output_path=output_path,
-                                              name_solver=name_solver,
-                                              direct_bellman_calc=False)
+    list_models = initialize_antares_problems(
+        param=param,
+        multi_stock_management=multi_stock_management,
+        output_path=output_path,
+        name_solver=name_solver,
+        direct_bellman_calc=False,
+        verbose=verbose,)
     
-    controls_list = generate_controls(multi_stock_management=multi_stock_management,
-                                      controls_looked_up=controls_looked_up,
-                                      xNsteps=xNsteps)
+    controls_list = generate_controls(
+        param=param,
+        multi_stock_management=multi_stock_management,
+        controls_looked_up=controls_looked_up,
+        xNsteps=xNsteps)
     
     print("=======================[      Precalculation of costs     ]=======================")
-    costs, slopes, times = get_all_costs(param=param,
-                              list_models=list_models,
-                              multi_stock_management=multi_stock_management,
-                              xNsteps=xNsteps,
-                              controls_list=controls_list,)
+    costs, slopes, times = get_all_costs(
+        param=param,
+        list_models=list_models,
+        multi_stock_management=multi_stock_management,
+        controls_list=controls_list,
+        verbose=verbose,
+        )
     
     # print("=======================[       Reward approximation       ]=======================")
     #Initialize cost functions
-    costs_approx = LinearCostEstimator(param=param,
-                                  controls=controls_list,
-                                  costs=costs,
-                                  duals=slopes)
+    costs_approx = LinearCostEstimator(
+        param=param,
+        controls=controls_list,
+        costs=costs,
+        duals=slopes)
     
     # __________________________________________________________________________________________
     #                           BELLMAN CALCULATION PART
@@ -569,19 +591,20 @@ def precalculated_method(
     print("=======================[       Dynamic  Programming       ]=======================")
     future_costs_approx = initialize_future_costs(
         param=param,
-        xNsteps=Nsteps_bellman,
         multi_stock_management=multi_stock_management,
         costs_approx=costs_approx
     )
     for i in range(2):
-        levels, bellman_costs, bellman_duals, future_costs_approx = get_bellman_values_from_costs(
+        levels, bellman_costs, bellman_duals, bellman_controls, future_costs_approx_l = get_bellman_values_from_costs(
             param=param,
             multi_stock_management=multi_stock_management,
             cost_estimation=costs_approx,
             future_estimator=future_costs_approx,
             xNsteps=Nsteps_bellman,
             name_solver=name_solver,
+            verbose=verbose,
         )
+        future_costs_approx = future_costs_approx_l[-1]
     
-    return levels, costs_approx, bellman_costs, bellman_duals, np.array(times)
+    return levels, costs_approx, bellman_costs, bellman_controls, bellman_duals, np.array(times)
     

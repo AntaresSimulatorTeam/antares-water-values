@@ -382,8 +382,13 @@ class AntaresProblem:
                 self.load_basis(basis)
 
         for area in self.range_reservoir:
-            self.set_constraints_predefined_control(control[area], area)
-        beta, lamb, final_level, _, _, itr, computing_time = self.solve_problem(direct_bellman_mode=False)
+            self.set_constraints_predefined_control(control[area]*1.0, area)
+        try:
+            beta, lamb, final_level, _, _, itr, computing_time = self.solve_problem(direct_bellman_mode=False)
+            # print(f"✔ for controls {control}")
+        except ValueError:
+            print(f"✘ for controls {control}")
+            raise ValueError
         return beta, lamb, itr, computing_time
     
     def set_constraints_predefined_control(self, control: float, area: str) -> None:
@@ -848,7 +853,7 @@ class WeeklyBellmanProblem:
         control_cost = solver.NumVar(0, solver.infinity(), "control_cost")
         self.control_cost = control_cost
         
-        # Following week price variable #Is it declined by scenario or grouped ? -> Seems to be grouped
+        # Following week price variable #Is it declined by scenario or grouped ? -> It is grouped
         future_cost = solver.NumVar(0, solver.infinity(), "future_cost")
         self.future_cost = future_cost
         
@@ -875,7 +880,7 @@ class WeeklyBellmanProblem:
             solver.Add(
                 control_cost >= (1/self.n_scenarios)*sum([
                     self.week_costs_estimation[week, s].costs[ctrl_id] + sum([
-                        (x[r] - self.week_costs_estimation[week, s].inputs[ctrl_id][r])*self.week_costs_estimation[week, s].duals[r, ctrl_id]
+                        (x[r] - self.week_costs_estimation[week, s].inputs[ctrl_id][r])*self.week_costs_estimation[week, s].duals[ctrl_id, r]
                         for r, _ in enumerate(self.managements)
                     ])
                 for s in range(self.n_scenarios)]),
@@ -895,7 +900,7 @@ class WeeklyBellmanProblem:
                 ]),
                 name=f"future_cost_lb_{lvl_id}"
             )
-        for lvl_id, (levels, cost, duals) in enumerate(zip(future_costs_estimation.inputs, future_costs_estimation.costs, future_costs_estimation.duals.T,))]
+        for lvl_id, (levels, cost, duals) in enumerate(zip(future_costs_estimation.inputs, future_costs_estimation.costs, future_costs_estimation.duals,))]
         
         # Penalties constraints
         # Bottom rule curve
@@ -954,6 +959,7 @@ class WeeklyBellmanProblem:
     
     def solve(
         self,
+        remove_future_costs:bool=False,
         verbose:bool=False,
     ) -> tuple[Array1D, float, Array1D]:
         """
@@ -975,7 +981,7 @@ class WeeklyBellmanProblem:
         status = self.solver.Solve()
         if status == pywraplp.Solver.OPTIMAL:
             controls = np.array([ctrl.solution_value() for ctrl in self.control])
-            cost = self.solver.Objective().Value()
+            cost = self.solver.Objective().Value() - self.future_cost.solution_value() * remove_future_costs
             duals = np.array([cstr.dual_value() for cstr in self.initial_levels_cstr])
             return controls, cost, duals
         else:

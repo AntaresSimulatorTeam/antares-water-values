@@ -960,6 +960,7 @@ class WeeklyBellmanProblem:
     def solve(
         self,
         remove_future_costs:bool=False,
+        remove_penalties:bool=False,
         verbose:bool=False,
     ) -> tuple[Array1D, float, Array1D]:
         """
@@ -981,7 +982,10 @@ class WeeklyBellmanProblem:
         status = self.solver.Solve()
         if status == pywraplp.Solver.OPTIMAL:
             controls = np.array([ctrl.solution_value() for ctrl in self.control])
-            cost = self.solver.Objective().Value() - self.future_cost.solution_value() * remove_future_costs
+            cost = self.solver.Objective().Value()
+            #Removing unwanted parts of the cost
+            cost -= self.future_cost.solution_value() * remove_future_costs
+            cost -= self.total_penalty.solution_value() * remove_penalties
             duals = np.array([cstr.dual_value() for cstr in self.initial_levels_cstr])
             return controls, cost, duals
         else:

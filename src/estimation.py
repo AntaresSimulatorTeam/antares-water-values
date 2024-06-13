@@ -231,4 +231,4 @@ class LinearCostEstimator(Estimator):
         """
         for week, (inputs_w, costs_w, duals_w) in enumerate(zip(inputs, costs, duals)):
             for scenario, (inputs, costs, duals) in enumerate(zip(inputs_w, costs_w, duals_w)):
-                self.estimators[week, scenario].update(input=inputs, costs=costs, duals=duals)
+                self.estimators[week, scenario].update(inputs=inputs, costs=costs, duals=duals)

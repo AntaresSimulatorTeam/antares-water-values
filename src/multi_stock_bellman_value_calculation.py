@@ -308,8 +308,12 @@ def get_bellman_values_from_costs(
             )
             
             #Solve, should we make use of previous Bases ? Not yet, computations still tractable for n<=2
-            controls_wl, cost_wl, duals_wl = problem.solve(remove_future_costs=False, verbose=False)
-            
+            try:
+                controls_wl, cost_wl, duals_wl = problem.solve(remove_future_costs=False, verbose=False)
+            except(ValueError):
+                with open(file="lp_problem_log.txt", mode="w") as pb_log:
+                    pb_log.write(problem.solver.ExportModelAsLpFormat(False).replace('\\', '').replace(',_', ','))
+                raise ValueError
             #Writing down results
             controls[week, lvl_id] = controls_wl
             costs[week, lvl_id] = cost_wl

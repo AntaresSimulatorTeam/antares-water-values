@@ -821,7 +821,7 @@ class WeeklyBellmanProblem:
     
     def reset_solver(self) -> None:
         """ Reinitializes the solver so as not to cumulate variables and constraints """
-        self.solver = pywraplp.Solver.CreateSolver(self.name_solver)
+        self.solver.Clear()
     
     def write_problem(
         self,

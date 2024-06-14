@@ -122,7 +122,7 @@ def generate_mps_file(study_path: str, antares_path: str) -> str:
     assert "solver" in name_solver
     assert float(name_solver.split("-")[1]) >= 8.6
     res = subprocess.run(
-        [antares_path, "--named-mps-problems", "--name=export_mps", study_path],
+        [antares_path, "--named-mps-problems", "--name=export_mps", "--expansion", study_path],
         capture_output=True,
         text=True,
     )

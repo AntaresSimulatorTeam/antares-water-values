@@ -220,7 +220,7 @@ def test_solve_with_bellman_multi_stock() -> None:
         ),
     }
 
-    _, _, Vu, slope, xf = solve_problem_with_multivariate_bellman_values(
+    _, _, Vu, slope, xf, _ = solve_problem_with_multivariate_bellman_values(
         multi_bellman_value_calculation=multi_bellman_value_calculation,
         V=V,
         level_i={

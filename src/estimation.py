@@ -114,7 +114,7 @@ class LinearInterpolator:
         estimated_costs = self.alltile(controls)
         #Abnormality is when an hyperplane gives an estimation over the real price (when it should be under)
         are_abnormal = estimated_costs.T - real_costs[:, None] >= 0
-        has_abnormality = np.sum(are_abnormal, axis=0) > 0
+        has_abnormality = np.sum(are_abnormal, axis=0) > 1e0
         ids = [i for i, abn in enumerate(has_abnormality) if abn]
         self.remove(ids=ids)
         
@@ -201,6 +201,15 @@ class LinearCostEstimator(Estimator):
             Array of ... or LinearInterpolator
         """
         return self.estimators[ws]
+    
+    def __setitem__(self, key:tuple[int,int], value:LinearInterpolator):
+        """Sets LineaInterpolator
+
+        Args:
+            key (tuple[int,int]): Week / Scenario of Linear Interpolator
+            value (LinearInterpolator): Linear Interpolator
+        """
+        self.estimators[key] = value
     
     def __call__(self, week: int, scenario: int, control:np.ndarray) -> float:
         """

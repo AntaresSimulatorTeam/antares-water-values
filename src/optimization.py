@@ -220,6 +220,7 @@ class AntaresProblem:
                     cst[i].name(),
                 )
             ]
+            
             assert len(binding_id) == 1
             if direct_bellman_calc:
                 x_s = model.Var(
@@ -230,8 +231,8 @@ class AntaresProblem:
                 )# Initial level
             else:
                 x_s = model.Var(
-                    lb=reservoir_management.reservoir.capacity - np.max(reservoir_management.reservoir.max_pumping),
-                    ub=reservoir_management.reservoir.capacity - np.max(reservoir_management.reservoir.max_pumping),
+                    lb=0,
+                    ub=reservoir_management.reservoir.capacity,
                     integer=False,
                     name=f"InitialLevel::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
                 )# Initial level
@@ -382,7 +383,7 @@ class AntaresProblem:
                 self.load_basis(basis)
 
         for area in self.range_reservoir:
-            self.set_constraints_predefined_control(control[area]*1.0, area)
+            self.set_constraints_predefined_control(control[area]*0.7, area)
         try:
             beta, lamb, final_level, _, _, itr, computing_time = self.solve_problem(direct_bellman_mode=False)
             # print(f"✔ for controls {control}")
@@ -991,3 +992,60 @@ class WeeklyBellmanProblem:
         else:
             print(f"No solution found, status:{status}")
             raise ValueError
+        
+def solve_for_optimal_trajectory(
+    param:TimeScenarioParameter,
+    multi_stock_management:MultiStockManagement,
+    cost_estimation:Estimator,
+    future_estimators_l:list[LinearInterpolator],
+    inflows:np.ndarray,
+    starting_pts:np.ndarray,
+    name_solver:str,
+    verbose:bool,
+) -> tuple[np.ndarray, np.ndarray, np.array]:
+    """Finds the optimal trajectory starting from starting_pts 
+
+    Args:
+        param (TimeScenarioParameter): Number of weeks and scenarios
+        multi_stock_management (MultiStockManagement): _description_
+        cost_estimation (Estimator): _description_
+        future_estimators_l (list[LinearInterpolator]): _description_
+        starting_pt (np.ndarray): _description_
+        name_solver (str): _description_
+        verbose (bool): _derscription_
+
+    Returns:
+        tuple[np.ndarray, np.ndarray, np.array]: Optimal trajectory, optimal controls, corresponding costs
+    """
+    problem = WeeklyBellmanProblem(
+        param=param,
+        multi_stock_management=multi_stock_management,
+        week_costs_estimation=cost_estimation,
+        name_solver=name_solver
+    )
+    trajectory = [starting_pts]
+    controls = []
+    costs = []
+    for week, future_estimator in enumerate(future_estimators_l):
+        controls_w = []
+        costs_w = []
+        for start_pt in starting_pts:
+            #Remove previous constraints / vars
+            problem.reset_solver()
+            
+            #Rewrite problem
+            problem.write_problem(
+                week=week,
+                level_init=start_pt,
+                future_costs_estimation=future_estimator,
+            )
+            
+            #Solve, might be cool to reuse bases
+            control_ws, cost_ws, _ = problem.solve(remove_future_costs=False, remove_penalties=True, verbose=False)
+            controls_w.append(control_ws)
+            costs_w.append(cost_ws)
+        starting_pts = starting_pts - np.array(controls_w) + inflows[:,week]
+        trajectory.append(starting_pts)
+        controls.append(controls_w)
+        costs.append(costs_w)
+    return np.array(trajectory), np.array(controls), np.array(costs)

@@ -8,9 +8,13 @@ from calculate_reward_and_bellman_values import (
 )
 from estimation import Estimator, LinearCostEstimator, LinearInterpolator
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
-from optimization import AntaresProblem, WeeklyBellmanProblem
+from optimization import (AntaresProblem, 
+                          WeeklyBellmanProblem, 
+                          Basis, 
+                          solve_problem_with_multivariate_bellman_values, 
+                          solve_for_optimal_trajectory)
+from hyperplane_interpolation import enrich_by_interpolation
 from typing import Annotated, List, Literal, Dict, Optional
-from optimization import Basis, solve_problem_with_multivariate_bellman_values
 import numpy.typing as npt
 import numpy as np
 from scipy.interpolate import interp1d
@@ -51,6 +55,7 @@ def calculate_bellman_value_multi_stock(
                 itr=1,
                 name_solver=name_solver,
             )
+            
             m.create_weekly_problem_itr(
                 param=param,
                 multi_stock_management=multi_stock_management,
@@ -611,4 +616,385 @@ def precalculated_method(
         future_costs_approx = future_costs_approx_l[-1]
     
     return levels, costs_approx, bellman_costs, bellman_controls, bellman_duals, np.array(times)
+
+def initialize_controls(
+    param: TimeScenarioParameter,
+    multi_stock_management: MultiStockManagement,
+    n_controls: int,
+    rand:bool=False,
+) -> np.ndarray:
+    """
+    Selects a group of controls to initialize our cost estimation and get a convex hull within which the optimal hopefully resides
     
+    Parameters
+    ----------
+    param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
+    multi_stock_management:MultiStockManagement: Management information for every stock ,
+    n_controls: number of controls we estimate are needed to initialize our iterative method,
+    rand: have the groups of reservoirs chosen to be turned on together be random, default=False
+    
+    Returns
+    -------
+    controls_list:np.ndarray:Shape: (n_controls, n_reservoirs)
+    """
+    n_stocks = len(multi_stock_management.dict_reservoirs)
+    n_weeks = param.len_week
+    n_scenarios = param.len_scenario
+    max_cont = np.array([mng.reservoir.max_generating for mng in multi_stock_management.dict_reservoirs.values()])[:, :n_weeks]
+    min_cont = np.array([-mng.reservoir.max_pumping*mng.reservoir.efficiency 
+                        for mng in multi_stock_management.dict_reservoirs.values()])[:, :n_weeks]
+    
+    #Choose how many reservoirs will fully spend
+    n_stocks_full_spend = np.round(np.linspace(0, n_stocks, num=n_controls))
+    controls = np.zeros((n_weeks, n_scenarios, n_controls, n_stocks)) + min_cont.T[:, None, None, :]
+    if rand:
+        full_throttle = np.zeros((n_weeks, n_scenarios, n_controls, n_stocks)) + (n_stocks_full_spend[:,None] > np.arange(n_stocks)[None,:])[None, None, :, :]
+        full_throttle = np.random.default_rng().permuted(full_throttle, axis=3)
+    else:
+        full_throttle = np.array([
+            [
+                [
+                    np.roll([l < n_full_spend for l in range(n_stocks)], i+j+k)
+                for k, n_full_spend in enumerate(n_stocks_full_spend)]
+            for j in range(n_scenarios)]
+        for i in range(n_weeks)])
+    controls += full_throttle * (max_cont - min_cont).T[:, None, None, :]
+    return controls
+    
+def select_controls_to_explore(
+    param:TimeScenarioParameter,
+    multi_stock_management:MultiStockManagement,
+    pseudo_opt_controls:np.array,
+    costs_approx:Estimator,
+) -> np.ndarray:
+    """Takes in some optimal (for now) controls and returns a list of controls to explore,
+    in this version: only returns the optimal control
+
+    Args:
+        param (TimeScenarioParameter): _description_
+        multi_stock_management (MultiStockManagement): _description_
+        pseudo_opt_controls (np.array): _description_
+        costs_approx (Estimator): _description_
+
+    Returns:
+        np.ndarray: Controls for a week / scenario / control_id / reservoir given
+    """
+    #This only a first version:
+    n_reservoirs = len(multi_stock_management.dict_reservoirs)
+    controls_to_explore = np.zeros((param.len_week, param.len_scenario, 1, n_reservoirs))
+    controls_to_explore[:,:,0,:] = pseudo_opt_controls
+    
+    return controls_to_explore
+
+def cutting_plane_method(
+    param:TimeScenarioParameter,
+    multi_stock_management:MultiStockManagement,
+    name_solver:str,
+    list_models:list,
+    starting_pt:np.ndarray,
+    costs_approx:Estimator,
+    true_controls:np.ndarray,
+    true_costs:np.ndarray,
+    true_duals:np.ndarray,
+    future_costs_approx:LinearInterpolator,
+    nSteps_bellman:int,
+    maxiter:Optional[int]=None,
+    precision:Optional[float]=5e-2,
+    interp_mode:bool=False,
+    verbose:bool=False,
+):
+    """
+    Iteratively: computes an optimal control from costs_approx -> Refines approximation for this control
+    Stops: When too many iterations occured or when optimality gap is small enough
+    
+    Parameters
+    ----------
+        param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
+        multi_stock_management: MultiStockManagement: Description of stocks and their global policies,
+        name_solver:str: Solver chosen for the optimization problem, default -> CLP
+        list_models:list: List of antares models
+        starting_pt:np.ndarray: Point our simulations will start from
+        costs_approx:Estimator: Linear approximation of weekly costs depending on control
+        future_costs_approx:LinearInterpolator: Linear approximation of future costs when starting from certain level
+        nSteps_bellman:int: Discretization level used
+        maxiter:Optional[int]: Maximum number of iterations used
+        precision:Optional[float]: Convergence criterion on optimality gap
+        
+    Returns
+    -------
+        Bellman Values:Dict[int, Dict[str, npt.NDArray[np.float32]]]: Bellman values
+    """
+    iter=0
+    maxiter = int(1e10) if maxiter is None else maxiter
+    opt_gap=1.
+    inflows = np.array([mng.reservoir.inflow[:param.len_week, :param.len_scenario] for mng in multi_stock_management.dict_reservoirs.values()]).T
+    starting_pts = np.array([starting_pt]*param.len_scenario)
+    
+    #To display convergence:
+    if verbose:
+        pbar = tqdm(total=100, desc=f"Opt δ: 1, budget: 0/{maxiter}", colour="green")
+        tot_progress=0
+    
+    while iter < maxiter and (opt_gap > precision):
+        iter+=1
+        levels, bellman_costs, bellman_duals, bellman_controls, future_costs_approx_l = get_bellman_values_from_costs(
+            param=param,
+            multi_stock_management=multi_stock_management,
+            cost_estimation=costs_approx,
+            future_estimator=future_costs_approx,
+            xNsteps=nSteps_bellman,
+            name_solver=name_solver,
+            verbose=False
+        )
+        future_costs_approx = future_costs_approx_l[-1]
+        # _, rddants = future_costs_approx.count_redundant(tolerance=future_costs_approx(starting_pt)*precision/10)
+        # future_costs_approx.remove(1-np.array(rddants))
+        
+        #Evaluate optimal trajectory
+        trajectory, pseudo_opt_controls, pre_update_cum_costs = solve_for_optimal_trajectory(
+            param=param,
+            multi_stock_management=multi_stock_management,
+            cost_estimation=costs_approx,
+            future_estimators_l=future_costs_approx_l[1:],
+            inflows=inflows,
+            starting_pts=starting_pts,
+            name_solver=name_solver,
+            verbose=False
+        ) #Beware, some trajectories seem to be caress the bounds with values such as -2e-12
+        
+        controls_to_check = select_controls_to_explore(
+            param=param,
+            multi_stock_management=multi_stock_management,
+            pseudo_opt_controls=pseudo_opt_controls,
+            costs_approx=costs_approx
+            )
+        
+        #Getting the costs from the costs_approx before updating it
+        pre_update_costs = np.array([[costs_approx[week,scenario](controls_to_check[week, scenario]) 
+                for scenario in range(param.len_scenario)] 
+               for week in range(param.len_week)])
+        
+        #Evaluating this "optimal" trajectory
+        costs, slopes, _ = get_all_costs(
+            param=param,
+            list_models=list_models,
+            multi_stock_management=multi_stock_management,
+            controls_list=controls_to_check,
+            verbose=False)
+
+        
+
+
+        #Computing the optimality gap
+        pre_update_tot_costs = np.sum(pre_update_costs, axis=0)
+        real_tot_costs = np.sum(costs, axis=0)
+        opt_gap = min(opt_gap, np.mean(np.abs(real_tot_costs - pre_update_tot_costs)/real_tot_costs))
+        
+        #Update costs approx accordingly
+        # Reinterpolating / cleaning approximations
+        if interp_mode:
+            true_controls = np.append(true_controls, controls_to_check, axis=2)
+            true_costs = np.append(true_costs, costs, axis=2) #I think costs has right shape
+            true_duals = np.append(true_duals, slopes, axis=2)
+            costs_approx = LinearCostEstimator(
+                                param=param,
+                                controls=true_controls,
+                                costs=true_costs,
+                                duals=true_duals)
+            costs_approx = enrich_estimator(param=param,
+                                            costs_approx=costs_approx,)
+            costs_approx = cleanup_approximations(param=param,
+                                                  true_controls=true_controls,
+                                                  true_costs=true_costs,
+                                                  costs_approx=costs_approx)
+        else:
+            costs_approx.update(inputs=controls_to_check, costs=costs, duals=slopes)
+            
+        if verbose:
+            progress = 100 * (1 - np.log2(precision/opt_gap) / np.log2(precision)) - tot_progress
+            progress = np.round(progress, 2)
+            progress = min(progress, 100 - tot_progress)
+            tot_progress += progress
+            # print(pre_update_tot_costs, real_tot_costs)
+            pbar.set_description_str(desc=f"Opt δ: {np.round(opt_gap, 4)}, time budget: {iter}/{maxiter}")
+            pbar.update(progress)
+    if verbose:    
+        pbar.close()
+    if interp_mode:
+        costs_approx = LinearCostEstimator(
+                                param=param,
+                                controls=true_controls,
+                                costs=true_costs,
+                                duals=true_duals)
+    return bellman_costs, levels, future_costs_approx_l, costs_approx
+
+def enrich_estimator(
+        param:TimeScenarioParameter,
+        costs_approx:LinearCostEstimator, 
+        n_splits:int=3) -> LinearCostEstimator:
+    """
+    Adds 'mid_cuts' to our cost estimator to smoothen the curves and (hopefully) accelerate convergence
+
+    Args:
+        param (TimeScenarioParameter): Contains information of number of weeks / scenarios
+        costs_approx (LinearCostEstimator): Actual cost estimation
+        n_splits (int, optional): Number of level of subdivision. Defaults to 3.
+
+    Returns:
+        LinearCostEstimator: Interpolated cost estimator
+    """
+    for week in range(param.len_week):
+        for scenario in range(param.len_scenario):
+            cost_interp = costs_approx[week, scenario]
+            controls, costs, slopes = cost_interp.inputs, cost_interp.costs, cost_interp.duals
+            new_conts, new_costs, new_slopes = enrich_by_interpolation(
+                controls_init=controls, 
+                costs=costs,
+                slopes=slopes,
+                n_splits=n_splits)
+            new_cost_interp = LinearInterpolator(inputs=new_conts, costs=new_costs, duals=new_slopes)
+            costs_approx[week, scenario] = new_cost_interp
+    return costs_approx
+
+def cleanup_approximations(
+        param:TimeScenarioParameter,
+        true_controls:np.ndarray,
+        true_costs:np.ndarray,
+        costs_approx:LinearCostEstimator,
+    ) -> LinearCostEstimator:
+    """Removes incoherent interpolations
+
+    Args:
+        param (TimeScenarioParameter): _description_
+        true_controls (np.ndarray): _description_
+        true_costs (np.ndarray): _description_
+        costs_approx (LinearCostEstimator): _description_
+
+    Returns:
+        LinearCostEstimator: _description_
+    """
+    for week in range(param.len_week):
+        for scenario in range(param.len_scenario):
+            cost_interp = costs_approx[week, scenario]
+            cost_interp.remove_approximations(
+                controls=true_controls[week, scenario],
+                real_costs=true_costs[week, scenario])
+            costs_approx[week, scenario] = cost_interp
+    return costs_approx
+
+
+def iter_bell_vals(
+    param: TimeScenarioParameter,
+    multi_stock_management: MultiStockManagement,
+    output_path: str,
+    n_controls_init:int,
+    starting_pt: np.ndarray,
+    nSteps_bellman:int,
+    name_solver: str = "CLP",
+    precision: float = 1e-2,
+    maxiter: int = 2,
+    interp_mode:bool = False,
+    verbose: bool = False,
+) -> tuple[Dict[int, Dict[str, np.ndarray]], float, float]:
+    """
+    In a similar fashion to Kelley's algorithm (1960), the idea is to approximate the (convex) cost function
+    of the antares solver using cutting planes to minimize the system cost over a year by choosing the best control for stocks
+    The solver is considered as a black blox oracle providing the function value and derivatives at any given point.
+    
+    We start by initializing the cut approximation of the system cost for every week as a function of the control
+    Several optimizations points have been raised:
+        - What points to use for first approximation
+        - Should we "enrich" the data by trying to 'interpolate between our cutting planes' to get a more curvy / stable solution
+        - Should we stabilize with a quadratic term i.e proximal bundle method
+    We also initialize a future cost function. Hypothesises:
+        - We might want to overpenalize being under the initial level since the flexibility will be learned once we have a good approx for system prices
+        
+    
+    After that every iteration should consist in:
+        - Use a Dynamic Programing algorithm (SDDP ?) to get the optimal yearly cost / control from each weekly cost
+            - NB: Yearly costs will be used at next iteration as a final level cost,
+        - Compute δ = Bellman_costs[...] - (end_of_year_costs) - old_costs_without_end_of_year_costs
+        - Get controls to add: a list of all controls we want to test: the optimal and others if wanted
+            - If the SDDP algorithm is costly we'll want to do more test between calls to SDDP
+        - For all these controls get blackbox's values
+        - Update our cost approx (if we use cuts interpolations add new ones and remove blatantly false ones)
+
+    Args:
+        param (TimeScenarioParameter): Defines number of weeks and scenarios we optimize on
+        multi_stock_management (MultiStockManagement): Description of the reservoirs
+        output_path (str): Link to the pre generated mps files of the study
+        n_controls_init (int): Number of controls heuristically chosen to initialize our search
+        starting_pt (np.ndarray): Reservoir state before week 0
+        nSteps_bellman (int): Precision of the bellman solving part
+        name_solver (str, optional): name of the solver used. Defaults to "CLP".
+        precision (float, optional): Gap to minimum tolerated. Defaults to 1e-2.
+        maxiter (int, optional): Maximum number of iterations. Defaults to 2.
+        verbose (bool, optional): Defines whether or not the function displlays informations while running. Defaults to False.
+
+    Returns:
+        tuple[np.ndarray, Estimator, list[LinearInterpolator], np.ndarray]: Bellman costs, costs approximation, future costs approximation, levels
+    """
+    #Initialize the Antares problems
+    list_models = initialize_antares_problems(param=param,
+                                              multi_stock_management=multi_stock_management,
+                                              output_path=output_path,
+                                              name_solver=name_solver,
+                                              direct_bellman_calc=False,
+                                              verbose=verbose)
+    
+    #Choose first controls to test
+    controls_init = initialize_controls(param=param, 
+                                        multi_stock_management=multi_stock_management,
+                                        n_controls=n_controls_init)
+    
+    #Get hyperplanes resulting from initial controls
+    costs, slopes, _ = get_all_costs(
+        param=param,
+        list_models=list_models,
+        multi_stock_management=multi_stock_management,
+        controls_list=controls_init,
+        verbose=verbose)
+    
+    
+    #Use them to initiate our costs approximation
+    costs_approx = LinearCostEstimator(
+        param=param,
+        controls=controls_init,
+        costs=costs,
+        duals=slopes)
+    
+    # Enrichment to accelerate convergence:
+    if interp_mode:
+        costs_approx = enrich_estimator(param=param, costs_approx=costs_approx)
+        costs_approx = cleanup_approximations(param=param,
+                                            true_controls=controls_init,
+                                            true_costs=costs,
+                                            costs_approx=costs_approx)
+    
+    #Initialize our approximation on future costs
+    future_costs_approx = initialize_future_costs(
+        param=param,
+        multi_stock_management=multi_stock_management,
+        costs_approx=costs_approx
+    )
+    
+    # Iterative part
+    bellman_costs, levels, future_costs_approx_l, costs_approx = cutting_plane_method(
+        param=param,
+        multi_stock_management=multi_stock_management,
+        list_models=list_models,
+        name_solver=name_solver,
+        starting_pt=starting_pt,
+        costs_approx=costs_approx,
+        true_controls=controls_init,
+        true_costs=costs,
+        true_duals=slopes,
+        future_costs_approx=future_costs_approx,
+        nSteps_bellman=nSteps_bellman,
+        precision=precision,
+        maxiter=maxiter,
+        interp_mode=interp_mode,
+        verbose=verbose,
+    )
+    
+    return bellman_costs, costs_approx, future_costs_approx_l, levels

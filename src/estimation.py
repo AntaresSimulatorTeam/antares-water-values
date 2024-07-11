@@ -1,6 +1,7 @@
 import numpy as np
-from typing import Dict, Union, Any
+from typing import Dict, Union, Any, Optional
 from read_antares_data import TimeScenarioParameter
+from hyperplane_interpolation import enrich_by_interpolation
 
 class Estimator:
     """ Generic class for estimators/interpolators """
@@ -13,7 +14,7 @@ class Estimator:
         
 class LinearInterpolator:
     """ Class to enable use of n-dimensionnal linear interpolation """
-    def __init__(self, inputs:np.ndarray, costs:np.ndarray, duals:np.ndarray):
+    def __init__(self, inputs:np.ndarray, costs:np.ndarray, duals:np.ndarray, interp_mode:Optional[bool]=False):
         """
         Instanciates a Linear Interpolator
         
@@ -27,8 +28,16 @@ class LinearInterpolator:
         self.inputs = inputs
         self.costs = costs.ravel()
         self.duals = duals
+        self.true_inputs = inputs
+        self.true_costs = costs.ravel()
+        self.true_duals = duals
+        if interp_mode:
+            self.add_interpolations()
+            self.remove_incoherence()
+            
     
-    def update(self, inputs:np.ndarray, costs:np.ndarray, duals:np.ndarray) -> None:
+    def update(self, inputs:np.ndarray, costs:np.ndarray, 
+               duals:np.ndarray, interp_mode:Optional[bool]=False) -> None:
         """
         Updates the parameters of the Linear Interpolator
         
@@ -42,6 +51,13 @@ class LinearInterpolator:
         self.inputs = np.concatenate([self.inputs, inputs])
         self.costs = np.concatenate([self.costs, costs])
         self.duals = np.concatenate([self.duals, duals])
+        self.true_inputs = np.concatenate([self.true_inputs, inputs])
+        self.true_costs = np.concatenate([self.true_costs, costs])
+        self.true_duals = np.concatenate([self.true_duals, duals])
+        if interp_mode:
+            self.add_interpolations()
+            self.remove_incoherence()
+
         
     def remove(self, ids:Union[list[int], np.ndarray]) -> None:
         """
@@ -101,8 +117,18 @@ class LinearInterpolator:
             np.ndarray All possible interpolations
         """
         return np.array([self.costs[id] + np.dot(val-x, -self.duals[id]) for id, val in enumerate(self.inputs)])
+
+    def add_interpolations(self, n_splits:int=3):
+        new_conts, new_costs, new_slopes = enrich_by_interpolation(
+                        controls_init=self.true_inputs, 
+                        costs=self.true_costs,
+                        slopes=self.true_duals,
+                        n_splits=n_splits)
+        self.inputs = new_conts
+        self.costs = new_costs
+        self.duals = new_slopes
     
-    def remove_approximations(self, controls:np.ndarray, real_costs:np.ndarray) -> None:
+    def remove_incoherence(self) -> None:
         """
         Removes all hyperplanes above the real values at specified controls
         
@@ -111,12 +137,17 @@ class LinearInterpolator:
             controls:np.ndarray: controls at which we know the real costs,
             real_costs:np.ndarray: real costs at controls
         """
-        estimated_costs = self.alltile(controls)
+        estimated_costs = self.alltile(self.true_inputs)
         #Abnormality is when an hyperplane gives an estimation over the real price (when it should be under)
-        are_abnormal = estimated_costs.T - real_costs[:, None] >= 0
-        has_abnormality = np.sum(are_abnormal, axis=0) > 1e0
+        are_abnormal = estimated_costs.T - self.true_costs[:, None] > 1e-4
+        has_abnormality = np.sum(are_abnormal, axis=0) > 0
         ids = [i for i, abn in enumerate(has_abnormality) if abn]
         self.remove(ids=ids)
+    
+    def remove_interps(self) -> None:
+        self.inputs = self.true_inputs
+        self.costs = self.true_costs
+        self.duals = self.true_duals
         
     def limited(self, x:np.ndarray, chosen_pts:Union[list[bool], np.ndarray]) -> Union[np.ndarray, float]:
         """
@@ -153,9 +184,10 @@ class LinearInterpolator:
         
         # Initiate the good points list
         non_redundants = [True] + [False]*(n_inputs - 1)
+
         #We won't look at the difference in derivative at a point, even though it could be important
         for i in range(1, n_inputs):
-            non_redundants[i] = np.abs(self.limited(self.inputs[i], non_redundants) - self.costs[i]) >= tolerance
+            non_redundants[i] = np.abs(self.limited(self.inputs[i], non_redundants) - self.costs[i]) > tolerance
             
         redundants = [i for i, not_reddt in enumerate(non_redundants) if not(not_reddt)]
         #Remove the redundant observations (might be needed if bellman problems become too heavy, might never happen tho)
@@ -170,7 +202,8 @@ class LinearCostEstimator(Estimator):
                  param:TimeScenarioParameter,
                  controls:np.ndarray,
                  costs:np.ndarray,
-                 duals:np.ndarray) -> None:
+                 duals:np.ndarray,
+                 interp_mode:bool=False,) -> None:
         """
         Instanciates a LinearCostEstimator
         
@@ -182,12 +215,18 @@ class LinearCostEstimator(Estimator):
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
+        # self.true_controls=controls
+        # self.true_costs=costs
+        # self.true_duals=duals
         self.estimators = np.array([[LinearInterpolator(inputs=controls[week, scenario],
                                                         costs=costs[week, scenario],
-                                                        duals=duals[week, scenario])\
+                                                        duals=duals[week, scenario],
+                                                        interp_mode=interp_mode)\
             for scenario in range(param.len_scenario)]\
             for week in range(param.len_week)])
     
+    __code__ = __init__.__code__
+
     def __getitem__(self, ws: Union[tuple[int,int], int]) -> LinearInterpolator:
         """
         Gets a LinearInterpolators
@@ -201,6 +240,7 @@ class LinearCostEstimator(Estimator):
             Array of ... or LinearInterpolator
         """
         return self.estimators[ws]
+    
     
     def __setitem__(self, key:tuple[int,int], value:LinearInterpolator):
         """Sets LineaInterpolator
@@ -227,7 +267,8 @@ class LinearCostEstimator(Estimator):
         """
         return self.estimators[week, scenario](control=control)
     
-    def update(self, inputs:np.ndarray, costs:np.ndarray, duals:np.ndarray) -> None:
+    def update(self, inputs:np.ndarray, costs:np.ndarray,
+                duals:np.ndarray, interp_mode:bool=False) -> None:
         """
         Updates the parameters of the Linear Interpolators
         
@@ -240,4 +281,69 @@ class LinearCostEstimator(Estimator):
         """
         for week, (inputs_w, costs_w, duals_w) in enumerate(zip(inputs, costs, duals)):
             for scenario, (inputs, costs, duals) in enumerate(zip(inputs_w, costs_w, duals_w)):
-                self.estimators[week, scenario].update(inputs=inputs, costs=costs, duals=duals)
+                self.estimators[week, scenario].update(inputs=inputs[week, scenario], 
+                                                       costs=costs[week, scenario],
+                                                       duals=duals[week, scenario],
+                                                       interp_mode=interp_mode)
+
+    def enrich_estimator(
+        self,
+        param:TimeScenarioParameter,
+        n_splits:int=3) -> None:
+            """
+            Adds 'mid_cuts' to our cost estimator to smoothen the curves and (hopefully) accelerate convergence
+
+            Args:
+                param (TimeScenarioParameter): Contains information of number of weeks / scenarios
+                costs_approx (LinearCostEstimator): Actual cost estimation
+                n_splits (int, optional): Number of level of subdivision. Defaults to 3.
+
+            Returns:
+                LinearCostEstimator: Interpolated cost estimator
+            """
+            for week in range(param.len_week):
+                for scenario in range(param.len_scenario):
+                    self.estimators[week, scenario].add_interpolations()
+                    # cost_interp = self.estimators[week, scenario]
+                    # controls, costs, slopes = cost_interp.inputs, cost_interp.costs, cost_interp.duals
+                    # new_conts, new_costs, new_slopes = enrich_by_interpolation(
+                    #     controls_init=controls, 
+                    #     costs=costs,
+                    #     slopes=slopes,
+                    #     n_splits=n_splits)
+                    # new_cost_interp = LinearInterpolator(inputs=new_conts, costs=new_costs, duals=new_slopes)
+                    # self.estimators[week, scenario] = new_cost_interp
+
+    def cleanup_approximations(
+        self,
+        param:TimeScenarioParameter,
+    ) -> None:
+        """Removes incoherent interpolations
+
+        Args:
+            param (TimeScenarioParameter): _description_
+            true_controls (np.ndarray): _description_
+            true_costs (np.ndarray): _description_
+        """
+        for week in range(param.len_week):
+            for scenario in range(param.len_scenario):
+                self.estimators[week, scenario].remove_incoherence()
+                    # controls=true_controls[week, scenario],
+                    # real_costs=true_costs[week, scenario])
+                
+    def remove_redundants(
+            self,
+            param:TimeScenarioParameter,
+            tolerance:float=1e-7,
+    ) -> None:
+        for week in range(param.len_week):
+            for scenario in range(param.len_scenario):
+                self.estimators[week, scenario].count_redundant(tolerance=tolerance, remove=True)
+
+    def remove_interpolations(
+            self,
+            param:TimeScenarioParameter,
+    ) -> None:
+        for week in range(param.len_week):
+            for scenario in range(param.len_scenario):
+                self.estimators[week, scenario].remove_interps()

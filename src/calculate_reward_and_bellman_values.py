@@ -103,6 +103,27 @@ class MultiStockManagement:
         self.dict_reservoirs = {}
         for res in list_reservoirs:
             self.dict_reservoirs[res.reservoir.area] = res
+    
+    def get_disc(
+        self, 
+        method:str, 
+        week:int, 
+        xNsteps:int, 
+        trajectory:np.ndarray,
+        correlation_matrix:np.ndarray,
+        alpha:float =.95,
+        ):
+        lbs = [mng.reservoir.bottom_rule_curve[week] * alpha for mng in self.dict_reservoirs.values()]
+        ubs = [mng.reservoir.upper_rule_curve[week]*alpha + mng.reservoir.capacity * (1 - alpha) for mng in self.dict_reservoirs.values()]
+        if method=="lines":
+            levels = ...
+        else:
+            # Listing all levels
+            levels_discretization = product(\
+                *[np.concatenate([[0], np.linspace(lbs[i],ubs[i], xNsteps-2), [.98*mng.reservoir.capacity]])\
+                            for i,mng in enumerate(self.dict_reservoirs.values())])
+            levels = np.array([level for level in levels_discretization])
+        return levels
 
 class RewardApproximation:
     """Class to store and update reward approximation for a given week and a given scenario"""

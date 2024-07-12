@@ -281,9 +281,9 @@ class LinearCostEstimator(Estimator):
         """
         for week, (inputs_w, costs_w, duals_w) in enumerate(zip(inputs, costs, duals)):
             for scenario, (inputs, costs, duals) in enumerate(zip(inputs_w, costs_w, duals_w)):
-                self.estimators[week, scenario].update(inputs=inputs[week, scenario], 
-                                                       costs=costs[week, scenario],
-                                                       duals=duals[week, scenario],
+                self.estimators[week, scenario].update(inputs=inputs, 
+                                                       costs=costs,
+                                                       duals=duals,
                                                        interp_mode=interp_mode)
 
     def enrich_estimator(

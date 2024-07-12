@@ -30,3 +30,9 @@ class Caller:
                 for ret, res in zip(returns, result):
                     self.args[ret] = res
         return result
+    
+    def get(self, names:Union[str, tuple[str]]):
+        if isinstance(names, str):
+            return self.args[names]
+        else:
+            return tuple([self.args[name] for name in names])

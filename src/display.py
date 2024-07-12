@@ -4,7 +4,7 @@ import plotly.graph_objects as go
 
 def draw_usage_values(
         usage_values,
-        levels,
+        levels_uv,
         n_weeks,
         nSteps_bellman, 
         multi_stock_management, 
@@ -15,7 +15,7 @@ def draw_usage_values(
     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items()):
         lvls = np.linspace(0, mng.reservoir.capacity, mult*nSteps_bellman, endpoint=False)
         for week in range(n_weeks):
-            diff_to_levels = np.abs(lvls[:,None] - levels[None,week,:,i])
+            diff_to_levels = np.abs(lvls[:,None] - levels_uv[None,week,:,i])
             closest_level = np.argmin(diff_to_levels, axis=1)
             reinterpolated_usage_values[area][week] = usage_values[area][week][closest_level]
 

@@ -745,7 +745,7 @@ def compute_usage_values_from_costs(
     costs_approx:LinearCostEstimator,
     future_costs_approx_l:list[LinearInterpolator],
     optimal_trajectory:np.ndarray,
-    discretization:int,
+    nSteps_bellman:int,
     correlations:np.ndarray,
     verbose:bool=False,
 )-> dict[str, np.ndarray]:
@@ -777,7 +777,8 @@ def compute_usage_values_from_costs(
     #Parameter
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     n_weeks = param.len_week
-    
+    discretization = 3 * nSteps_bellman
+
     #Initialize usage values
     usage_values = {area:np.zeros((n_weeks ,discretization)) for area in multi_stock_management.dict_reservoirs.keys()}
     base_levels = np.mean(optimal_trajectory, axis=2)
@@ -835,10 +836,11 @@ def get_opt_gap(
     param:TimeScenarioParameter,
     costs:np.ndarray, 
     costs_approx:Estimator, 
-    controls_to_check:np.ndarray,
+    controls_list:np.ndarray,
+    opt_gap:float,
     max_gap:float,
     ):
-    pre_update_costs = np.array([[costs_approx[week,scenario](controls_to_check[week, scenario]) 
+    pre_update_costs = np.array([[costs_approx[week,scenario](controls_list[week, scenario]) 
                 for scenario in range(param.len_scenario)] 
                for week in range(param.len_week)])
     #Computing the optimality gap
@@ -854,9 +856,7 @@ def cutting_plane_method(
     list_models:list,
     starting_pt:np.ndarray,
     costs_approx:Estimator,
-    true_controls:np.ndarray,
-    true_costs:np.ndarray,
-    true_duals:np.ndarray,
+    costs:np.ndarray,
     future_costs_approx:LinearInterpolator,
     nSteps_bellman:int,
     method:str,
@@ -897,7 +897,7 @@ def cutting_plane_method(
     trajectory = np.array([starting_pt]*param.len_week)
     
     # Max gap
-    max_gap = np.sum(np.mean(np.max(true_costs, axis=2) - np.min(true_costs, axis=2), axis=1), axis=0)
+    max_gap = np.sum(np.mean(np.max(costs, axis=2) - np.min(costs, axis=2), axis=1), axis=0)
 
     hlpr = Caller(
         param=param,
@@ -909,9 +909,6 @@ def cutting_plane_method(
         trajectory=trajectory,
         max_gap=max_gap,
         costs_approx=costs_approx,
-        true_controls=true_controls,
-        true_costs=true_costs,
-        true_duals=true_duals,
         future_costs_approx=future_costs_approx,
         nSteps_bellman=nSteps_bellman,
         method=method,
@@ -943,7 +940,7 @@ def cutting_plane_method(
         #     correlations=correlations,
         #     verbose=False
         # )
-        hlpr.update(dict(future_costs_approx = future_costs_approx_l[0]))
+        hlpr.update(future_costs_approx = future_costs_approx_l[0])
         # future_costs_approx.count_redundant(tolerance=0, remove=True)
         
         #Evaluate optimal 
@@ -960,7 +957,7 @@ def cutting_plane_method(
         #     verbose=False
         # ) #Beware, some trajectories seem to be overstep the bounds with values such as -2e-12
         
-        controls_to_check = hlpr(select_controls_to_explore, ("controls_to_check"))
+        controls_list = hlpr(select_controls_to_explore, ("controls_list"))
         # controls_to_check = select_controls_to_explore(
         #     param=param,
         #     multi_stock_management=multi_stock_management,
@@ -981,7 +978,8 @@ def cutting_plane_method(
         #     controls_list=controls_to_check,
         #     verbose=False)
         
-        opt_gap = get_opt_gap(param=param, costs=costs, costs_approx=costs_approx, controls_to_check=controls_to_check, max_gap=max_gap)
+        opt_gap = get_opt_gap(param=param, costs=costs, costs_approx=costs_approx, controls_list=controls_list,
+                              opt_gap=opt_gap, max_gap=max_gap)
         #Update costs approx accordingly
         # Reinterpolating / cleaning approximations
         # if interp_mode:
@@ -1000,7 +998,8 @@ def cutting_plane_method(
         #     #                                       true_controls=true_controls,
         #     #                                       true_costs=true_costs)
         # else:
-        costs_approx.update(inputs=controls_to_check, costs=costs, duals=slopes, interp_mode=interp_mode)
+        # print(costs.shape, costs)
+        costs_approx.update(inputs=controls_list, costs=costs, duals=slopes, interp_mode=interp_mode)
         costs_approx.remove_redundants(tolerance=1e-3, param=param)
         
         #If we want to look at the usage values evolution
@@ -1012,7 +1011,7 @@ def cutting_plane_method(
                 costs_approx=costs_approx,
                 future_costs_approx_l=future_costs_approx_l,
                 optimal_trajectory=trajectory,
-                discretization=10*nSteps_bellman,
+                nSteps_bellman=nSteps_bellman,
                 correlations=correlations,
                 verbose=False,
             )
@@ -1026,26 +1025,7 @@ def cutting_plane_method(
         pbar.close()
     if interp_mode:
         costs_approx.remove_interpolations()
-        # costs_approx = LinearCostEstimator(
-        #                         param=param,
-        #                         controls=true_controls,
-        #                         costs=true_costs,
-        #                         duals=true_duals)
     return bellman_costs, levels, future_costs_approx_l, costs_approx, trajectory
-
-
-
-
-
-# def reuse_models_and_sims(reuse:str) -> LinearCostEstimator:
-#     with open(f"{reuse}/costs_approx.pkl", "rb") as cost_approx_file:
-#         costs_approx = pkl.load(cost_approx_file)
-#     return costs_approx
-
-# def save_models_and_sims(save:str, costs_approx:LinearCostEstimator):
-#     with open(f"{save}/costs_approx.pkl", "wb") as cost_approx_file:
-#         pkl.dump(costs_approx, cost_approx_file)
-
 
 def iter_bell_vals(
     param: TimeScenarioParameter,
@@ -1139,14 +1119,13 @@ def iter_bell_vals(
     #     verbose=verbose)
     
     #Use them to initiate our costs approximation
-    hlpr.update(dict(duals=duals, controls=controls))
+    hlpr.update(duals=duals, controls=controls)
     costs_approx = hlpr(LinearCostEstimator, "costs_approx")
     # costs_approx = LinearCostEstimator(
     #     param=param,
     #     controls=controls_init,
     #     costs=costs,
     #     duals=slopes)
-    hlpr.update(dict(costs_approx=costs_approx))
 
     # Enrichment to accelerate convergence:
     # if interp_mode:
@@ -1165,19 +1144,19 @@ def iter_bell_vals(
     # future_costs_approx = initialize_future_costs(
     #     param=param,
     #     multi_stock_management=multi_stock_management,
-    #     lvl_init=starting_pt,
+    #     starting_pt=starting_pt,
     #     costs_approx=costs_approx,
     # )
 
     # Correlations matrix
-    hlpr(get_correlation_matrix)
+    hlpr(get_correlation_matrix, "correlations")
     # correlations = get_correlation_matrix(param=param,
     #                                       multi_stock_management=multi_stock_management,
     #                                       method="random_corrs")
     
     # Iterative part
     hlpr(cutting_plane_method, ("bellman_costs", "levels", "future_costs_approx_l",
-                                      "costs_approx", "opt_trajectory", "all_uvs"))
+                                      "costs_approx", "optimal_trajectory"))
     # bellman_costs, levels, future_costs_approx_l, costs_approx,\
     #       opt_trajectory, all_uvs = cutting_plane_method(
     #     param=param,
@@ -1186,9 +1165,7 @@ def iter_bell_vals(
     #     name_solver=name_solver,
     #     starting_pt=starting_pt,
     #     costs_approx=costs_approx,
-    #     true_controls=controls_init,
-    #     true_costs=costs,
-    #     true_duals=slopes,
+    #     costs=costs,
     #     future_costs_approx=future_costs_approx,
     #     nSteps_bellman=nSteps_bellman,
     #     precision=precision,
@@ -1211,8 +1188,8 @@ def iter_bell_vals(
     #     discretization=nSteps_bellman*10,
     #     correlations=correlations,
     #     verbose=verbose) 
-    returns = ["bellman_costs", "costs_approx", "future_costs_approx_l", "levels", "opt_trajectory",\
-          "usage_values", "all_uvs"]
-    bellman_costs, costs_approx, future_costs_approx_l, levels, opt_trajectory,\
-          usage_values, all_uvs = tuple([hlpr.args[ret] for ret in returns])
-    return bellman_costs, costs_approx, future_costs_approx_l, levels, opt_trajectory, usage_values, all_uvs
+    returns = ("bellman_costs", "costs_approx", "future_costs_approx_l", "levels", "optimal_trajectory",\
+          "usage_values")
+    bellman_costs, costs_approx, future_costs_approx_l,\
+          levels, optimal_trajectory, usage_values = hlpr.get(returns)
+    return bellman_costs, costs_approx, future_costs_approx_l, levels, optimal_trajectory, usage_values

@@ -142,3 +142,87 @@ def enrich_by_interpolation(
     false_slopes = mlrs[:,1]
     real_slopes = false_slopes[:,:-1]*(false_slopes[:,-1]/(np.sum(np.power(false_slopes[:,:-1],2), axis=1)))[:,None]
     return positions, costs, real_slopes
+
+def split_between(
+    controls_init:np.ndarray,
+    costs:np.ndarray,
+    slopes:np.ndarray,
+    alpha=.24):
+    # Intercepting bewteen a and b
+    xa, xb = controls_init[0], controls_init[-1]
+    za, zb = costs[0], costs[-1]
+    da, db = slopes[0], slopes[-1]
+    if np.abs(np.dot(xa - xb, db - da)) < 1e-9:
+        return xa, za, da
+    vecta, vectb = np.append(xa, za), np.append(xb, zb)
+
+    # Getting the matching point of hyperplanes, low bound
+    mu = (za - zb - np.dot(xa - xb, da))/(np.dot(xa - xb, db - da))
+    mu = min(1, max(0, mu))
+    xlow = xb + mu*(xa - xb)
+    zlow = (za + np.dot(xlow - xa, da))*.5 + (zb + np.dot(xlow - xb, db))*.5
+    vectlow = np.append(xlow, zlow)
+
+    # Getting the orthonal projection of low bound on the line bewteen a and b, up bound
+    vect_to_low = vectb - vectlow
+    vect_interpoint = vectb - vecta
+    dist_to_low = norm(vect_to_low)
+    dist_interpoint = norm(vect_interpoint)
+    costheta = np.dot(vect_to_low, vect_interpoint)/(dist_to_low * dist_interpoint)
+    proj_dist = costheta * dist_to_low
+    vectup = vectb + (proj_dist/dist_interpoint) * (vecta - vectb)
+
+    # Our final point
+    vectfinal = vectlow + alpha * (vectup - vectlow)
+    xfinal, zfinal = vectfinal[:-1], vectfinal[-1]
+    ground_dist = norm(xb - xa)
+    total_slope = (zb - za)/ground_dist #The slope is inversely proportional to the dist between the points
+    dfinal = (da+db)/2 + (total_slope - (da+db)/2) * (xb - xa)/ground_dist # On unused dim, slopes souldn't change
+    return xfinal, zfinal, dfinal
+
+def recur_split(
+    controls_init:np.ndarray, 
+    costs:np.ndarray, 
+    slopes:np.ndarray, 
+    n_splits:int=1, 
+    alpha:float=.16):
+    xm, zm, dm = split_between(
+        controls_init=controls_init,
+        costs=costs,
+        slopes=slopes,
+        alpha=alpha
+        )
+    if n_splits <= 1:
+        return np.array([xm]), np.array([zm]), np.array([dm])
+    else:
+        next_alpha = np.sqrt(alpha)
+        xl, zl, dl = recur_split(
+            controls_init=np.array([controls_init[0], xm]),
+            costs=np.array([costs[0], zm]),
+            slopes=np.array([slopes[0], dm]),
+            n_splits = n_splits-1,
+            alpha=next_alpha)
+        xr, zr, dr = recur_split(
+            controls_init=np.array([xm, controls_init[1]]),
+            costs=np.array([zm, costs[1]]),
+            slopes=np.array([dm, slopes[1]]),
+            n_splits = n_splits-1,
+            alpha=next_alpha)
+        return (np.concatenate((xl, [xm], xr), axis=0), 
+                np.concatenate((zl, [zm], zr)), 
+                np.concatenate((dl, [dm], dr), axis=0))
+    
+def get_interpolation(controls_init:np.ndarray, 
+    costs:np.ndarray, 
+    slopes:np.ndarray, 
+    n_splits:int=1, 
+    alpha:float=.16):
+    xm, zm, dm = recur_split(
+        controls_init=controls_init,
+        costs=costs,
+        slopes=slopes,
+        n_splits=n_splits,
+        alpha=alpha,)
+    return (np.concatenate(([controls_init[0]], xm, [controls_init[1]]), axis=0),
+            np.concatenate(([costs[0]], zm, [costs[1]])),
+            np.concatenate(([slopes[0]], dm, [slopes[1]]), axis=0))

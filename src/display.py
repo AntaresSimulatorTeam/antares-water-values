@@ -9,8 +9,9 @@ def draw_usage_values(
         nSteps_bellman, 
         multi_stock_management, 
         trajectory, 
-        ub=400):
-    mult = 10
+        ub=800):
+    n_scenarios =trajectory.shape[-1]
+    mult = 3
     reinterpolated_usage_values = {area:np.zeros((n_weeks, mult*nSteps_bellman)) for area in multi_stock_management.dict_reservoirs.keys()}
     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items()):
         lvls = np.linspace(0, mng.reservoir.capacity, mult*nSteps_bellman, endpoint=False)
@@ -19,30 +20,52 @@ def draw_usage_values(
             closest_level = np.argmin(diff_to_levels, axis=1)
             reinterpolated_usage_values[area][week] = usage_values[area][week][closest_level]
 
-    #z = np.maximum(np.zeros(reinterpolated_usage_values[area].T.shape), np.minimum(ub*np.ones(reinterpolated_usage_values[area].T.shape), reinterpolated_usage_values[area].T))
+    # z = np.maximum(np.zeros(reinterpolated_usage_values[area].T.shape), np.minimum(ub*np.ones(reinterpolated_usage_values[area].T.shape), reinterpolated_usage_values[area].T))
+    # z = np.maximum(np.zeros(reinterpolated_usage_values[area].T.shape) - ub, np.minimum(ub*np.ones(reinterpolated_usage_values[area].T.shape), reinterpolated_usage_values[area].T))
     usage_values_plot = go.Figure(
         data = [go.Heatmap(x=np.arange(n_weeks),
                         y=np.linspace(0, mng.reservoir.capacity, mult*nSteps_bellman, endpoint=False), 
-                        z=reinterpolated_usage_values[area].T,
-                        visible=(i==0))
+                        z=np.maximum(np.zeros(reinterpolated_usage_values[area].T.shape) - ub/10, np.minimum(ub*np.ones(reinterpolated_usage_values[area].T.shape), reinterpolated_usage_values[area].T)),
+                        visible=(i==0),
+                        showlegend=False,)
                 for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())]
                 + [
-                    go.Scatter(x=np.arange(n_weeks), y=np.mean(trajectory, axis=2)[:,i],
-                                visible=(i==0), name=f"Traj {area}", showlegend=False)
+                    go.Scatter(x=np.arange(n_weeks+1), y=np.mean(trajectory, axis=2)[:,i],
+                                visible=(i==0), name=f"Trajectory", mode="markers", marker=dict(symbol="circle"), showlegend=True)
                     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())
                 ] 
                 + [
-                  go.Scatter(x=np.arange(n_weeks), y=mng.reservoir.bottom_rule_curve[:n_weeks],
-                                visible=(i==0), name=f"Rule curve low {area}", showlegend=False)
+                  go.Scatter(x=np.arange(n_weeks+1), y=mng.reservoir.bottom_rule_curve[:n_weeks+1],
+                                visible=(i==0), name=f"Curve down", mode="lines", line=dict(dash="dash"), showlegend=True)
                     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())  
                 ]
                 + [
-                  go.Scatter(x=np.arange(n_weeks), y=mng.reservoir.upper_rule_curve[:n_weeks],
-                                visible=(i==0), name=f"Rule curve high {area}", showlegend=False)
+                  go.Scatter(x=np.arange(n_weeks+1), y=mng.reservoir.upper_rule_curve[:n_weeks+1],
+                                visible=(i==0), name=f"Curve high", mode="lines", line=dict(dash="dash"), showlegend=True)
                     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())  
                 ]
+                # + [
+                #   go.Scatter(x=np.arange(1,n_weeks), y=np.minimum(mng.reservoir.capacity, np.mean(trajectory, axis=2)[:-1,i]\
+                #                                                   + np.mean(mng.reservoir.inflow[:n_weeks,:n_scenarios],axis=1)),
+                #                 visible=(i==0), name=f"Control 0", mode="markers", marker=dict(symbol="diamond-wide", size=4.6), opacity=1, showlegend=True)
+                #     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())  
+                # ]
+                # + [
+                #   go.Scatter(x=np.arange(1,n_weeks), y=np.maximum(0, np.mean(trajectory, axis=2)[:-1,i]\
+                #                                      + np.mean(mng.reservoir.inflow[:n_weeks,:n_scenarios],axis=1)\
+                #                                      - mng.reservoir.max_generating[:n_weeks]),
+                #                 visible=(i==0), name=f"Max turb", mode="markers", marker=dict(symbol="arrow-up", size=4.4), opacity=1, showlegend=True)
+                #     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())  
+                # ]
+                # + [
+                #   go.Scatter(x=np.arange(1,n_weeks), y=np.minimum(mng.reservoir.capacity, np.mean(trajectory, axis=2)[:-1,i]\
+                #                                      + np.mean(mng.reservoir.inflow[:n_weeks,:n_scenarios],axis=1)\
+                #                                      + mng.reservoir.max_pumping[:n_weeks] * mng.reservoir.efficiency),
+                #                 visible=(i==0), name=f"Max pump", mode="markers", marker=dict(symbol="arrow-down", size=4.4), opacity=1, showlegend=True)
+                #     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())  
+                # ]
                 ,
-        layout=dict(title="Usage Values")
+        layout=dict(title=f"Usage Values")
     )
     usage_values_plot.update_layout(
     updatemenus=[{

@@ -228,7 +228,7 @@ class LinearInterpolator:
         self.true_duals = np.round(self.true_duals, precision)
 
     def to_julia_tuple(self) -> tuple:
-        return self.inputs.tolist(), self.costs.tolist(), self.duals.tolist()
+        return self.inputs, self.costs, self.duals
 
 class LinearCostEstimator(Estimator):
     """ A class to contain an ensemble of Interpolators for every week and scenario """
@@ -386,7 +386,7 @@ class LinearCostEstimator(Estimator):
             [estimator.to_julia_tuple() for estimator in week]
             for week in self.estimators
         ]
-        return str(julia_structure)
+        return julia_structure
 
 from hyperplane_decomposition import decompose_hyperplanes
 class LinearDecomposer(LinearInterpolator):

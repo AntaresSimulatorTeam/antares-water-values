@@ -1,15 +1,15 @@
 from itertools import product
 from calculate_reward_and_bellman_values import (
     RewardApproximation,
-    ReservoirManagement,
     BellmanValueCalculation,
     MultiStockManagement,
     MultiStockBellmanValueCalculation,
 )
-from ortools.linear_solver.python import model_builder
+
 import ortools.linear_solver.pywraplp as pywraplp
 from estimation import Estimator, LinearCostEstimator, LinearInterpolator
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
+from julia_sddp import python_to_julia_data, manage_reservoirs_py
 from optimization import (AntaresProblem, 
                           WeeklyBellmanProblem, 
                           Basis, 
@@ -355,6 +355,13 @@ def get_bellman_values_from_costs(
         future_costs_approx = LinearInterpolator(inputs=levels, costs=costs_w - np.min(costs_w), duals=duals_w)
         future_costs_approx_l.insert(0,future_costs_approx)
     return np.array(all_levels), np.array(costs), np.array(duals), np.array(controls), future_costs_approx_l
+
+def SDDP_from_julia(
+    param:TimeScenarioParameter,
+    multi_stock_management:MultiStockManagement,
+    starting_pt:np.ndarray,
+    costs_approx:Estimator,):
+    ...
 
 def initialize_future_costs(
     param:TimeScenarioParameter,

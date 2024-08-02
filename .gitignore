@@ -165,8 +165,10 @@ cython_debug/
 .vscode
 dev/
 
-#Plots
+# Plots
 *.html
+*.png
+
 
 #Custom packages
 *.whl

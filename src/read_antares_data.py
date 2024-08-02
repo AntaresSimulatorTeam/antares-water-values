@@ -116,7 +116,7 @@ class Reservoir:
 
 
 def generate_mps_file(study_path: str, antares_path: str) -> str:
-    change_hydro_management_to_heuristic(dir_study=study_path)
+    # change_hydro_management_to_heuristic(dir_study=study_path)
 
     name_solver = antares_path.split("/")[-1]
     assert "solver" in name_solver
@@ -144,6 +144,10 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
                 hydro_ini["use water"][area] = "false"
             if "use heuristic" in hydro_ini.keys():
                 hydro_ini["use heuristic"][area] = "true"
+    
+    #Solve the weird mps occurence of limited hydro power:
+    # for area in hydro_ini["intra-daily-modulation"].keys():
+    #     hydro_ini["intra-daily-modulation"][area] = "999999.000000"
 
     with open(dir_study + "/input/hydro/hydro.ini", "w") as configfile:  # save
         hydro_ini.write(configfile)

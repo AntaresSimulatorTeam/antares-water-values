@@ -4,6 +4,7 @@ from estimation import LinearCostEstimator
 from multi_stock_bellman_value_calculation import MultiStockManagement
 import numpy as np
 
+#Test
 def python_to_julia_data(n_weeks, n_scenarios, multi_stock_management:MultiStockManagement, costs_approx:LinearCostEstimator, level_init:np.ndarray):
     # Convert Python objects to Julia-compatible structures
     julia_reservoirs = [dict(

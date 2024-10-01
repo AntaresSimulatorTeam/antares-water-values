@@ -229,6 +229,9 @@ class LinearInterpolator:
 
     def to_julia_tuple(self) -> tuple:
         return self.inputs, self.costs, self.duals
+    
+    def to_julia_dict(self) -> Dict:
+        return {"inputs":self.inputs, "costs":self.costs, "duals":self.duals}
 
 class LinearCostEstimator(Estimator):
     """ A class to contain an ensemble of Interpolators for every week and scenario """
@@ -382,10 +385,10 @@ class LinearCostEstimator(Estimator):
                 estimator.round(precision)
 
     def to_julia_compatible_structure(self):
-        julia_structure = [
-            [estimator.to_julia_tuple() for estimator in week]
+        julia_structure = np.array([
+            [estimator_scenario.to_julia_dict() for estimator_scenario in week]
             for week in self.estimators
-        ]
+        ])
         return julia_structure
 
 from hyperplane_decomposition import decompose_hyperplanes
@@ -444,7 +447,7 @@ class LinearDecomposer(LinearInterpolator):
             bad_guesses = np.sum(guesses, axis=0) > costs + tolerance
             #Removing first potential source of pb
             first_pb_inp = inputs[bad_guesses][0]
-            bad_lay = [layer for layer in self.layers if layer(first_pb_inp > 0)][-1]
+            bad_lay = [layer for layer in self.layers if layer(first_pb_inp) > 0][-1]
             bad_lay.remove(bad_lay.get_owner(first_pb_inp))
             guesses = np.array([layer(inputs) for layer in self.layers]) # N_res * N_inp
 

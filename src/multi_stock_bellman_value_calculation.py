@@ -7,6 +7,7 @@ from calculate_reward_and_bellman_values import (
 )
 
 import ortools.linear_solver.pywraplp as pywraplp
+from ortools.linear_solver.python import model_builder
 from estimation import Estimator, LinearCostEstimator, LinearInterpolator
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
 from julia_sddp import python_to_julia_data, manage_reservoirs_py
@@ -20,11 +21,14 @@ import numpy.typing as npt
 import numpy as np
 from scipy.interpolate import interp1d
 from functions_iterative import compute_upper_bound
-from display import ConvergenceProgressBar, draw_usage_values
+from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
 from scipy.stats import random_correlation
-import copy
+import pickle as pkl
 from tools import Caller
 from tqdm import tqdm
+from pathlib import Path
+import juliacall
+jl = juliacall.Main
 
 Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
 Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
@@ -59,6 +63,7 @@ def calculate_bellman_value_multi_stock(
                 path=output_path,
                 itr=1,
                 name_solver=name_solver,
+                name_scenario=param.name_scenario[scenario]
             )
             
             m.create_weekly_problem_itr(
@@ -205,6 +210,8 @@ def initialize_antares_problems(
     name_solver:str,
     direct_bellman_calc:bool=True,
     verbose:bool=False,
+    save_protos:bool=False,
+    load_from_protos:bool=False,
     ) -> Dict[TimeScenarioIndex, AntaresProblem]:
     """
         Creates Instances of the Antares problem for every week / scenario
@@ -228,19 +235,30 @@ def initialize_antares_problems(
         week_range = tqdm(week_range, desc='Problem initialization', colour='Yellow')
     for week in week_range:
         for scenario in range(param.len_scenario):
+            proto_path = output_path + f"/protos/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+            already_processed = Path(proto_path).is_file() and load_from_protos
             m = AntaresProblem(
                 scenario=scenario,
                 week=week,
                 path=output_path,
                 itr=1,
                 name_solver=name_solver,
+                name_scenario=param.name_scenario[scenario],
+                already_processed=already_processed,
             )
-            
-            m.create_weekly_problem_itr(
-                param=param,
-                multi_stock_management=multi_stock_management,
-                direct_bellman_calc=direct_bellman_calc,
-            )
+            if already_processed:
+                m.reset_from_loaded_version(multi_stock_management=multi_stock_management)
+            else:
+                m.create_weekly_problem_itr(
+                    param=param,
+                    multi_stock_management=multi_stock_management,
+                    direct_bellman_calc=direct_bellman_calc,
+                )
+                if save_protos:
+                    proto = model_builder.ModelBuilder().export_to_proto()
+                    m.solver.ExportModelToProto(output_model=proto)
+                    with open(proto_path, "wb") as file:
+                        pkl.dump((proto, m.stored_variables_and_constraints_ids), file)
             
             list_models[TimeScenarioIndex(week, scenario)] = m
     return list_models
@@ -255,6 +273,8 @@ def get_bellman_values_from_costs(
     method:str,
     trajectory:np.ndarray,
     correlations:np.ndarray,
+    divisor:dict[str,float]={"euro":1e8, "energy":1e4},
+    rounding:int=6,
     verbose:bool=False,
     )->tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[LinearInterpolator]]:
     """
@@ -284,7 +304,8 @@ def get_bellman_values_from_costs(
         param=param,
         multi_stock_management=multi_stock_management,
         week_costs_estimation=costs_approx,
-        name_solver=name_solver
+        name_solver=name_solver,
+        divisor=divisor
     )
     # problem.parameters.SetDoubleParam(problem.parameters.PRESOLVE, problem.parameters.PRESOLVE_ON)
     
@@ -355,13 +376,6 @@ def get_bellman_values_from_costs(
         future_costs_approx = LinearInterpolator(inputs=levels, costs=costs_w - np.min(costs_w), duals=duals_w)
         future_costs_approx_l.insert(0,future_costs_approx)
     return np.array(all_levels), np.array(costs), np.array(duals), np.array(controls), future_costs_approx_l
-
-def SDDP_from_julia(
-    param:TimeScenarioParameter,
-    multi_stock_management:MultiStockManagement,
-    starting_pt:np.ndarray,
-    costs_approx:Estimator,):
-    ...
 
 def initialize_future_costs(
     param:TimeScenarioParameter,
@@ -457,6 +471,8 @@ def get_all_costs(param:TimeScenarioParameter,
                     multi_stock_management:MultiStockManagement,
                     controls_list:np.ndarray,
                     verbose:bool=False,
+                    already_init:bool=False,
+                    keep_intermed_res:bool=False,
                     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
     Takes a problem and a discretization level and solves the Antares pb for every combination of stock for every week
@@ -476,12 +492,20 @@ def get_all_costs(param:TimeScenarioParameter,
     tot_iter = 0
     times = []
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
+    filename="get_all_costs_run.pkl"
     
     # Initializing the n_weeks*n_scenarios*n_controls*n_stocks values to fill
     shape_controls = list(controls_list.shape)
     costs = np.zeros(shape_controls[:-1])
     slopes = np.zeros(shape_controls)
-    week_range = range(param.len_week)
+    week_start=0
+    if already_init:
+        with open(filename, "rb") as file:
+            pre_costs, pre_slopes = pkl.load(file) 
+        week_start = pre_costs.shape[0]
+        costs[:week_start] = pre_costs
+        slopes[:week_start] = pre_slopes
+    week_range = range(week_start, param.len_week)
     if verbose:
         week_range = tqdm(range(param.len_week), colour='blue', desc="Simulation")
     for week in week_range:
@@ -503,9 +527,79 @@ def get_all_costs(param:TimeScenarioParameter,
             times.append(times_ws)
             costs[week, scenario] = costs_ws
             slopes[week, scenario] = slopes_ws
+        if keep_intermed_res:
+            with open(filename,"wb") as file:
+                pkl.dump((costs[:week+1], slopes[:week+1]), file)
     # print(f"Number of simplex pivot {tot_iter}")
     return costs, slopes
 
+def Lget_costs(
+    param:TimeScenarioParameter,
+    multi_stock_management:MultiStockManagement,
+    output_path:str,
+    name_solver:str,
+    controls_list:np.ndarray,
+    verbose:bool=False,
+    direct_bellman_calc:bool=True,
+    load_from_protos:bool=False,
+    prefix:str=""
+):
+    filename=f"{prefix}get_all_costs_run_{output_path[-27:]}.pkl"
+    
+    # Initializing the n_weeks*n_scenarios*n_controls(*n_stocks) values to fill
+    shape_controls = list(controls_list.shape)
+    costs = np.zeros(shape_controls[:-1])
+    slopes = np.zeros(shape_controls)
+    week_start=0
+    if Path(filename).is_file():
+        with open(filename, "rb") as file:
+            pre_controls, pre_costs, pre_slopes = pkl.load(file) 
+        week_start = pre_costs.shape[0]
+        controls_list[:week_start] = pre_controls
+        costs[:week_start] = pre_costs
+        slopes[:week_start] = pre_slopes
+    week_range = range(param.len_week)
+    if verbose:
+        if week_start>0:
+            print(f"Starting again at week {week_start}")
+        week_range = tqdm(range(param.len_week), colour='blue', desc="Simulation")
+    for week in week_range:
+        if week >= week_start:
+            for scenario in range(param.len_scenario):
+                proto_path = output_path + f"/protos/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+                already_processed = load_from_protos and Path(proto_path).is_file()
+                m = AntaresProblem(
+                    scenario=scenario,
+                    week=week,
+                    path=output_path,
+                    itr=1,
+                    name_solver=name_solver,
+                    name_scenario=param.name_scenario[scenario],
+                    already_processed=already_processed
+                )
+                if already_processed:
+                    m.reset_from_loaded_version(multi_stock_management=multi_stock_management)
+                else:
+                    m.create_weekly_problem_itr(
+                        param=param,
+                        multi_stock_management=multi_stock_management,
+                        direct_bellman_calc=direct_bellman_calc,
+                    )
+                    proto = model_builder.ModelBuilder().export_to_proto()
+                    m.solver.ExportModelToProto(output_model=proto)
+                    with open(proto_path, "wb") as file:
+                        pkl.dump((proto, m.stored_variables_and_constraints_ids), file)
+                costs_ws, slopes_ws, _, _ = get_week_scenario_costs(
+                        m=m,
+                        multi_stock_management=multi_stock_management,
+                        controls_list=controls_list[week, scenario],
+                    )
+                costs[week, scenario] = costs_ws
+                slopes[week, scenario] = slopes_ws
+            with open(filename,"wb") as file:
+                pkl.dump((controls_list[:week+1], costs[:week+1], slopes[:week+1]), file)
+    return controls_list, costs, slopes
+            
 def generate_controls(
     param:TimeScenarioParameter,
     multi_stock_management:MultiStockManagement,
@@ -704,6 +798,7 @@ def select_controls_to_explore(
     multi_stock_management:MultiStockManagement,
     pseudo_opt_controls:np.array,
     costs_approx:Estimator,
+    rng:Optional[Any]=None,
 ) -> np.ndarray:
     """Takes in some optimal (for now) controls and returns a list of controls to explore,
     in this version: only returns the optimal control
@@ -718,11 +813,22 @@ def select_controls_to_explore(
         np.ndarray: Controls for a week / scenario / control_id / reservoir given
     """
     #This only a first version:
+    if not rng:
+        rng = rng = np.random.default_rng()
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     n_weeks, n_scenarios = param.len_week, param.len_scenario
     controls_to_explore = np.zeros((n_weeks, n_scenarios, 1, n_reservoirs))
     max_gen = np.array([mng.reservoir.max_generating[:n_weeks] for mng in multi_stock_management.dict_reservoirs.values()]).T
     max_pump = np.array([-mng.reservoir.max_pumping[:n_weeks] * mng.reservoir.efficiency for mng in multi_stock_management.dict_reservoirs.values()]).T
+    max_var = max_gen - max_pump
+    proximity_to_other_control = np.zeros((n_weeks, n_scenarios, n_reservoirs))
+    n_inputs = costs_approx[0,0].true_costs.shape[0]
+    for week in range(n_weeks):
+        for scen in range(n_scenarios):
+            proximity_to_other_control[week, scen] = np.min(costs_approx[week, scen].true_inputs - pseudo_opt_controls[week, scen][None,:], axis=0)
+    relative_proximity = 100 * proximity_to_other_control / max_var[:, None, :]
+    pseudo_opt_controls += rng.normal(scale=np.exp(-relative_proximity) * max_var[: ,None ,:]/50*(2*n_inputs+1), size=(n_weeks, n_scenarios, n_reservoirs))
+    # pseudo_opt_controls += np.random.normal(scale=np.exp(-relative_proximity) * max_var[: ,None ,:]/10, size=(n_weeks, n_scenarios, n_reservoirs))
     controls_to_explore[:,:,0,:] = np.maximum(np.minimum(pseudo_opt_controls, max_gen[:, None, :]), max_pump[:, None, :])
     return controls_to_explore
 
@@ -759,6 +865,8 @@ def compute_usage_values_from_costs(
     optimal_trajectory:np.ndarray,
     nSteps_bellman:int,
     correlations:np.ndarray,
+    divisor:dict[str, float]={"euro":1e8, "energy":1e4},
+    rounding:int=6,
     verbose:bool=False,
 )-> dict[str, np.ndarray]:
     """ For now we want this function to solve a lot of optimization problems for different initial values of stock
@@ -783,7 +891,8 @@ def compute_usage_values_from_costs(
         param=param,
         multi_stock_management=multi_stock_management,
         week_costs_estimation=costs_approx,
-        name_solver=name_solver
+        name_solver=name_solver,
+        divisor=divisor,
     )
 
     #Parameter
@@ -886,6 +995,9 @@ def cutting_plane_method(
     maxiter:Optional[int]=None,
     precision:Optional[float]=5e-2,
     interp_mode:bool=False,
+    divisor:float=1.,
+    rounding:int=6,
+    output_path:Optional[str]="",
     verbose:bool=False,
 ):
     """
@@ -919,6 +1031,7 @@ def cutting_plane_method(
     trajectory = np.swapaxes(trajectory, 1, 2)
     # Max gap
     max_gap = np.mean(np.max(costs, axis=2) - np.min(costs, axis=2), axis=1)
+    rng = np.random.default_rng(1234115)
 
     hlpr = Caller(
         param=param,
@@ -938,7 +1051,12 @@ def cutting_plane_method(
         precision=precision,
         interp_mode=interp_mode,
         opt_gap=opt_gap,
-        verbose=False,)
+        divisor=divisor,
+        rounding=rounding,
+        output_path=output_path,
+        rng=rng,
+        verbose=False,
+        prefix="cut_plan")
     
     # To display convergence:
     if verbose:
@@ -965,7 +1083,8 @@ def cutting_plane_method(
             pbar.describe("Simulation")
 
         #Evaluating this "optimal" trajectory
-        costs, slopes = hlpr(get_all_costs, ("costs", "slopes"))
+        hlpr.update(prefix=f"cut_plan_iter_{iter}_")
+        controls_list, costs, slopes = hlpr(Lget_costs, ("controls_list", "costs", "slopes"))
         
         opt_gap = hlpr(get_opt_gap, "opt_gap")
 
@@ -997,7 +1116,11 @@ def iter_bell_vals(
     maxiter: int = 2,
     correlations: Optional[np.ndarray] = None,
     interp_mode: bool = False,
+    divisor:float=1.,
+    rounding:int=6,
     verbose: bool = False,
+    already_init:bool=False,
+    keep_intermed_res:bool=False,
 ) -> tuple[Any, Any, Any, Any, Any]:
     """
     In a similar fashion to Kelley's algorithm (1960), the idea is to approximate the (convex) cost function
@@ -1051,17 +1174,23 @@ def iter_bell_vals(
         maxiter=maxiter,
         correlations=correlations,
         interp_mode=interp_mode,
-        verbose=verbose,)
+        divisor=divisor,
+        rounding=rounding,
+        verbose=verbose,
+        already_init=already_init,
+        keep_intermed_res=keep_intermed_res)
     
     #Choose first controls to test
     controls = hlpr(initialize_controls, 'controls_list')
     
-    #Initialize the Antares problems
-    hlpr(initialize_antares_problems, 'list_models')
+    # #Initialize the Antares problems
+    # hlpr(initialize_antares_problems, 'list_models')
         
-    #Get hyperplanes resulting from initial controls
-    _, duals = hlpr(get_all_costs, ('costs', 'slopes'))
+    # #Get hyperplanes resulting from initial controls
+    # _, duals = hlpr(get_all_costs, ('costs', 'slopes'))
+    controls, _, duals = hlpr(Lget_costs, ('controls_list', 'costs', 'slopes'))
     hlpr.update(duals=duals, controls=controls)
+    hlpr.update(list_models=[])
     
     costs_approx = hlpr(LinearCostEstimator, "costs_approx")
 
@@ -1076,6 +1205,7 @@ def iter_bell_vals(
                                       "costs_approx", "optimal_trajectory"))
     
     #Deducing usage values
+    hlpr.update(nSteps_bellman=101)
     hlpr(compute_usage_values_from_costs, ('usage_values', 'levels_imposed'))
 
     returns = ("bellman_costs", "costs_approx", "future_costs_approx_l", "levels", "optimal_trajectory",\
@@ -1083,3 +1213,174 @@ def iter_bell_vals(
     bellman_costs, costs_approx, future_costs_approx_l,\
           levels, optimal_trajectory, usage_values = hlpr.get(returns)
     return bellman_costs, costs_approx, future_costs_approx_l, levels, optimal_trajectory, usage_values
+
+def sddp_cutting_planes(param:TimeScenarioParameter,
+                         multi_stock_management:MultiStockManagement,
+                         output_path:str,
+                         name_solver:str,
+                         list_models:Dict[TimeScenarioIndex, AntaresProblem],
+                         costs_approx:Estimator,
+                         costs:np.ndarray,
+                         level_init:np.ndarray,
+                         normalization:Dict[str,float],
+                         maxiter:Optional[int]=None,
+                         precision:float=1e-2,
+                         interp_mode:bool=False,
+                         verbose:bool=False,
+): 
+    
+    #Initialize julia
+    jl.include("../src/sddp.jl")
+    # Import the ReservoirManagement module
+    jl_sddp = jl.Jl_SDDP
+    julia_reservoirs = np.array([dict(
+            capacity = mng.reservoir.capacity,
+            efficiency = mng.reservoir.efficiency,
+            max_pumping = mng.reservoir.max_pumping,
+            max_generating = mng.reservoir.max_generating,
+            upper_level = mng.reservoir.upper_rule_curve,
+            lower_level = mng.reservoir.bottom_rule_curve,
+            upper_curve_penalty = mng.penalty_upper_rule_curve,
+            lower_curve_penalty = mng.penalty_bottom_rule_curve,
+            spillage_penalty = 2*mng.penalty_upper_rule_curve + 10,
+            level_init = level_init[i],
+            inflows = mng.reservoir.inflow,)
+            for i, mng in enumerate(multi_stock_management.dict_reservoirs.values())])
+    
+    #Initialize loop
+    iter=0
+    opt_gap=1.
+    maxiter = 12 if maxiter is None else maxiter
+    max_gap = np.mean(np.max(costs, axis=2) - np.min(costs, axis=2), axis=1)
+    all_uvs = []
+    
+    #Display
+    if verbose:
+        pbar= ConvergenceProgressBar(convergence_goal=precision, maxiter=maxiter, degrowth=4)
+        pbar.describe("SDDP-ing")
+    julia_capp = costs_approx.to_julia_compatible_structure()
+    formatted_data = jl_sddp.formater(param.len_week, param.len_scenario, julia_reservoirs, julia_capp, normalization["euro"], normalization["energy"])
+    jl_sddp.reinit_cuts(*formatted_data)
+    #Body
+    while iter < maxiter and (iter < 4 or (opt_gap > precision)):
+        iter+=1
+        julia_capp = costs_approx.to_julia_compatible_structure()
+        formatted_data = jl_sddp.formater(param.len_week, param.len_scenario, julia_reservoirs, julia_capp, normalization["euro"], normalization["energy"])
+        jl_reservoirs, norms = formatted_data[2], formatted_data[4]
+        #SDDP to train on our cost approx
+        sim_res, model = jl_sddp.manage_reservoirs(*formatted_data)
+        
+        # Resulting controls per scenario
+        controls = np.array([[week["control"] for week in res][:param.len_week] for res in sim_res]).swapaxes(0,1) # n_weeks x n_scenarios x 1 x N_reservoirs
+        controls = select_controls_to_explore(
+            param=param,
+            multi_stock_management=multi_stock_management,
+            pseudo_opt_controls=controls,
+            costs_approx=costs_approx
+        )
+        
+        if verbose:
+            pbar.describe("Simulating")
+            
+        controls, costs, slopes = Lget_costs(
+            param=param,
+            multi_stock_management=multi_stock_management,
+            controls_list=controls,
+            output_path=output_path,
+            name_solver=name_solver,
+            verbose=False,
+            load_from_protos=True,
+            prefix=f"SDDP_iter_{iter}_",
+        )
+        
+        #Computing opt gap
+        opt_gap = get_opt_gap(
+            param=param,
+            costs=costs,
+            costs_approx=costs_approx,
+            controls_list=controls,
+            opt_gap=opt_gap,
+            max_gap=max_gap,
+        )
+        
+        if verbose:
+            pbar.describe("Drawing")
+            usage_values, bellman_costs = jl_sddp.get_usage_values(param.len_week, param.len_scenario, jl_reservoirs, model, norms, 101)
+            all_uvs.append(usage_values)
+            draw_uvs_sddp(param=param, multi_stock_management=multi_stock_management, usage_values=usage_values, simulation_results=sim_res, div=1)
+            pbar.update(precision=opt_gap)
+            
+        costs_approx.update(inputs=controls, costs=costs, duals=slopes, interp_mode=interp_mode)
+        costs_approx.remove_redundants(tolerance=1e-2)
+    usage_values, bellman_costs = jl_sddp.get_usage_values(param.len_week, param.len_scenario, jl_reservoirs, model, norms, 101)
+    return usage_values, bellman_costs, costs_approx, all_uvs
+
+def iter_bell_vals_v2(
+    param: TimeScenarioParameter,
+    multi_stock_management: MultiStockManagement,
+    output_path: str,
+    n_controls_init:int,
+    starting_pt: np.ndarray,
+    normalization:Dict[str, float],
+    name_solver: str = "CLP",
+    precision: float = 1e-2,
+    maxiter: int = 2,
+    interp_mode: bool = False,
+    verbose: bool = False,
+) -> Any:
+    
+    #Choose first controls to test
+    controls_list = initialize_controls(
+        param=param,
+        multi_stock_management=multi_stock_management,
+        n_controls_init=n_controls_init
+    )
+    
+    # #Initialize the Antares problems
+    # list_models = initialize_antares_problems(
+    #     param=param,
+    #     multi_stock_management=multi_stock_management,
+    #     output_path=output_path,
+    #     name_solver=name_solver,
+    #     direct_bellman_calc=False,
+    #     verbose=verbose,
+    # )
+    
+    #Get hyperplanes resulting from initial 
+    # costs, duals = get_all_costs(
+    #     param=param,
+    #     list_models=list_models,
+    #     multi_stock_management=multi_stock_management,
+    #     controls_list=controls_list,
+    #     verbose=verbose,
+    # )
+    controls_list, costs, duals = Lget_costs(
+        param=param,
+        multi_stock_management=multi_stock_management,
+        output_path=output_path,
+        name_solver=name_solver,
+        controls_list=controls_list,
+        load_from_protos=True,
+        verbose=verbose,
+    )
+    
+    costs_approx = LinearCostEstimator(param=param, controls=controls_list, costs=costs, duals=duals)
+    list_models=[]
+    # Iterative part
+    usage_values, bellman_costs, costs_approx, all_uvs = sddp_cutting_planes(
+        param=param,
+        multi_stock_management=multi_stock_management,
+        output_path=output_path,
+        name_solver=name_solver,
+        list_models=list_models,
+        costs_approx=costs_approx,
+        costs=costs,
+        level_init=starting_pt,
+        precision=precision,
+        normalization=normalization,
+        maxiter=maxiter,
+        interp_mode=interp_mode,
+        verbose=verbose,
+        )
+    
+    return usage_values, bellman_costs, costs_approx, all_uvs

@@ -1,6 +1,8 @@
 import numpy as np
 from tqdm import tqdm
 import plotly.graph_objects as go
+from read_antares_data import TimeScenarioParameter
+from multi_stock_bellman_value_calculation import MultiStockManagement
 
 def draw_usage_values(
         usage_values,
@@ -9,7 +11,7 @@ def draw_usage_values(
         nSteps_bellman, 
         multi_stock_management, 
         trajectory, 
-        ub=800):
+        ub=6000):
     n_scenarios =trajectory.shape[-1]
     mult = 3
     reinterpolated_usage_values = {area:np.zeros((n_weeks, mult*nSteps_bellman)) for area in multi_stock_management.dict_reservoirs.keys()}
@@ -88,6 +90,58 @@ def draw_usage_values(
         },])
     usage_values_plot.show()
 
+def draw_uvs_sddp(
+    param:TimeScenarioParameter,
+    multi_stock_management:MultiStockManagement,
+    usage_values:np.ndarray,
+    simulation_results:list[dict],
+    lim:float=700.,
+    div:float=1.,
+):
+    n_weeks = param.len_week
+    reservoirs = [mng.reservoir for mng in multi_stock_management.dict_reservoirs.values()]
+    usage_values = np.array(usage_values)
+    disc = usage_values.shape[1]
+    uvs_fig = go.Figure(
+        data=[
+                go.Heatmap(x=np.arange(n_weeks), y=np.linspace(0,res.capacity, disc), z=usage_values[:,:,r].T, zmin=-lim, zmax=lim, showscale=False, visible=(r==0))
+            for r, res in enumerate(reservoirs)
+            ] + [
+                go.Scatter(x=np.arange(n_weeks),
+                        y=np.mean([[sim [week]["level_out"][r]*div for week in range(n_weeks)] for sim in simulation_results], axis=0),
+                        name="SDDP trajectory",
+                        showlegend=True,
+                        visible=(r==0))
+            for r, res in enumerate(reservoirs)
+            ] + [
+                go.Scatter(x=np.arange(n_weeks), y=res.bottom_rule_curve, showlegend=True, name="Bottom rule curve", visible=(r==0))
+            for r, res in enumerate(reservoirs)
+            ],
+        layout=dict(title="Water Values and Trajectories found by SDDP",
+                    xaxis={"title":"Week"},
+                    yaxis={"title":"Reservoir level (MWh)"},
+                    )
+    )
+    uvs_fig.update_layout(
+    updatemenus=[{
+            "buttons": 
+            [
+                {
+                    "label": f"Reservoir {area}",
+                    "method": "update",
+                    "args": 
+                    [
+                        {"visible": [area_b==area for area_b in multi_stock_management.dict_reservoirs.keys()]*3},
+                    ],
+                }
+                for area in multi_stock_management.dict_reservoirs.keys()
+            ],
+            "x":.0,
+            "xanchor":"left",
+            "y":1.13,
+            "yanchor":"top"
+        },])
+    uvs_fig.show()
 
 class ConvergenceProgressBar:
 

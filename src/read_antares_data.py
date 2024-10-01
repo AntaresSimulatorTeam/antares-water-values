@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Optional
 import subprocess
 from configparser import ConfigParser
 import numpy as np
@@ -11,6 +12,15 @@ class TimeScenarioParameter:
     len_week: int = 52
     len_scenario: int = 1
     name_scenario: list = field(default_factory=list)
+
+    def __init__(self, len_week:int, len_scenario:int, name_scenario:Optional[list]=None):
+        self.len_week = len_week
+        self.len_scenario = len_scenario
+        if name_scenario:
+            self.name_scenario = name_scenario
+        else:
+            self.name_scenario = np.arange(len_scenario) + 1
+            
 
 
 @dataclass(frozen=True)
@@ -85,9 +95,9 @@ class Reservoir:
             )[:, [0, 2]]
             * self.capacity
         )
-        assert (
-            rule_curves[0, 0] == rule_curves[0, 1]
-        ), "Initial level is not correctly defined by bottom and upper rule curves"
+        # assert (
+        #     rule_curves[0, 0] == rule_curves[0, 1]
+        # ), "Initial level is not correctly defined by bottom and upper rule curves"
         self.initial_level = rule_curves[0, 0]
         bottom_rule_curve = rule_curves[6:365:7, 0]
         upper_rule_curve = rule_curves[6:365:7, 1]

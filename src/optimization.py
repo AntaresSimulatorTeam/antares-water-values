@@ -84,7 +84,11 @@ class AntaresProblem:
             mps_path = path + f"/problem-{name_scenario}-{week+1}--optim-nb-{itr}.mps"
             model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
             model.import_from_mps_file(mps_path)
-            model_proto = model.export_to_proto()
+            try:
+                model_proto = model.export_to_proto()
+            except FileNotFoundError:
+                print("Proto directory not found: Make sure the proto directory has been created within the mps directory")
+                raise FileNotFoundError
         else:
             proto_path = path + f"/protos/problem-{name_scenario}-{week+1}.pkl"
             with open(proto_path, "rb") as file:

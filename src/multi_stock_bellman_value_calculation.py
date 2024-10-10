@@ -10,7 +10,7 @@ import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
 from estimation import Estimator, LinearCostEstimator, LinearInterpolator
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
-from julia_sddp import python_to_julia_data, manage_reservoirs_py
+# from julia_sddp import python_to_julia_data, manage_reservoirs_py
 from optimization import (AntaresProblem, 
                           WeeklyBellmanProblem, 
                           Basis, 
@@ -977,7 +977,7 @@ def get_opt_gap(
     # real_tot_costs = np.sum(costs, axis=0)
     costs = np.mean(costs, axis=-1)
     opt_gap = max(1e-10, min(1, np.max(np.mean((costs - pre_update_costs),axis=1)/max_gap)))
-    print(f"Gap {np.max(np.mean((costs - pre_update_costs),axis=1)/max_gap)}")
+    # print(f"Gap {np.max(np.mean((costs - pre_update_costs),axis=1)/max_gap)}")
     return opt_gap
 
 def cutting_plane_method(
@@ -1154,6 +1154,7 @@ def iter_bell_vals(
         nSteps_bellman (int): Precision of the bellman solving part
         name_solver (str, optional): name of the solver used. Defaults to "CLP".
         precision (float, optional): Gap to minimum tolerated. Defaults to 1e-2.
+        divisor (dict, optional): https://www.gurobi.com/documentation/8.1/refman/numerics_advanced_user_sca.html
         maxiter (int, optional): Maximum number of iterations. Defaults to 2.
         verbose (bool, optional): Defines whether or not the function displlays informations while running. Defaults to False.
 

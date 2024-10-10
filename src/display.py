@@ -46,26 +46,6 @@ def draw_usage_values(
                                 visible=(i==0), name=f"Curve high", mode="lines", line=dict(dash="dash"), showlegend=True)
                     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())  
                 ]
-                # + [
-                #   go.Scatter(x=np.arange(1,n_weeks), y=np.minimum(mng.reservoir.capacity, np.mean(trajectory, axis=2)[:-1,i]\
-                #                                                   + np.mean(mng.reservoir.inflow[:n_weeks,:n_scenarios],axis=1)),
-                #                 visible=(i==0), name=f"Control 0", mode="markers", marker=dict(symbol="diamond-wide", size=4.6), opacity=1, showlegend=True)
-                #     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())  
-                # ]
-                # + [
-                #   go.Scatter(x=np.arange(1,n_weeks), y=np.maximum(0, np.mean(trajectory, axis=2)[:-1,i]\
-                #                                      + np.mean(mng.reservoir.inflow[:n_weeks,:n_scenarios],axis=1)\
-                #                                      - mng.reservoir.max_generating[:n_weeks]),
-                #                 visible=(i==0), name=f"Max turb", mode="markers", marker=dict(symbol="arrow-up", size=4.4), opacity=1, showlegend=True)
-                #     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())  
-                # ]
-                # + [
-                #   go.Scatter(x=np.arange(1,n_weeks), y=np.minimum(mng.reservoir.capacity, np.mean(trajectory, axis=2)[:-1,i]\
-                #                                      + np.mean(mng.reservoir.inflow[:n_weeks,:n_scenarios],axis=1)\
-                #                                      + mng.reservoir.max_pumping[:n_weeks] * mng.reservoir.efficiency),
-                #                 visible=(i==0), name=f"Max pump", mode="markers", marker=dict(symbol="arrow-down", size=4.4), opacity=1, showlegend=True)
-                #     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items())  
-                # ]
                 ,
         layout=dict(title=f"Usage Values")
     )

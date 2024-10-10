@@ -37,9 +37,9 @@ end
 
 # Function to convert Python data to Julia structures
 function formater(n_weeks, n_scenarios, reservoirs_data, costs_approx_data, norm_euros::Float64=1e7, norm_enrgy::Float64=1e5)
-    round_energy = 4#4#3
-    round_euro = 8#2
-    round_price = 5#4
+    round_energy = 4
+    round_euro = 8
+    round_price = 5
     norm_price = norm_euros / norm_enrgy # € / MWh
     norms = Normalizer(norm_euros, norm_enrgy, norm_price)
 

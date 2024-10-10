@@ -1,3 +1,4 @@
+# Ceci est le ficiher des coupes gourmandes, l'utilité n'a malheuresement pas été prouvée et la méthode n'a pas été retenue
 import numpy as np
 from numpy.linalg import norm
 

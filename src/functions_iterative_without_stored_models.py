@@ -202,6 +202,24 @@ def calculate_bellman_values_with_iterative_method_without_stored_models(
 
         V = bellman_value_calculation.calculate_VU()
 
+        final_values = V[:, 0]
+        reservoir_management_2 = ReservoirManagement(
+            reservoir=reservoir_management.reservoir,
+            penalty_bottom_rule_curve=0,
+            penalty_upper_rule_curve=0,
+            penalty_final_level=0,
+            force_final_level=True,
+            overflow=reservoir_management.overflow,
+        )
+
+        bellman_value_calculation = BellmanValueCalculation(
+            param=param,
+            reward=G,
+            reservoir_management=reservoir_management_2,
+            stock_discretization=X,
+        )
+        V = bellman_value_calculation.calculate_VU(final_values=final_values)
+
         V_fut = interp1d(X, V[:, 0])
         V0 = V_fut(reservoir_management.reservoir.initial_level)
 

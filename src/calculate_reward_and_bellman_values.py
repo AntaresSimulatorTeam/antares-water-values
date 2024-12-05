@@ -103,51 +103,119 @@ class MultiStockManagement:
         self.dict_reservoirs = {}
         for res in list_reservoirs:
             self.dict_reservoirs[res.reservoir.area] = res
-    
+
     def get_disc(
-        self, 
-        method:str, 
-        week:int, 
-        xNsteps:int, 
-        reference_pt:np.ndarray,
-        correlation_matrix:np.ndarray,
-        alpha:float = 1.,
-        in_out_ratio:float = 3.,
-        ):
+        self,
+        method: str,
+        week: int,
+        xNsteps: int,
+        reference_pt: np.ndarray,
+        correlation_matrix: np.ndarray,
+        alpha: float = 1.0,
+        in_out_ratio: float = 3.0,
+    ) -> Array1D:
         n_reservoirs = len(self.dict_reservoirs)
         if len(reference_pt.shape) > 1:
             reference_pt = np.mean(reference_pt, axis=1)
-        lbs = np.array([mng.reservoir.bottom_rule_curve[week] * alpha for mng in self.dict_reservoirs.values()])
-        ubs = np.array([mng.reservoir.upper_rule_curve[week]*alpha + mng.reservoir.capacity * (1 - alpha) for mng in self.dict_reservoirs.values()])
-        full = np.array([mng.reservoir.capacity for mng in self.dict_reservoirs.values()])
-        empty = np.array([0]*n_reservoirs)
-        n_pts_above = np.maximum(1+2*(full-ubs>0),np.round(xNsteps* (full-ubs)/(full-empty + (in_out_ratio-1)*(ubs-lbs))).astype(int))
-        n_pts_in = np.round(xNsteps* (ubs-lbs)*in_out_ratio/(full-empty + (in_out_ratio-1)*(ubs-lbs))).astype(int)
-        n_pts_below = np.maximum(1,np.round(xNsteps* (lbs-empty)/(full-empty + (in_out_ratio-1)*(ubs-lbs))).astype(int))
-        n_pts_in += xNsteps - (n_pts_below + n_pts_in + n_pts_above) # Make sure total adds up
-        if method=="lines":
+        lbs = np.array(
+            [
+                mng.reservoir.bottom_rule_curve[week] * alpha
+                for mng in self.dict_reservoirs.values()
+            ]
+        )
+        ubs = np.array(
+            [
+                mng.reservoir.upper_rule_curve[week] * alpha
+                + mng.reservoir.capacity * (1 - alpha)
+                for mng in self.dict_reservoirs.values()
+            ]
+        )
+        full = np.array(
+            [mng.reservoir.capacity for mng in self.dict_reservoirs.values()]
+        )
+        empty = np.array([0] * n_reservoirs)
+        n_pts_above = np.maximum(
+            1 + 2 * (full - ubs > 0),
+            np.round(
+                xNsteps
+                * (full - ubs)
+                / (full - empty + (in_out_ratio - 1) * (ubs - lbs))
+            ).astype(int),
+        )
+        n_pts_in = np.round(
+            xNsteps
+            * (ubs - lbs)
+            * in_out_ratio
+            / (full - empty + (in_out_ratio - 1) * (ubs - lbs))
+        ).astype(int)
+        n_pts_below = np.maximum(
+            1,
+            np.round(
+                xNsteps
+                * (lbs - empty)
+                / (full - empty + (in_out_ratio - 1) * (ubs - lbs))
+            ).astype(int),
+        )
+        n_pts_in += xNsteps - (
+            n_pts_below + n_pts_in + n_pts_above
+        )  # Make sure total adds up
+        if method == "lines":
             # in_curve_pts = np.linspace(lbs, ubs, xNsteps-2) # Disc-2 * R
             # all_pts = np.insert(in_curve_pts, 0, empty, axis=0) # (Disc-1) * R
             # all_pts = np.insert(all_pts, all_pts.shape[0], full, axis=0) # Disc * R
-            above_curve_pts = [np.linspace(ubs[r], full[r], n_pts_above[r], endpoint=True) for r in range(n_reservoirs)]
-            in_curve_pts = [np.linspace(lbs[r], ubs[r], n_pts_in[r], endpoint=False) for r in range(n_reservoirs)]
-            below_curve_pts = [np.linspace(empty[r], lbs[r], n_pts_below[r], endpoint=False) for r in range(n_reservoirs)]
-            all_pts = np.array([np.concatenate((below_curve_pts[r], in_curve_pts[r], above_curve_pts[r])) for r in range(n_reservoirs)]).T
+            above_curve_pts = [
+                np.linspace(ubs[r], full[r], n_pts_above[r], endpoint=True)
+                for r in range(n_reservoirs)
+            ]
+            in_curve_pts = [
+                np.linspace(lbs[r], ubs[r], n_pts_in[r], endpoint=False)
+                for r in range(n_reservoirs)
+            ]
+            below_curve_pts = [
+                np.linspace(empty[r], lbs[r], n_pts_below[r], endpoint=False)
+                for r in range(n_reservoirs)
+            ]
+            all_pts = np.array(
+                [
+                    np.concatenate(
+                        (below_curve_pts[r], in_curve_pts[r], above_curve_pts[r])
+                    )
+                    for r in range(n_reservoirs)
+                ]
+            ).T
             # all_pts = np.concatenate((below_curve_pts, in_curve_pts, above_curve_pts), axis=0) # Disc * R
-            diffs_to_ref = all_pts[:,None] - reference_pt[None, :] # Disc * R
-            diffs_to_ref = diffs_to_ref[:,:,None] * np.eye(n_reservoirs)[None, :, :] # Disc * R * R
-            diffs_to_ref = np.dot(diffs_to_ref, correlation_matrix) # Disc * R * R
-            new_levels = reference_pt[None, None, :] + diffs_to_ref # Disc * R * R
-            new_levels = np.maximum(new_levels, empty[None,None, :]) # Do or do not make other points leave guiding curves ?
-            new_levels = np.minimum(new_levels, full[None,None, :]) # We chose the former
-            levels = np.reshape(new_levels, (xNsteps*n_reservoirs, n_reservoirs)) # (Disc * R) * R
+            diffs_to_ref = all_pts[:, None] - reference_pt[None, :]  # Disc * R
+            diffs_to_ref = (
+                diffs_to_ref[:, :, None] * np.eye(n_reservoirs)[None, :, :]
+            )  # Disc * R * R
+            diffs_to_ref = np.dot(diffs_to_ref, correlation_matrix)  # Disc * R * R
+            new_levels = reference_pt[None, None, :] + diffs_to_ref  # Disc * R * R
+            new_levels = np.maximum(
+                new_levels, empty[None, None, :]
+            )  # Do or do not make other points leave guiding curves ?
+            new_levels = np.minimum(
+                new_levels, full[None, None, :]
+            )  # We chose the former
+            levels = np.reshape(
+                new_levels, (xNsteps * n_reservoirs, n_reservoirs)
+            )  # (Disc * R) * R
         else:
             # Listing all levels
-            levels_discretization = product(\
-                *[np.concatenate([[0], np.linspace(lbs[i],ubs[i], xNsteps-2), [(alpha+1)/2*mng.reservoir.capacity]])\
-                            for i,mng in enumerate(self.dict_reservoirs.values())])
+            levels_discretization = product(
+                *[
+                    np.concatenate(
+                        [
+                            [0],
+                            np.linspace(lbs[i], ubs[i], xNsteps - 2),
+                            [(alpha + 1) / 2 * mng.reservoir.capacity],
+                        ]
+                    )
+                    for i, mng in enumerate(self.dict_reservoirs.values())
+                ]
+            )
             levels = np.array([level for level in levels_discretization])
         return levels
+
 
 class RewardApproximation:
     """Class to store and update reward approximation for a given week and a given scenario"""

@@ -107,8 +107,14 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
             @constraint(subproblem, control[r] <= reservoirs[r].max_generating[modulo_stage])
         end
         
+        if stage==1
+            stage_1 = 1
+        else
+            stage_1 = 0
+        end
+        
         @constraints(subproblem, begin
-            demand_constraint[r=1:n_reservoirs],  level[r].out == (level[r].in + (stage==1)*reservoirs[r].level_init) - control[r] + ξ[r] - spillage[r] 
+            demand_constraint[r=1:n_reservoirs],  level[r].out == (level[r].in + stage_1*reservoirs[r].level_init) - control[r] + ξ[r] - spillage[r] 
             [r=1:n_reservoirs], level[r].in <= reservoirs[r].upper_level[modulo_prev_stage] + over_upper[r]
             [r=1:n_reservoirs], level[r].in >= reservoirs[r].lower_level[modulo_prev_stage] - below_lower[r]
             [r=1:n_reservoirs], level[r].out <= reservoirs[r].capacity
@@ -161,15 +167,15 @@ end
 
 function reinit_cuts(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, costs_approx::Vector{Vector{Main.Jl_SDDP.LinInterp}}, norms::Normalizer)
     model = generate_model(n_weeks, n_scenarios, reservoirs, costs_approx, norms)
-    SDDP.write_cuts_to_file(model, "C:/Users/trenquierelo/Desktop/antares-water-values/notebooks/sddp_current_cuts")
+    SDDP.write_cuts_to_file(model, "dev/cuts/sddp_current_cuts")
 end
 
 function manage_reservoirs(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, costs_approx::Vector{Vector{Main.Jl_SDDP.LinInterp}}, norms::Normalizer)
     model = generate_model(n_weeks, n_scenarios, reservoirs, costs_approx, norms)
-    SDDP.read_cuts_from_file(model, "C:/Users/trenquierelo/Desktop/antares-water-values/notebooks/sddp_current_cuts")
+    SDDP.read_cuts_from_file(model, "dev/cuts/sddp_current_cuts")
     # Training the model
     SDDP.train(model, stopping_rules = [SDDP.BoundStalling(40, 1e1)], iteration_limit = 700, cut_type = SDDP.MULTI_CUT)
-    SDDP.write_cuts_to_file(model, "C:/Users/trenquierelo/Desktop/antares-water-values/notebooks/sddp_current_cuts")
+    SDDP.write_cuts_to_file(model, "dev/cuts/sddp_current_cuts")
     
     #Simulating
     simulation_results = get_trajectory(n_weeks, n_scenarios, reservoirs, model, norms)

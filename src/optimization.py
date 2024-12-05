@@ -15,6 +15,7 @@ import ortools.linear_solver.pywraplp as pywraplp
 from type_definition import Array2D, List, Dict, Array1D, npt
 import pickle as pkl
 
+
 class Basis:
     """Class to store basis with Xpress"""
 
@@ -79,7 +80,7 @@ class AntaresProblem:
 
         if name_scenario == -1:
             name_scenario = scenario + 1
-        
+
         if not already_processed:
             mps_path = path + f"/problem-{name_scenario}-{week+1}--optim-nb-{itr}.mps"
             model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
@@ -87,14 +88,16 @@ class AntaresProblem:
             try:
                 model_proto = model.export_to_proto()
             except FileNotFoundError:
-                print("Proto directory not found: Make sure the proto directory has been created within the mps directory")
+                print(
+                    "Proto directory not found: Make sure the proto directory has been created within the mps directory"
+                )
                 raise FileNotFoundError
         else:
             proto_path = path + f"/protos/problem-{name_scenario}-{week+1}.pkl"
             with open(proto_path, "rb") as file:
                 model_proto, var_and_cstr_ids = pkl.load(file)
-            self.stored_variables_and_constraints_ids=var_and_cstr_ids
-            
+            self.stored_variables_and_constraints_ids = var_and_cstr_ids
+
         solver = pywraplp.Solver.CreateSolver(name_solver)
         assert solver, "Couldn't find any supported solver"
         solver.EnableOutput()
@@ -111,7 +114,7 @@ class AntaresProblem:
         solver.LoadModelFromProtoWithUniqueNamesOrDie(model_proto)
 
         self.solver = solver
-        
+
         self.store_basis = name_solver == "XPRESS_LP"
 
         self.basis: List = []
@@ -183,7 +186,7 @@ class AntaresProblem:
         self,
         param: TimeScenarioParameter,
         multi_stock_management: MultiStockManagement,
-        direct_bellman_calc:bool=True,
+        direct_bellman_calc: bool = True,
     ) -> None:
         """
         Modify the Xpress problem to take into account reservoir constraints and manage reservoir with Bellman values and penalties on rule curves.
@@ -212,15 +215,15 @@ class AntaresProblem:
 
             self.delete_variable(
                 hours_in_week=hours_in_week,
-                name_variable=f"^HydroLevel::area<{reservoir_management.reservoir.area}>::hour<.", #variable niv stock
+                name_variable=f"^HydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",  # variable niv stock
             )
             self.delete_variable(
                 hours_in_week=hours_in_week,
-                name_variable=f"^Overflow::area<{reservoir_management.reservoir.area}>::hour<.", #variable overflow
+                name_variable=f"^Overflow::area<{reservoir_management.reservoir.area}>::hour<.",  # variable overflow
             )
             self.delete_constraint(
                 hours_in_week=hours_in_week,
-                name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.", #Conservation niveau stock
+                name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",  # Conservation niveau stock
             )
 
             cst = model.constraints()
@@ -230,39 +233,42 @@ class AntaresProblem:
                 i
                 for i in range(len(cst))
                 if re.search(
-                    f"^HydroPower::area<{reservoir_management.reservoir.area}>::week<.", #Turbinage- rho*pompage = cible
+                    f"^HydroPower::area<{reservoir_management.reservoir.area}>::week<.",  # Turbinage- rho*pompage = cible
                     cst[i].name(),
                 )
             ]
-            
-            assert len(binding_id) == 1 #Beware of lowercases, study path, mps path
+
+            assert len(binding_id) == 1  # Beware of lowercases, study path, mps path
 
             hyd_prod_vars = [
                 var
                 for id, var in enumerate(vars)
                 if re.search(
-                    f"HydProd::area<{reservoir_management.reservoir.area}>::hour<", 
+                    f"HydProd::area<{reservoir_management.reservoir.area}>::hour<",
                     var.name(),
                 )
             ]
 
-            #Correcting shenanigans in the generating var Ub due to heuristic gestion
+            # Correcting shenanigans in the generating var Ub due to heuristic gestion
             for var in hyd_prod_vars:
-                var.SetUb(reservoir_management.reservoir.max_generating[self.week] / reservoir_management.reservoir.hours_in_week)
-            
+                var.SetUb(
+                    reservoir_management.reservoir.max_generating[self.week]
+                    / reservoir_management.reservoir.hours_in_week
+                )
+
             x_s = model.Var(
                 lb=0,
                 ub=reservoir_management.reservoir.capacity,
                 integer=False,
                 name=f"InitialLevel::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-            )# Initial level
+            )  # Initial level
 
             x_s_1 = model.Var(
                 lb=0,
                 ub=reservoir_management.reservoir.capacity,
                 integer=False,
                 name=f"FinalLevel::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-            )# Final level
+            )  # Final level
 
             U = model.Var(
                 lb=-reservoir_management.reservoir.max_pumping[self.week]
@@ -270,7 +276,7 @@ class AntaresProblem:
                 ub=reservoir_management.reservoir.max_generating[self.week],
                 integer=False,
                 name=f"Control::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
-            )# Reservoir Control
+            )  # Reservoir Control
 
             if reservoir_management.overflow:
                 model.Add(
@@ -303,7 +309,9 @@ class AntaresProblem:
                         >= -reservoir_management.penalty_bottom_rule_curve
                         * (
                             x_s_1
-                            - reservoir_management.reservoir.bottom_rule_curve[self.week]
+                            - reservoir_management.reservoir.bottom_rule_curve[
+                                self.week
+                            ]
                         ),
                         name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
                     )
@@ -353,10 +361,17 @@ class AntaresProblem:
                 self.stored_variables_and_constraints[area]["penalties"] = y
                 self.stored_variables_and_constraints[area]["final_bellman_value"] = z
                 self.stored_variables_and_constraints_ids[area]["penalties"] = y.index()
-                self.stored_variables_and_constraints_ids[area]["final_bellman_value"] = z.index()
-    
-    def reset_from_loaded_version(self, multi_stock_management:MultiStockManagement):
-        assert multi_stock_management.dict_reservoirs.keys() == self.stored_variables_and_constraints_ids.keys(), "Loaded Proto and current reservoir management should have same reservoirs"
+                self.stored_variables_and_constraints_ids[area][
+                    "final_bellman_value"
+                ] = z.index()
+
+    def reset_from_loaded_version(
+        self, multi_stock_management: MultiStockManagement
+    ) -> None:
+        assert (
+            multi_stock_management.dict_reservoirs.keys()
+            == self.stored_variables_and_constraints_ids.keys()
+        ), "Loaded Proto and current reservoir management should have same reservoirs"
         self.range_reservoir = multi_stock_management.dict_reservoirs.keys()
         self.stored_variables_and_constraints = {}
         constraints = self.solver.constraints()
@@ -400,7 +415,7 @@ class AntaresProblem:
         ----------
         control:Dict[str, float] :
             Control to evaluate
-            
+
         prev_basis:Basis :
             Basis used at a previous resolution of a similar problem (Default value = None)
 
@@ -425,29 +440,40 @@ class AntaresProblem:
         for area in self.range_reservoir:
             self.set_constraints_predefined_control(control[area], area)
         try:
-            beta, lamb, final_level, _, _, itr, computing_time = self.solve_problem(direct_bellman_mode=False)
+            beta, lamb, final_level, _, _, itr, computing_time = self.solve_problem(
+                direct_bellman_mode=False
+            )
             # print(f"✔ for controls {control}")
         except ValueError:
             print(f"✘ for controls {control}")
             raise ValueError
         return beta, lamb, itr, computing_time
-    
-    def get_all_prices(self,
-                       multi_stock_management:MultiStockManagement):
-        constraints = self.solver.constraints()
+
+    def get_all_prices(
+        self, multi_stock_management: MultiStockManagement
+    ) -> list[pywraplp.Variable]:
+        vars = self.solver.variables()
         eq_consts = [
-                var
-                for id, var in enumerate(vars)
-                if any([re.search(
-                    f"PositiveUnsuppliedEnergy::area<{area}>::hour<", 
-                    var.name(),
-                ) for area in multi_stock_management.dict_reservoirs])
-            ]
+            var
+            for id, var in enumerate(vars)
+            if any(
+                [
+                    re.search(
+                        f"PositiveUnsuppliedEnergy::area<{area}>::hour<",
+                        var.name(),
+                    )
+                    for area in multi_stock_management.dict_reservoirs
+                ]
+            )
+        ]
         return eq_consts
-    
+
     def get_all_costs_with_predefined_controls(
-        self, control: Dict[str, float], multi_stock_management:MultiStockManagement, prev_basis: Basis = Basis([], []),
-    ) -> tuple[float, Dict[str, float], int, float]:
+        self,
+        control: Dict[str, float],
+        multi_stock_management: MultiStockManagement,
+        prev_basis: Basis = Basis([], []),
+    ) -> list[pywraplp.Variable]:
         """
         Modify and solve problem to evaluate weekly cost associated with a particular control of the reservoir.
 
@@ -455,7 +481,7 @@ class AntaresProblem:
         ----------
         control:Dict[str, float] :
             Control to evaluate
-            
+
         prev_basis:Basis :
             Basis used at a previous resolution of a similar problem (Default value = None)
 
@@ -478,7 +504,7 @@ class AntaresProblem:
             raise ValueError
         all_prices = self.get_all_prices(multi_stock_management)
         return all_prices
-    
+
     def set_constraints_predefined_control(self, control: float, area: str) -> None:
 
         self.stored_variables_and_constraints[area]["energy_constraint"].SetBounds(
@@ -575,10 +601,7 @@ class AntaresProblem:
             self.stored_variables_and_constraints[area]["final_bellman_value"], 0
         )
 
-    def solve_problem(
-        self,
-        direct_bellman_mode:bool=True 
-    ) -> tuple[
+    def solve_problem(self, direct_bellman_mode: bool = True) -> tuple[
         float,
         Dict[str, float],
         Dict[str, float],
@@ -611,7 +634,7 @@ class AntaresProblem:
                 z = {}
                 y = {}
             return (beta, lamb, xf, y, z, itr, end - start)
-                
+
         else:
             print(f"Failed to solve : {solve_status}")
             raise (ValueError)
@@ -740,11 +763,11 @@ def solve_problem_with_multivariate_bellman_values(
         )
         m.stored_variables_and_constraints[area]["energy_constraint"].SetLb(0.0)
         m.stored_variables_and_constraints[area]["energy_constraint"].SetUb(0.0)
-        #On a transformé la cible en une variable
+        # On a transformé la cible en une variable
 
         m.solver.Objective().SetCoefficient(
             m.stored_variables_and_constraints[area]["penalties"], 1
-        )#Avant on ne s'en servait pas
+        )  # Avant on ne s'en servait pas
         m.solver.Objective().SetCoefficient(
             m.stored_variables_and_constraints[area]["final_bellman_value"],
             1 / len_reservoir,
@@ -851,8 +874,9 @@ def solve_problem_with_multivariate_bellman_values(
                 ub=bellman_value_calculation.reservoir_management.reservoir.capacity,
             )
         for area in m.range_reservoir:
-            m.stored_variables_and_constraints[area]["energy_constraint"]\
-            .SetCoefficient(
+            m.stored_variables_and_constraints[area][
+                "energy_constraint"
+            ].SetCoefficient(
                 m.stored_variables_and_constraints[area]["reservoir_control"], 0
             )
 
@@ -879,22 +903,23 @@ def solve_problem_with_multivariate_bellman_values(
         z,
     )
 
+
 class WeeklyBellmanProblem:
-    """ A Class to manipulate the Dynamic Programming Optimization problem when costs
+    """A Class to manipulate the Dynamic Programming Optimization problem when costs
     are precalculated
     """
-    
+
     def __init__(
         self,
-        param:TimeScenarioParameter,
-        multi_stock_management:MultiStockManagement,
-        week_costs_estimation:Estimator,
-        name_solver:str,
-        divisor:dict[str,float]={"euro":1., "energy":1.},
-                 ) -> None:
+        param: TimeScenarioParameter,
+        multi_stock_management: MultiStockManagement,
+        week_costs_estimation: Estimator,
+        name_solver: str,
+        divisor: dict[str, float] = {"euro": 1.0, "energy": 1.0},
+    ) -> None:
         """
         Instanciates a Weekly Bellman Problem
-        
+
         Parameters
         ----------
             param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
@@ -902,34 +927,34 @@ class WeeklyBellmanProblem:
             week_costs_estimation:LinearInterpolator: All precalculated lower bounding hyperplains of weekly cost estimation,
             name_solver:str: Solver chosen for the optimization problem, default -> CLP
         """
-        
-        self.precision=6
+
+        self.precision = 6
         week_costs_estimation.round(precision=self.precision)
         week_costs_estimation.remove_redundants(tolerance=0)
         self.n_scenarios = param.len_scenario
-        self.name_solver=name_solver
+        self.name_solver = name_solver
         self.managements = multi_stock_management.dict_reservoirs
         self.week_costs_estimation = week_costs_estimation
         self.solver = pywraplp.Solver.CreateSolver(name_solver)
         self.parameters = pywraplp.MPSolverParameters()
         self.div_euros = divisor["euro"]
         self.div_energy = divisor["energy"]
-        self.div_price = divisor["euro"]/divisor["energy"]
-    
+        self.div_price = divisor["euro"] / divisor["energy"]
+
     def reset_solver(self) -> None:
-        """ Reinitializes the solver so as not to cumulate variables and constraints """
+        """Reinitializes the solver so as not to cumulate variables and constraints"""
         self.solver.Clear()
-    
+
     def write_instance(
         self,
-        week:int,
-        level_init:Array1D,
-        future_costs_estimation:LinearInterpolator,
+        week: int,
+        level_init: Array1D,
+        future_costs_estimation: LinearInterpolator,
     ) -> None:
         """
         HAS ISSUES, don't know which, use write_problem instead
         Writes the weekly bellman optimization problem
-        
+
         Parameters
         ----------
             week:int: week of interest,
@@ -937,76 +962,130 @@ class WeeklyBellmanProblem:
             future_costs_estimation: Approximation of the future costs depending on the final level
         """
         solver = self.solver
-        #=====================
-        #----- VARIABLES -----
-        #=====================
+        # =====================
+        # ----- VARIABLES -----
+        # =====================
         # Control variable
-        x = np.array([[solver.NumVar(- mng.reservoir.efficiency * mng.reservoir.max_pumping[week],
-                          mng.reservoir.max_generating[week],
-                          name=f"control_{area}_scenario_{s}")
-            for s in range(self.n_scenarios)]
-              for area, mng in self.managements.items()]) # n_res x n_scen
-        self.controls = x #To take into account in solve part
-        
+        x = np.array(
+            [
+                [
+                    solver.NumVar(
+                        -mng.reservoir.efficiency * mng.reservoir.max_pumping[week],
+                        mng.reservoir.max_generating[week],
+                        name=f"control_{area}_scenario_{s}",
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for area, mng in self.managements.items()
+            ]
+        )  # n_res x n_scen
+        self.controls = x  # To take into account in solve part
+
         # Control cost variable
         control_cost = solver.NumVar(0, solver.infinity(), "control_cost")
-        control_costs_per_scenario = [solver.NumVar(0, solver.infinity(), f"control_cost_scenario_{s}") for s in range(self.n_scenarios)]
+        control_costs_per_scenario = [
+            solver.NumVar(0, solver.infinity(), f"control_cost_scenario_{s}")
+            for s in range(self.n_scenarios)
+        ]
         self.control_cost_per_scenario = control_costs_per_scenario
         self.control_cost = control_cost
-        
+
         # Following week price variable #Is it declined by scenario or grouped ? -> It is grouped
         future_cost = solver.NumVar(0, solver.infinity(), "future_cost")
-        future_cost_per_scenario = [solver.NumVar(0, solver.infinity(), f"future_cost_scenario_{s}") for s in range(self.n_scenarios)]
+        future_cost_per_scenario = [
+            solver.NumVar(0, solver.infinity(), f"future_cost_scenario_{s}")
+            for s in range(self.n_scenarios)
+        ]
         self.future_cost = future_cost
-        self.future_cost_per_scenario = future_cost_per_scenario #To constraint
-        
+        self.future_cost_per_scenario = future_cost_per_scenario  # To constraint
+
         # Induced penalties variable
-        reservoir_penalties = [solver.NumVar(0, solver.infinity(), f"pnlty_{area}") for area, _ in self.managements.items()]
+        reservoir_penalties = [
+            solver.NumVar(0, solver.infinity(), f"pnlty_{area}")
+            for area, _ in self.managements.items()
+        ]
         self.reservoir_penalties = reservoir_penalties
         total_penalty = solver.NumVar(0, solver.infinity(), "tot_pnlty")
         self.total_penalty = total_penalty
-        
-        #Initial level variable
-        initial_levels = [solver.NumVar(0, mng.reservoir.capacity, f"lvl_init_{area}") for area, mng in self.managements.items()]
+
+        # Initial level variable
+        initial_levels = [
+            solver.NumVar(0, mng.reservoir.capacity, f"lvl_init_{area}")
+            for area, mng in self.managements.items()
+        ]
         self.initial_levels = initial_levels
-        
-        # Next levels variable
-        next_levels = np.array([[solver.NumVar(0, mng.reservoir.capacity, f"next_lvl_{area}_scenario_{scenario}")
-                        for scenario in range(self.n_scenarios)] for area, mng in self.managements.items()])
-        self.next_levels = next_levels # Shape N_res x n_scenario
 
         # Next levels variable
-        spillages = np.array([[solver.NumVar(0, solver.infinity(), f"spillages_{area}_scenario_{scenario}")
-                        for scenario in range(self.n_scenarios)] for area, mng in self.managements.items()])
-        
+        next_levels = np.array(
+            [
+                [
+                    solver.NumVar(
+                        0,
+                        mng.reservoir.capacity,
+                        f"next_lvl_{area}_scenario_{scenario}",
+                    )
+                    for scenario in range(self.n_scenarios)
+                ]
+                for area, mng in self.managements.items()
+            ]
+        )
+        self.next_levels = next_levels  # Shape N_res x n_scenario
+
         # Next levels variable
-        spillage_penalties = np.array([solver.NumVar(0, solver.infinity(), f"spillage_penalties_{area}")
-                                         for area, _ in self.managements.items()])
-        
-        
-        #=======================
-        #----- CONSTRAINTS -----
-        #=======================
-        
+        spillages = np.array(
+            [
+                [
+                    solver.NumVar(
+                        0, solver.infinity(), f"spillages_{area}_scenario_{scenario}"
+                    )
+                    for scenario in range(self.n_scenarios)
+                ]
+                for area, mng in self.managements.items()
+            ]
+        )
+
+        # Next levels variable
+        spillage_penalties = np.array(
+            [
+                solver.NumVar(0, solver.infinity(), f"spillage_penalties_{area}")
+                for area, _ in self.managements.items()
+            ]
+        )
+
+        # =======================
+        # ----- CONSTRAINTS -----
+        # =======================
+
         # Control costs lower bounds for every scenario
-        
+
         control_cost_per_scenario_constraints = [
             [
                 solver.Add(
-                    control_costs_per_scenario[s] >= self.week_costs_estimation[week,s].costs[ctrl_id] + sum([
-                            (x[r,s] - self.week_costs_estimation[week, s].inputs[ctrl_id][r])*(self.week_costs_estimation[week, s].duals[ctrl_id, r])
+                    control_costs_per_scenario[s]
+                    >= self.week_costs_estimation[week, s].costs[ctrl_id]
+                    + sum(
+                        [
+                            (
+                                x[r, s]
+                                - self.week_costs_estimation[week, s].inputs[ctrl_id][r]
+                            )
+                            * (self.week_costs_estimation[week, s].duals[ctrl_id, r])
                             for r, _ in enumerate(self.managements)
-                        ]),
-                    name=f"control_cost_lb_scenario_{s}_cont_{ctrl_id}"
+                        ]
+                    ),
+                    name=f"control_cost_lb_scenario_{s}_cont_{ctrl_id}",
                 )
-            for ctrl_id, _ in enumerate(self.week_costs_estimation[week,s].inputs)]
-        for s in range(self.n_scenarios)]
+                for ctrl_id, _ in enumerate(self.week_costs_estimation[week, s].inputs)
+            ]
+            for s in range(self.n_scenarios)
+        ]
 
-        #Averaging out scenarios
+        # Averaging out scenarios
         control_cost_constraint = solver.Add(
-            control_cost >= (1/self.n_scenarios)*sum([cont_cost
-            for cont_cost in control_costs_per_scenario]),
-            name = f"average_control_cost_constraint"
+            control_cost
+            >= (1 / self.n_scenarios)
+            * sum([cont_cost for cont_cost in control_costs_per_scenario]),
+            name=f"average_control_cost_constraint",
         )
         self.control_cost_constraint = control_cost_constraint
 
@@ -1014,65 +1093,90 @@ class WeeklyBellmanProblem:
         future_cost_per_scenario_constraints = [
             [
                 solver.Add(
-                    future_cost_per_scenario[s] >= sum([
-                        (next_levels[r,s] - levels[r])*(duals[r])
-                        for r, _ in enumerate(self.managements)]) + cost,
-                    name=f"future_cost_lb_scenario_{s}_lvl_{lvl_id}"
+                    future_cost_per_scenario[s]
+                    >= sum(
+                        [
+                            (next_levels[r, s] - levels[r]) * (duals[r])
+                            for r, _ in enumerate(self.managements)
+                        ]
+                    )
+                    + cost,
+                    name=f"future_cost_lb_scenario_{s}_lvl_{lvl_id}",
                 )
-            for lvl_id, (levels, cost, duals) in enumerate(zip(future_costs_estimation.inputs, future_costs_estimation.costs, future_costs_estimation.duals,))]
-        for s in range(self.n_scenarios)]
+                for lvl_id, (levels, cost, duals) in enumerate(
+                    zip(
+                        future_costs_estimation.inputs,
+                        future_costs_estimation.costs,
+                        future_costs_estimation.duals,
+                    )
+                )
+            ]
+            for s in range(self.n_scenarios)
+        ]
 
         future_cost_constraints = solver.Add(
-                future_cost >= (1/self.n_scenarios) * sum([
-                    future_cost_per_scenario[s]
-                for s in range(self.n_scenarios)]),
-                name=f"future_cost_constr"
-            )
+            future_cost
+            >= (1 / self.n_scenarios)
+            * sum([future_cost_per_scenario[s] for s in range(self.n_scenarios)]),
+            name=f"future_cost_constr",
+        )
         self.future_cost_constraints = future_cost_constraints
-        
+
         # Penalties constraints
 
         # Upper rule curve
         penalty_constraints_high = [
             solver.Add(
-                reservoir_penalties[r]>= (initial_levels[r] - mng.reservoir.upper_rule_curve[week])*mng.penalty_upper_rule_curve,
-                name=f"pnlty_cstrt_high_{area}"
-                )
+                reservoir_penalties[r]
+                >= (initial_levels[r] - mng.reservoir.upper_rule_curve[week])
+                * mng.penalty_upper_rule_curve,
+                name=f"pnlty_cstrt_high_{area}",
+            )
             for r, (area, mng) in enumerate(self.managements.items())
         ]
         self.penalty_cstr_high = penalty_constraints_high
-        
+
         # Bottom rule curve
         penalty_constraints_low = [
             solver.Add(
-                reservoir_penalties[r]>= (mng.reservoir.bottom_rule_curve[week] - initial_levels[r])*mng.penalty_bottom_rule_curve,
-                name=f"pnlty_cstrt_low_{area}")
+                reservoir_penalties[r]
+                >= (mng.reservoir.bottom_rule_curve[week] - initial_levels[r])
+                * mng.penalty_bottom_rule_curve,
+                name=f"pnlty_cstrt_low_{area}",
+            )
             for r, (area, mng) in enumerate(self.managements.items())
         ]
         self.penalty_cstr_low = penalty_constraints_low
 
-        #Punish spillage
+        # Punish spillage
         penalty_constraints_spill = [
             solver.Add(
-                spillage_penalties[r]>=(2*mng.reservoir.upper_rule_curve[week]/self.n_scenarios)*sum([
-                    spillages[r,s]
-                for s in range(self.n_scenarios)]),
-                name=f"pnlty_cstr_spill_{area}")
+                spillage_penalties[r]
+                >= (2 * mng.reservoir.upper_rule_curve[week] / self.n_scenarios)
+                * sum([spillages[r, s] for s in range(self.n_scenarios)]),
+                name=f"pnlty_cstr_spill_{area}",
+            )
             for r, (area, mng) in enumerate(self.managements.items())
         ]
         self.penalty_cstr_spill = penalty_constraints_spill
 
         # Total penalty constraint
-        total_penalty_cst = solver.Add(total_penalty >= sum(reservoir_penalties) + sum(spillage_penalties), name="tot_pnlty_cstr")
+        total_penalty_cst = solver.Add(
+            total_penalty >= sum(reservoir_penalties) + sum(spillage_penalties),
+            name="tot_pnlty_cstr",
+        )
         self.total_penalty_cst = total_penalty_cst
 
         # Define next level for every scenario constraint
         next_level_constraints = [
             [
-                solver.Add(next_levels[r, s] <= initial_levels[r] - x[r,s] + mng.reservoir.inflow[week, s],
-                           name=f"next_lvl_cstr_{area}_{s}")
+                solver.Add(
+                    next_levels[r, s]
+                    <= initial_levels[r] - x[r, s] + mng.reservoir.inflow[week, s],
+                    name=f"next_lvl_cstr_{area}_{s}",
+                )
                 for r, (area, mng) in enumerate(self.managements.items())
-            ] 
+            ]
             for s in range(self.n_scenarios)
         ]
 
@@ -1083,11 +1187,11 @@ class WeeklyBellmanProblem:
         ]
 
         self.initial_levels_cstr = initial_level_constraints
-    
-        #=====================
-        #----- OBJECTIVE -----
-        #=====================
-        
+
+        # =====================
+        # ----- OBJECTIVE -----
+        # =====================
+
         objective = solver.Objective()
         objective.Clear()
         objective.SetCoefficient(control_cost, 1)
@@ -1095,68 +1199,105 @@ class WeeklyBellmanProblem:
         objective.SetCoefficient(total_penalty, 1)
         objective.SetMinimization()
 
-    def get_control_dynamic(self, week:int, level_init:Array1D):
-        #========= Variables =========
+    def get_control_dynamic(
+        self, week: int, level_init: Array1D
+    ) -> tuple[np.ndarray, list[pywraplp.Variable], np.ndarray, np.ndarray]:
+        # ========= Variables =========
         # Controls -max_pumping * efficiency <= X <= max_generating
-        controls = np.array([
+        controls = np.array(
             [
-                self.solver.NumVar(
-                    np.round(-mng.reservoir.max_pumping[week] * mng.reservoir.efficiency / self.div_energy, self.precision),
-                    np.round(mng.reservoir.max_generating[week] / self.div_energy, self.precision),
-                    name=f"control_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for area, mng in self.managements.items()])
+                [
+                    self.solver.NumVar(
+                        np.round(
+                            -mng.reservoir.max_pumping[week]
+                            * mng.reservoir.efficiency
+                            / self.div_energy,
+                            self.precision,
+                        ),
+                        np.round(
+                            mng.reservoir.max_generating[week] / self.div_energy,
+                            self.precision,
+                        ),
+                        name=f"control_{area}_{s}",
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for area, mng in self.managements.items()
+            ]
+        )
 
         # Overflow 0 <= ovrflw
-        overflows = np.array([
+        overflows = np.array(
             [
-                self.solver.NumVar(
-                    0,
-                    self.solver.infinity(),
-                    name=f"overflow_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for area, mng in self.managements.items()])
-        
+                [
+                    self.solver.NumVar(
+                        0, self.solver.infinity(), name=f"overflow_{area}_{s}"
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for area, mng in self.managements.items()
+            ]
+        )
+
         # Initial levels 0 <= lvl <= capacity
-        initial_levels = np.array([
+        initial_levels = [
             self.solver.NumVar(
                 0,
                 np.round(mng.reservoir.capacity / self.div_energy, self.precision),
-                name=f"lvl_init_{area}"
+                name=f"lvl_init_{area}",
             )
-        for area, mng in self.managements.items()])
+            for area, mng in self.managements.items()
+        ]
 
         # Final levels 0 <= lvl <= capacity
-        next_levels = np.array([
+        next_levels = np.array(
             [
-                self.solver.NumVar(
-                    0,
-                    np.round(mng.reservoir.capacity / self.div_energy, self.precision),
-                    name=f"lvl_next_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for area, mng in self.managements.items()])
-        
-        #========= Constraints =========
-        # Initial level constraint  initial_levels == level_init
-        initial_level_constraints = np.array([
-            self.solver.Add(
-                initial_levels[r] == np.round(level_init[r] / self.div_energy, self.precision),
-                name=f"init_lvl_cst_{area}",
-            )
-        for r, (area, _) in enumerate(self.managements.items())])
+                [
+                    self.solver.NumVar(
+                        0,
+                        np.round(
+                            mng.reservoir.capacity / self.div_energy, self.precision
+                        ),
+                        name=f"lvl_next_{area}_{s}",
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for area, mng in self.managements.items()
+            ]
+        )
 
-        # Next level constraints next_level <= initial_level - X + inflow
-        next_level_constraints = np.array([
+        # ========= Constraints =========
+        # Initial level constraint  initial_levels == level_init
+        initial_level_constraints = np.array(
             [
                 self.solver.Add(
-                    next_levels[r,s] + overflows[r,s] == np.round((level_init[r] + mng.reservoir.inflow[week, s])/ self.div_energy, self.precision) - controls[r,s],
-                    name=f"dynamic_cst_{area}_{s}"
+                    initial_levels[r]
+                    == np.round(level_init[r] / self.div_energy, self.precision),
+                    name=f"init_lvl_cst_{area}",
                 )
-            for s in range(self.n_scenarios)]
-        for r, (area, mng) in enumerate(self.managements.items())])
+                for r, (area, _) in enumerate(self.managements.items())
+            ]
+        )
+
+        # Next level constraints next_level <= initial_level - X + inflow
+        next_level_constraints = np.array(
+            [
+                [
+                    self.solver.Add(
+                        next_levels[r, s] + overflows[r, s]
+                        == np.round(
+                            (level_init[r] + mng.reservoir.inflow[week, s])
+                            / self.div_energy,
+                            self.precision,
+                        )
+                        - controls[r, s],
+                        name=f"dynamic_cst_{area}_{s}",
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for r, (area, mng) in enumerate(self.managements.items())
+            ]
+        )
 
         self.controls = controls
         self.initial_levels = initial_levels
@@ -1165,40 +1306,56 @@ class WeeklyBellmanProblem:
         self.initial_level_csts = initial_level_constraints
         self.next_level_csts = next_level_constraints
         return controls, initial_levels, next_levels, overflows
-    
+
     def get_future_cost(
-            self,
-            next_levels:np.ndarray, 
-            future_costs_estimation:LinearInterpolator,):
-        
+        self,
+        next_levels: np.ndarray,
+        future_costs_estimation: LinearInterpolator,
+    ) -> pywraplp.Variable:
+
         inf = self.solver.infinity()
-        #========= Variables ==========
+        # ========= Variables ==========
         # 0 <= future_cost_per_scenario
-        future_cost_per_scenario = np.array([
+        future_cost_per_scenario = [
             self.solver.NumVar(0, inf, name=f"future_cost_scen_{s}")
-        for s in range(self.n_scenarios)])
-        
+            for s in range(self.n_scenarios)
+        ]
+
         # 0 <= future_cost
         future_cost = self.solver.NumVar(0, inf, name=f"future_cost")
-        
-        future_cost_constraints = np.array([
-            [
-                self.solver.Add(
-                    future_cost_per_scenario[s] >= cost/self.div_euros + sum([
-                        (next_levels[r,s] - levels[r]/self.div_energy)*np.round(duals[r]/self.div_price, self.precision)
-                    for r, _ in enumerate(self.managements)]),
-                    name=f"f_cost_lb_{lvl_id}_{s}"
-                )
-            for lvl_id, (levels, cost, duals) in enumerate(zip(future_costs_estimation.inputs, 
-                                                               future_costs_estimation.costs, 
-                                                               future_costs_estimation.duals,))]
-        for s in range(self.n_scenarios)])
 
-        #Average all future costs
+        future_cost_constraints = np.array(
+            [
+                [
+                    self.solver.Add(
+                        future_cost_per_scenario[s]
+                        >= cost / self.div_euros
+                        + sum(
+                            [
+                                (next_levels[r, s] - levels[r] / self.div_energy)
+                                * np.round(duals[r] / self.div_price, self.precision)
+                                for r, _ in enumerate(self.managements)
+                            ]
+                        ),
+                        name=f"f_cost_lb_{lvl_id}_{s}",
+                    )
+                    for lvl_id, (levels, cost, duals) in enumerate(
+                        zip(
+                            future_costs_estimation.inputs,
+                            future_costs_estimation.costs,
+                            future_costs_estimation.duals,
+                        )
+                    )
+                ]
+                for s in range(self.n_scenarios)
+            ]
+        )
+
+        # Average all future costs
         # n_scenarios * future_cost >= Σ([future_cost_per_scenario])
         future_cost_tot_constraint = self.solver.Add(
-            self.n_scenarios*future_cost >= sum(future_cost_per_scenario),
-            name=f"future_cost_total"
+            self.n_scenarios * future_cost >= sum(future_cost_per_scenario),
+            name=f"future_cost_total",
         )
 
         self.future_cost_per_scenario = future_cost_per_scenario
@@ -1208,15 +1365,17 @@ class WeeklyBellmanProblem:
         return future_cost
 
     def get_control_cost(
-            self,
-            week:int,
-            controls:np.ndarray,):
+        self,
+        week: int,
+        controls: np.ndarray,
+    ) -> pywraplp.Variable:
         inf = self.solver.infinity()
-        #========= Variables ==========
+        # ========= Variables ==========
         # 0 <= control_cost_per_scenario
-        control_cost_per_scenario = np.array([
+        control_cost_per_scenario = [
             self.solver.NumVar(0, inf, name=f"control_cost_scen_{s}")
-        for s in range(self.n_scenarios)])
+            for s in range(self.n_scenarios)
+        ]
 
         # 0 <= control_cost
         control_cost = self.solver.NumVar(0, inf, name=f"control_cost")
@@ -1233,9 +1392,9 @@ class WeeklyBellmanProblem:
         #     for s in range(self.n_scenarios)]
         # for area, mng in self.managements.items()]
 
-        #========= Constraints ==========
+        # ========= Constraints ==========
 
-        #Control diffs definition
+        # Control diffs definition
         # control_diff_constraints = [
         #     [
         #         [
@@ -1247,27 +1406,39 @@ class WeeklyBellmanProblem:
         #     for s in range(self.n_scenarios)]
         # for r, _ in enumerate(self.managements)]
 
-        #Cuts on control costs
+        # Cuts on control costs
         # control_cost_per_scenario >= cost + <X - X_ref | duals >
         control_cost_constraints = [
             [
                 self.solver.Add(
-                    control_cost_per_scenario[s] >= self.div_euros + sum([
-                        (controls[r,s] - control[r]/self.div_energy)*np.round(duals[r]/self.div_price, self.precision)
-                    for r, _ in enumerate(self.managements)]),
-                    name=f"c_cost_lb_{ctrl_id}_{s}"
+                    control_cost_per_scenario[s]
+                    >= self.div_euros
+                    + sum(
+                        [
+                            (controls[r, s] - control[r] / self.div_energy)
+                            * np.round(duals[r] / self.div_price, self.precision)
+                            for r, _ in enumerate(self.managements)
+                        ]
+                    ),
+                    name=f"c_cost_lb_{ctrl_id}_{s}",
                 )
-            for ctrl_id, (control, cost, duals) in enumerate(zip(self.week_costs_estimation[week, s].inputs, 
-                                                                 self.week_costs_estimation[week, s].costs, 
-                                                                 self.week_costs_estimation[week, s].duals,))]
-        for s in range(self.n_scenarios)]
+                for ctrl_id, (control, cost, duals) in enumerate(
+                    zip(
+                        self.week_costs_estimation[week, s].inputs,
+                        self.week_costs_estimation[week, s].costs,
+                        self.week_costs_estimation[week, s].duals,
+                    )
+                )
+            ]
+            for s in range(self.n_scenarios)
+        ]
 
         # Average all control costs
         # n_scenarios * control_cost >= Σ([control_cost_per_scenario])
         control_cost_tot_constraint = self.solver.Add(
-            self.n_scenarios*control_cost >= sum(control_cost_per_scenario), 
-            name=f"control_cost_total"
-            )
+            self.n_scenarios * control_cost >= sum(control_cost_per_scenario),
+            name=f"control_cost_total",
+        )
 
         self.control_cost_per_scenario = control_cost_per_scenario
         self.control_cost = control_cost
@@ -1276,112 +1447,173 @@ class WeeklyBellmanProblem:
         return control_cost
 
     def get_penalty_cost(
-            self,
-            week:int,
-            next_levels:np.ndarray,
-            initial_levels:np.ndarray,
-            overflows:np.ndarray,):
+        self,
+        week: int,
+        next_levels: np.ndarray,
+        initial_levels: list[pywraplp.Variable],
+        overflows: np.ndarray,
+    ) -> pywraplp.Variable:
         inf = self.solver.infinity()
-        #========= Variables =========
+        # ========= Variables =========
         # Curve penalties (>= 0)
-        curve_penalties = np.array([
+        curve_penalties = np.array(
             [
-                self.solver.NumVar(
-                    0, inf, name=f"curve_penalty_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for area in self.managements.keys()])
+                [
+                    self.solver.NumVar(0, inf, name=f"curve_penalty_{area}_{s}")
+                    for s in range(self.n_scenarios)
+                ]
+                for area in self.managements.keys()
+            ]
+        )
 
         # Late penalties (>=0)
-        late_curve_penalties = np.array([
+        late_curve_penalties = np.array(
             [
-                self.solver.NumVar(
-                    0, inf, name=f"late_curve_penalty_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for area in self.managements.keys()])
+                [
+                    self.solver.NumVar(0, inf, name=f"late_curve_penalty_{area}_{s}")
+                    for s in range(self.n_scenarios)
+                ]
+                for area in self.managements.keys()
+            ]
+        )
 
         # Overflow penalties (>= 0)
-        overflow_penalties = np.array([
+        overflow_penalties = np.array(
             [
-                self.solver.NumVar(
-                    0, inf, name=f"overflow_penalty_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for area in self.managements.keys()])
+                [
+                    self.solver.NumVar(0, inf, name=f"overflow_penalty_{area}_{s}")
+                    for s in range(self.n_scenarios)
+                ]
+                for area in self.managements.keys()
+            ]
+        )
 
         # Penalty cost (>= 0)
         penalty_cost = self.solver.NumVar(0, inf, f"penalty_cost")
 
-        #========= Constraints =========
-        
+        # ========= Constraints =========
+
         # Lower curve constraints
         # curve_penalties >= (lvl_low - lvl)*penalty_low
-        low_curve_constraints = np.array([
+        low_curve_constraints = np.array(
             [
-                self.solver.Add(
-                    curve_penalties[r,s] >= (mng.reservoir.bottom_rule_curve[week]/self.div_energy - initial_levels[r])*mng.penalty_bottom_rule_curve/(self.n_scenarios * self.div_price),
-                    name=f"low_curve_cst_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for r, (area, mng) in enumerate(self.managements.items())])
-        
+                [
+                    self.solver.Add(
+                        curve_penalties[r, s]
+                        >= (
+                            mng.reservoir.bottom_rule_curve[week] / self.div_energy
+                            - initial_levels[r]
+                        )
+                        * mng.penalty_bottom_rule_curve
+                        / (self.n_scenarios * self.div_price),
+                        name=f"low_curve_cst_{area}_{s}",
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for r, (area, mng) in enumerate(self.managements.items())
+            ]
+        )
+
         # Upper curve constraints
         # curve_penalties >= (lvl - lvl_high)*penalty_high
-        sup_curve_constraints = np.array([
+        sup_curve_constraints = np.array(
             [
-                self.solver.Add(
-                    curve_penalties[r,s] >= (initial_levels[r] - mng.reservoir.upper_rule_curve[week] / self.div_energy)*mng.penalty_upper_rule_curve/(self.n_scenarios * self.div_price),
-                    name=f"sup_curve_cst_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for r, (area, mng) in enumerate(self.managements.items())])
-        
+                [
+                    self.solver.Add(
+                        curve_penalties[r, s]
+                        >= (
+                            initial_levels[r]
+                            - mng.reservoir.upper_rule_curve[week] / self.div_energy
+                        )
+                        * mng.penalty_upper_rule_curve
+                        / (self.n_scenarios * self.div_price),
+                        name=f"sup_curve_cst_{area}_{s}",
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for r, (area, mng) in enumerate(self.managements.items())
+            ]
+        )
+
         # curve_penalties >= (lvl_low - lvl)*penalty_low
-        late_low_curve_constraints = np.array([
+        late_low_curve_constraints = np.array(
             [
-                self.solver.Add(
-                    late_curve_penalties[r,s] >= (mng.reservoir.bottom_rule_curve[week+1] / self.div_energy - next_levels[r,s])*mng.penalty_bottom_rule_curve/self.div_price,
-                    name=f"late_low_curve_cst_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for r, (area, mng) in enumerate(self.managements.items())])
-        
+                [
+                    self.solver.Add(
+                        late_curve_penalties[r, s]
+                        >= (
+                            mng.reservoir.bottom_rule_curve[week + 1] / self.div_energy
+                            - next_levels[r, s]
+                        )
+                        * mng.penalty_bottom_rule_curve
+                        / self.div_price,
+                        name=f"late_low_curve_cst_{area}_{s}",
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for r, (area, mng) in enumerate(self.managements.items())
+            ]
+        )
+
         # Upper curve constraints
         # curve_penalties >= (lvl - lvl_high) * penalty_high
-        late_sup_curve_constraints = np.array([
+        late_sup_curve_constraints = np.array(
             [
-                self.solver.Add(
-                    late_curve_penalties[r,s] >= (next_levels[r,s] - mng.reservoir.upper_rule_curve[week+1] / self.div_energy)*mng.penalty_upper_rule_curve/self.div_price,
-                    name=f"late_sup_curve_cst_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for r, (area, mng) in enumerate(self.managements.items())])
+                [
+                    self.solver.Add(
+                        late_curve_penalties[r, s]
+                        >= (
+                            next_levels[r, s]
+                            - mng.reservoir.upper_rule_curve[week + 1] / self.div_energy
+                        )
+                        * mng.penalty_upper_rule_curve
+                        / self.div_price,
+                        name=f"late_sup_curve_cst_{area}_{s}",
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for r, (area, mng) in enumerate(self.managements.items())
+            ]
+        )
 
         # Overflow constraints
         # overflow_penalties >= ((lvl_init - X + inflow) - next_level) * penalty_overflow
-        overflow_constraints = np.array([
+        overflow_constraints = np.array(
             [
-                self.solver.Add(
-                    overflow_penalties[r,s] >= overflows[r,s]*(2*mng.penalty_upper_rule_curve),
-                    name=f"overflow_cst_{area}_{s}"
-                )
-            for s in range(self.n_scenarios)]
-        for r, (area, mng) in enumerate(self.managements.items())])
+                [
+                    self.solver.Add(
+                        overflow_penalties[r, s]
+                        >= overflows[r, s] * (2 * mng.penalty_upper_rule_curve),
+                        name=f"overflow_cst_{area}_{s}",
+                    )
+                    for s in range(self.n_scenarios)
+                ]
+                for r, (area, mng) in enumerate(self.managements.items())
+            ]
+        )
 
         # Total penalty per scenario
         # total_penalty >= Σ Σ curve_pen + overflow_pen
         total_penalty_cost_constraint = self.solver.Add(
-                penalty_cost >= sum([
-                    sum([
-                        late_curve_pen + curve_pen + overflow_pen
-                    for curve_pen, late_curve_pen, overflow_pen in zip(curve_penalty_l, 
-                                                                       late_curve_penalty_l, 
-                                                                       overflow_penalty_l)])
-                for curve_penalty_l, late_curve_penalty_l, overflow_penalty_l in zip(curve_penalties,
-                                                                                    late_curve_penalties, 
-                                                                                    overflow_penalties)]),
-                name=f"total_penalty_cost_constraint"
+            penalty_cost
+            >= sum(
+                [
+                    sum(
+                        [
+                            late_curve_pen + curve_pen + overflow_pen
+                            for curve_pen, late_curve_pen, overflow_pen in zip(
+                                curve_penalty_l,
+                                late_curve_penalty_l,
+                                overflow_penalty_l,
+                            )
+                        ]
+                    )
+                    for curve_penalty_l, late_curve_penalty_l, overflow_penalty_l in zip(
+                        curve_penalties, late_curve_penalties, overflow_penalties
+                    )
+                ]
+            ),
+            name=f"total_penalty_cost_constraint",
         )
 
         self.penalty_cost = penalty_cost
@@ -1398,45 +1630,59 @@ class WeeklyBellmanProblem:
 
     def write_problem(
         self,
-        week:int,
-        level_init:Array1D,
-        future_costs_estimation:LinearInterpolator,):
-        
-        #Precaution
+        week: int,
+        level_init: Array1D,
+        future_costs_estimation: LinearInterpolator,
+    ) -> None:
+
+        # Precaution
         future_costs_estimation.round(precision=self.precision)
         future_costs_estimation.count_redundant(tolerance=0, remove=True)
         # future_costs_estimation.remove_doublons(precision=precision)
 
+        # Base variables and constraints
+        controls, initial_levels, next_levels, overflows = self.get_control_dynamic(
+            week=week,
+            level_init=level_init,
+        )
+        control_cost = self.get_control_cost(
+            week=week,
+            controls=controls,
+        )
+        future_cost = self.get_future_cost(
+            next_levels=next_levels,
+            future_costs_estimation=future_costs_estimation,
+        )
+        penalty_cost = self.get_penalty_cost(
+            week=week,
+            next_levels=next_levels,
+            initial_levels=initial_levels,
+            overflows=overflows,
+        )
 
-        #Base variables and constraints
-        controls, initial_levels, next_levels, overflows = self.get_control_dynamic(week=week, level_init=level_init,)
-        control_cost = self.get_control_cost(week=week, controls=controls,)
-        future_cost = self.get_future_cost(next_levels=next_levels, future_costs_estimation=future_costs_estimation,)
-        penalty_cost = self.get_penalty_cost(week=week, next_levels=next_levels, initial_levels=initial_levels, overflows=overflows,)
-        
-        #Create objective function
+        # Create objective function
         objective = self.solver.Objective()
         objective.SetCoefficient(control_cost, 1)
         objective.SetCoefficient(future_cost, 1)
         objective.SetCoefficient(penalty_cost, 1)
         objective.SetMinimization()
-    
+
     def solve(
         self,
-        remove_future_costs:bool=False,
-        remove_penalties:bool=False,
-    ) -> tuple[Array1D, float, Array1D]:
+        remove_future_costs: bool = False,
+        remove_penalties: bool = False,
+    ) -> tuple[Array1D, float, Array1D, Array1D]:
         """
         Solves the weekly bellman optimization problem
-        
+
         Parameters
         ----------
             verbose:bool: Will print the solved problem before solving it
-            
+
         Returns
         -------
             controls:np.ndarray: Optimal controls,
-            costs:np.ndarray: Objective value, 
+            costs:np.ndarray: Objective value,
             duals:np.ndarray: Dual values of the initial level constraint
         """
         status = self.solver.Solve(self.parameters)
@@ -1445,37 +1691,59 @@ class WeeklyBellmanProblem:
             with open(f"{mps_path}.txt", "w") as pb_log:
                 pb_log.write(self.solver.ExportModelAsLpFormat(False))
             with open(f"{mps_path}.mps", "w") as pb_log:
-                old_mps = self.solver.ExportModelAsMpsFormat(fixed_format=False, obfuscated=False)
+                old_mps = self.solver.ExportModelAsMpsFormat(
+                    fixed_format=False, obfuscated=False
+                )
                 pb_log.write(old_mps)
             print(f"No solution found, status: {status}, mps written to {mps_path} ")
             # Export model to LP and MPS formats
             raise ValueError
-        
-        controls = np.array([[ctrl.solution_value() for ctrl in ctrls_res] for ctrls_res in self.controls]) #Shape n_res x n_scen
-        levels = np.array([[lvl.solution_value() for lvl in lvls_scen] for lvls_scen in self.next_levels])
+
+        controls = np.array(
+            [
+                [ctrl.solution_value() for ctrl in ctrls_res]
+                for ctrls_res in self.controls
+            ]
+        )  # Shape n_res x n_scen
+        levels = np.array(
+            [
+                [lvl.solution_value() for lvl in lvls_scen]
+                for lvls_scen in self.next_levels
+            ]
+        )
         cost = self.solver.Objective().Value()
-        #Removing unwanted parts of the cost
+        # Removing unwanted parts of the cost
         cost -= self.future_cost.solution_value() * remove_future_costs
         cost -= self.penalty_cost.solution_value() * remove_penalties
         # penalty = self.total_penalty.solution_value()
-        penalty_duals = np.array([cstr.dual_value() for cstr in self.initial_level_csts])
-        control_and_future_duals = np.mean([[cst.dual_value() for cst in csts] for csts in self.next_level_csts], axis=1)
+        penalty_duals = np.array(
+            [cstr.dual_value() for cstr in self.initial_level_csts]
+        )
+        control_and_future_duals = np.mean(
+            [[cst.dual_value() for cst in csts] for csts in self.next_level_csts],
+            axis=1,
+        )
         duals = penalty_duals + control_and_future_duals
-        return controls*self.div_energy, cost*self.div_euros, duals*self.div_price, levels*self.div_energy
-        
-        
+        return (
+            controls * self.div_energy,
+            cost * self.div_euros,
+            duals * self.div_price,
+            levels * self.div_energy,
+        )
+
+
 def solve_for_optimal_trajectory(
-    param:TimeScenarioParameter,
-    multi_stock_management:MultiStockManagement,
-    costs_approx:Estimator,
-    future_costs_approx_l:list[LinearInterpolator],
-    inflows:np.ndarray,
-    starting_pt:np.ndarray,
-    name_solver:str,
-    divisor:dict[str, float],
-    verbose:bool=False,
-) -> tuple[np.ndarray, np.ndarray, np.array]:
-    """Finds the optimal trajectory starting from starting_pts 
+    param: TimeScenarioParameter,
+    multi_stock_management: MultiStockManagement,
+    costs_approx: Estimator,
+    future_costs_approx_l: list[LinearInterpolator],
+    inflows: np.ndarray,
+    starting_pt: np.ndarray,
+    name_solver: str,
+    divisor: dict[str, float],
+    verbose: bool = False,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Finds the optimal trajectory starting from starting_pts
 
     Args:
         param (TimeScenarioParameter): Number of weeks and scenarios
@@ -1494,25 +1762,30 @@ def solve_for_optimal_trajectory(
         multi_stock_management=multi_stock_management,
         week_costs_estimation=costs_approx,
         divisor=divisor,
-        name_solver=name_solver
+        name_solver=name_solver,
     )
     reservoir_states = np.array([starting_pt for _ in range(param.len_scenario)]).T
-    max_res = np.array([mng.reservoir.capacity for mng in multi_stock_management.dict_reservoirs.values()])[:,None]
+    max_res = np.array(
+        [
+            mng.reservoir.capacity
+            for mng in multi_stock_management.dict_reservoirs.values()
+        ]
+    )[:, None]
     trajectory = [reservoir_states]
     controls = []
     costs = []
     for week, future_estimator in enumerate(future_costs_approx_l[1:]):
-        #Write problem
+        # Write problem
         problem.reset_solver()
         problem.write_problem(
             week=week,
             level_init=np.mean(trajectory[-1], axis=1),
             future_costs_estimation=future_estimator,
         )
-        
-        #Solve, might be cool to reuse bases
+
+        # Solve, might be cool to reuse bases
         controls_w, cost_w, duals_w, levels_w = problem.solve()
-        trajectory.append(np.minimum(levels_w, max_res)*(levels_w>0))
+        trajectory.append(np.minimum(levels_w, max_res) * (levels_w > 0))
         controls.append(controls_w.T)
         costs.append(cost_w)
     return np.array(trajectory), np.array(controls), np.array(costs)

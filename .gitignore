@@ -164,6 +164,7 @@ cython_debug/
 *.ipynb
 .vscode
 dev/
+script.py
 
 # Plots
 *.html

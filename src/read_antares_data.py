@@ -13,14 +13,15 @@ class TimeScenarioParameter:
     len_scenario: int = 1
     name_scenario: list = field(default_factory=list)
 
-    def __init__(self, len_week:int, len_scenario:int, name_scenario:Optional[list]=None):
+    def __init__(
+        self, len_week: int, len_scenario: int, name_scenario: Optional[list] = None
+    ):
         self.len_week = len_week
         self.len_scenario = len_scenario
         if name_scenario:
             self.name_scenario = name_scenario
         else:
-            self.name_scenario = np.arange(len_scenario) + 1
-            
+            self.name_scenario = list(np.arange(len_scenario) + 1)
 
 
 @dataclass(frozen=True)
@@ -132,7 +133,13 @@ def generate_mps_file(study_path: str, antares_path: str) -> str:
     assert "solver" in name_solver
     assert float(name_solver.split("-")[1]) >= 8.6
     res = subprocess.run(
-        [antares_path, "--named-mps-problems", "--name=export_mps", "--expansion", study_path],
+        [
+            antares_path,
+            "--named-mps-problems",
+            "--name=export_mps",
+            "--expansion",
+            study_path,
+        ],
         capture_output=True,
         text=True,
     )
@@ -154,8 +161,8 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
                 hydro_ini["use water"][area] = "false"
             if "use heuristic" in hydro_ini.keys():
                 hydro_ini["use heuristic"][area] = "true"
-    
-    #Solve the weird mps occurence of limited hydro power:
+
+    # Solve the weird mps occurence of limited hydro power:
     # for area in hydro_ini["intra-daily-modulation"].keys():
     #     hydro_ini["intra-daily-modulation"][area] = "999999.000000"
 

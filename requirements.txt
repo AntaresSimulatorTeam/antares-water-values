@@ -2,3 +2,6 @@ numpy
 scipy
 xpress
 ortools
+tqdm
+plotly
+juliacall

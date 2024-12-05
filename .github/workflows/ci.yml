@@ -24,11 +24,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
-      - name: Check typing
-        run: |
-          python -m mypy src
-
       - name: Test
         run: |
           pytest
+
+      - name: Check typing
+        run: |
+          python -m mypy src
 

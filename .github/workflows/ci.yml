@@ -26,14 +26,9 @@ jobs:
 
       - name: Check typing
         run: |
-          python -m mypy
+          python -m mypy src
 
       - name: Test
         run: |
-          pytest --cov antarest --cov-report xml
+          pytest
 
-      - name: Archive code coverage results
-        uses: actions/upload-artifact@v3
-        with:
-          name: python-code-coverage-report
-          path: coverage.xml

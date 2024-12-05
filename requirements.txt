@@ -3,6 +3,5 @@ scipy
 xpress
 ortools
 tqdm
-pickle
 plotly
 juliacall

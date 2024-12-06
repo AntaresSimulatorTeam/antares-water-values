@@ -24,6 +24,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Install Julia dependencies
+        run: julia -e 'import Pkg; Pkg.add("SDDP");Pkg.add("HiGHS");Pkg.add("Clp");Pkg.add("JuMP");Pkg.add("Base");Pkg.add("Xpress");Pkg.add("PythonCall")'  
+
       - name: Test
         run: |
           pytest
@@ -31,4 +34,6 @@ jobs:
       - name: Check typing
         run: |
           python -m mypy src
+
+
 

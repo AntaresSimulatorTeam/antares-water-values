@@ -981,7 +981,7 @@ def select_controls_to_explore(
     """
     # This only a first version:
     if not rng:
-        rng = rng = np.random.default_rng()
+        rng = rng = np.random.default_rng(seed=12345)
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     n_weeks, n_scenarios = param.len_week, param.len_scenario
     controls_to_explore = np.zeros((n_weeks, n_scenarios, 1, n_reservoirs))

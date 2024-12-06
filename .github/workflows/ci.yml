@@ -25,7 +25,7 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Install Julia dependencies
-        run: julia -e 'import Pkg; Pkg.add("SDDP");Pkg.add("HiGHS");Pkg.add("Clp");Pkg.add("JuMP");Pkg.add("Base");Pkg.add("Xpress");Pkg.add("PythonCall")'  
+        run: julia -e 'import Pkg; Pkg.add("SDDP");Pkg.add("Clp");Pkg.add("JuMP");Pkg.add("PythonCall")'  
 
       - name: Test
         run: |

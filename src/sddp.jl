@@ -1,11 +1,9 @@
 module Jl_SDDP
 
 using SDDP
-using HiGHS
 using Clp
 using JuMP
 using Base
-using Xpress
 using PythonCall
 
 # Define types for structured data

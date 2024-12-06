@@ -76,7 +76,7 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
         stages = 3*n_weeks,
         sense = :Min,
         lower_bound = 0.0,
-        optimizer = Xpress.Optimizer,
+        optimizer = Clp.Optimizer,
         # optimizer = HiGHS.Optimizer,
         # cut_oracle = SDDP.LevelOneCutOracle()
     ) do subproblem, stage

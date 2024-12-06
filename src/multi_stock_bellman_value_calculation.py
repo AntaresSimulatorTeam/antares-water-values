@@ -31,6 +31,7 @@ import pickle as pkl
 from tqdm import tqdm
 from pathlib import Path
 import juliacall
+import os as os
 
 jl = juliacall.Main
 
@@ -587,7 +588,7 @@ def Lget_costs(
     load_from_protos: bool = False,
     prefix: str = "",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    filename = f"{prefix}get_all_costs_run_{output_path[-27:]}.pkl"
+    filename = f"{prefix}get_all_costs_run_{output_path.replace('/','_')[-27:]}.pkl"
 
     # Initializing the n_weeks*n_scenarios*n_controls(*n_stocks) values to fill
     shape_controls = list(controls_list.shape)
@@ -609,6 +610,8 @@ def Lget_costs(
     for week in week_range:
         if week >= week_start:
             for scenario in range(param.len_scenario):
+                if not (os.path.exists(output_path + "/protos")):
+                    os.mkdir(output_path + "/protos")
                 proto_path = (
                     output_path
                     + f"/protos/problem-{param.name_scenario[scenario]}-{week+1}.pkl"

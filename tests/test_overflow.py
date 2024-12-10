@@ -1,13 +1,11 @@
 from functions_iterative import (
     TimeScenarioParameter,
     ReservoirManagement,
-    TimeScenarioIndex,
 )
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
 from read_antares_data import Reservoir
-import pytest
 import numpy as np
 from scipy.interpolate import interp1d
 
@@ -28,7 +26,7 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
     xNsteps = 20
     X = np.linspace(0, reservoir.capacity, num=xNsteps)
 
-    vb, G = calculate_bellman_value_with_precalculated_reward(
+    vb, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
         reservoir_management=reservoir_management,
@@ -50,7 +48,7 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
         overflow=False,
     )
 
-    vb, G = calculate_bellman_value_with_precalculated_reward(
+    vb, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
         reservoir_management=reservoir_management,

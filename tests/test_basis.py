@@ -42,7 +42,7 @@ def test_basis_with_xpress() -> None:
             param=param, multi_stock_management=reservoir_management
         )
 
-        beta_1, _, itr_without_basis, _ = problem.solve_with_predefined_controls(
+        beta_1, _, _, _ = problem.solve_with_predefined_controls(
             control={"area": 8400000}, prev_basis=Basis([], [])
         )
 
@@ -108,7 +108,7 @@ def test_basis_with_upper_bound() -> None:
             control={"area": 0}, prev_basis=Basis([], [])
         )
 
-        upper_bound_1, _, itr_without_basis = compute_upper_bound(
+        upper_bound_1, _, _ = compute_upper_bound(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,

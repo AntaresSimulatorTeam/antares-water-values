@@ -31,6 +31,7 @@ import pickle as pkl
 from tqdm import tqdm
 from pathlib import Path
 import juliacall
+import os as os
 
 jl = juliacall.Main
 
@@ -218,6 +219,7 @@ def initialize_antares_problems(
     verbose: bool = False,
     save_protos: bool = False,
     load_from_protos: bool = False,
+    saving_dir: Optional[str] = None,
 ) -> Dict[TimeScenarioIndex, AntaresProblem]:
     """
     Creates Instances of the Antares problem for every week / scenario
@@ -241,15 +243,19 @@ def initialize_antares_problems(
         week_range = tqdm(week_range, desc="Problem initialization", colour="Yellow")
     for week in week_range:
         for scenario in range(param.len_scenario):
-            proto_path = (
-                output_path
-                + f"/protos/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
-            )
-            already_processed = Path(proto_path).is_file() and load_from_protos
+            if saving_dir is not None:
+                proto_path = (
+                    saving_dir
+                    + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+                )
+                already_processed = Path(proto_path).is_file() and load_from_protos
+            else:
+                already_processed = False
             m = AntaresProblem(
                 scenario=scenario,
                 week=week,
                 path=output_path,
+                saving_directory=saving_dir,
                 itr=1,
                 name_solver=name_solver,
                 name_scenario=param.name_scenario[scenario],
@@ -507,6 +513,7 @@ def get_all_costs(
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     multi_stock_management: MultiStockManagement,
     controls_list: np.ndarray,
+    saving_dir: Optional[str] = None,
     verbose: bool = False,
     already_init: bool = False,
     keep_intermed_res: bool = False,
@@ -529,7 +536,9 @@ def get_all_costs(
     tot_iter = 0
     times = []
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
-    filename = "get_all_costs_run.pkl"
+    if keep_intermed_res or already_init:
+        assert saving_dir is not None
+        filename = saving_dir + "/get_all_costs_run.pkl"
 
     # Initializing the n_weeks*n_scenarios*n_controls*n_stocks values to fill
     shape_controls = list(controls_list.shape)
@@ -582,12 +591,13 @@ def Lget_costs(
     output_path: str,
     name_solver: str,
     controls_list: np.ndarray,
+    saving_directory: str,
     verbose: bool = False,
     direct_bellman_calc: bool = True,
     load_from_protos: bool = False,
     prefix: str = "",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    filename = f"{prefix}get_all_costs_run_{output_path[-27:]}.pkl"
+    filename = f"{saving_directory}/{prefix}get_all_costs_run_{output_path.replace('/','_')[-27:]}.pkl"
 
     # Initializing the n_weeks*n_scenarios*n_controls(*n_stocks) values to fill
     shape_controls = list(controls_list.shape)
@@ -609,15 +619,18 @@ def Lget_costs(
     for week in week_range:
         if week >= week_start:
             for scenario in range(param.len_scenario):
+                if not (os.path.exists(saving_directory)):
+                    os.makedirs(saving_directory)
                 proto_path = (
-                    output_path
-                    + f"/protos/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+                    saving_directory
+                    + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
                 )
                 already_processed = load_from_protos and Path(proto_path).is_file()
                 m = AntaresProblem(
                     scenario=scenario,
                     week=week,
                     path=output_path,
+                    saving_directory=saving_directory,
                     itr=1,
                     name_solver=name_solver,
                     name_scenario=param.name_scenario[scenario],
@@ -978,7 +991,7 @@ def select_controls_to_explore(
     """
     # This only a first version:
     if not rng:
-        rng = rng = np.random.default_rng()
+        rng = rng = np.random.default_rng(seed=12345)
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     n_weeks, n_scenarios = param.len_week, param.len_scenario
     controls_to_explore = np.zeros((n_weeks, n_scenarios, 1, n_reservoirs))
@@ -1237,6 +1250,7 @@ def cutting_plane_method(
     nSteps_bellman: int,
     method: str,
     correlations: np.ndarray,
+    saving_dir: str,
     maxiter: Optional[int] = None,
     precision: float = 5e-2,
     interp_mode: bool = False,
@@ -1382,6 +1396,7 @@ def cutting_plane_method(
             param=param,
             multi_stock_management=multi_stock_management,
             controls_list=controls_list,
+            saving_directory=saving_dir,
             output_path=output_path,
             name_solver=name_solver,
             verbose=verbose,
@@ -1446,6 +1461,7 @@ def iter_bell_vals(
     starting_pt: np.ndarray,
     nSteps_bellman: int,
     method: str,
+    saving_dir: str,
     name_solver: str = "CLP",
     precision: float = 1e-2,
     maxiter: int = 2,
@@ -1534,6 +1550,7 @@ def iter_bell_vals(
         param=param,
         multi_stock_management=multi_stock_management,
         output_path=output_path,
+        saving_directory=saving_dir,
         name_solver=name_solver,
         controls_list=controls_list,
         load_from_protos=True,
@@ -1574,6 +1591,7 @@ def iter_bell_vals(
             name_solver=name_solver,
             starting_pt=starting_pt,
             costs_approx=costs_approx,
+            saving_dir=saving_dir,
             costs=costs,
             future_costs_approx=future_costs_approx,
             nSteps_bellman=nSteps_bellman,
@@ -1626,6 +1644,7 @@ def sddp_cutting_planes(
     costs_approx: LinearCostEstimator,
     costs: np.ndarray,
     level_init: np.ndarray,
+    saving_dir: str,
     normalization: Dict[str, float],
     maxiter: Optional[int] = None,
     precision: float = 1e-2,
@@ -1675,6 +1694,7 @@ def sddp_cutting_planes(
         param.len_scenario,
         julia_reservoirs,
         julia_capp,
+        saving_dir,
         normalization["euro"],
         normalization["energy"],
     )
@@ -1688,6 +1708,7 @@ def sddp_cutting_planes(
             param.len_scenario,
             julia_reservoirs,
             julia_capp,
+            saving_dir,
             normalization["euro"],
             normalization["energy"],
         )
@@ -1716,6 +1737,7 @@ def sddp_cutting_planes(
             multi_stock_management=multi_stock_management,
             controls_list=controls,
             output_path=output_path,
+            saving_directory=saving_dir,
             name_solver=name_solver,
             verbose=False,
             load_from_protos=True,
@@ -1763,6 +1785,7 @@ def iter_bell_vals_v2(
     output_path: str,
     n_controls_init: int,
     starting_pt: np.ndarray,
+    saving_dir: str,
     normalization: Dict[str, float],
     name_solver: str = "CLP",
     precision: float = 1e-2,
@@ -1800,6 +1823,7 @@ def iter_bell_vals_v2(
         param=param,
         multi_stock_management=multi_stock_management,
         output_path=output_path,
+        saving_directory=saving_dir,
         name_solver=name_solver,
         controls_list=controls_list,
         load_from_protos=False,
@@ -1816,6 +1840,7 @@ def iter_bell_vals_v2(
         output_path=output_path,
         name_solver=name_solver,
         costs_approx=costs_approx,
+        saving_dir=saving_dir,
         costs=costs,
         level_init=starting_pt,
         precision=precision,

@@ -52,6 +52,7 @@ class AntaresProblem:
         week: int,
         path: str,
         itr: int = 1,
+        saving_directory: Optional[str] = None,
         name_solver: str = "CLP",
         name_scenario: int = -1,
         already_processed: bool = False,
@@ -67,6 +68,8 @@ class AntaresProblem:
             Week considered
         path:str :
             Path where mps files are stored
+        path:str :
+            Path where intermediate result are stored
         itr:int :
             Antares iteration considered (Default value = 1)
 
@@ -85,18 +88,19 @@ class AntaresProblem:
             mps_path = path + f"/problem-{name_scenario}-{week+1}--optim-nb-{itr}.mps"
             model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
             model.import_from_mps_file(mps_path)
+            model_proto = model.export_to_proto()
+        else:
+            assert saving_directory is not None
+            proto_path = saving_directory + f"/problem-{name_scenario}-{week+1}.pkl"
             try:
-                model_proto = model.export_to_proto()
+                with open(proto_path, "rb") as file:
+                    model_proto, var_and_cstr_ids = pkl.load(file)
+                    self.stored_variables_and_constraints_ids = var_and_cstr_ids
             except FileNotFoundError:
                 print(
                     "Proto directory not found: Make sure the proto directory has been created within the mps directory"
                 )
                 raise FileNotFoundError
-        else:
-            proto_path = path + f"/protos/problem-{name_scenario}-{week+1}.pkl"
-            with open(proto_path, "rb") as file:
-                model_proto, var_and_cstr_ids = pkl.load(file)
-            self.stored_variables_and_constraints_ids = var_and_cstr_ids
 
         solver = pywraplp.Solver.CreateSolver(name_solver)
         assert solver, "Couldn't find any supported solver"

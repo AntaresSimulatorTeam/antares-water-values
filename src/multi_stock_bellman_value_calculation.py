@@ -219,6 +219,7 @@ def initialize_antares_problems(
     verbose: bool = False,
     save_protos: bool = False,
     load_from_protos: bool = False,
+    saving_dir: Optional[str] = None,
 ) -> Dict[TimeScenarioIndex, AntaresProblem]:
     """
     Creates Instances of the Antares problem for every week / scenario
@@ -242,15 +243,19 @@ def initialize_antares_problems(
         week_range = tqdm(week_range, desc="Problem initialization", colour="Yellow")
     for week in week_range:
         for scenario in range(param.len_scenario):
-            proto_path = (
-                output_path
-                + f"/protos/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
-            )
-            already_processed = Path(proto_path).is_file() and load_from_protos
+            if saving_dir is not None:
+                proto_path = (
+                    saving_dir
+                    + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+                )
+                already_processed = Path(proto_path).is_file() and load_from_protos
+            else:
+                already_processed = False
             m = AntaresProblem(
                 scenario=scenario,
                 week=week,
                 path=output_path,
+                saving_directory=saving_dir,
                 itr=1,
                 name_solver=name_solver,
                 name_scenario=param.name_scenario[scenario],
@@ -583,6 +588,7 @@ def Lget_costs(
     output_path: str,
     name_solver: str,
     controls_list: np.ndarray,
+    saving_directory: str,
     verbose: bool = False,
     direct_bellman_calc: bool = True,
     load_from_protos: bool = False,
@@ -610,17 +616,18 @@ def Lget_costs(
     for week in week_range:
         if week >= week_start:
             for scenario in range(param.len_scenario):
-                if not (os.path.exists(output_path + "/protos")):
-                    os.mkdir(output_path + "/protos")
+                if not (os.path.exists(saving_directory)):
+                    os.mkdir(saving_directory)
                 proto_path = (
-                    output_path
-                    + f"/protos/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+                    saving_directory
+                    + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
                 )
                 already_processed = load_from_protos and Path(proto_path).is_file()
                 m = AntaresProblem(
                     scenario=scenario,
                     week=week,
                     path=output_path,
+                    saving_directory=saving_directory,
                     itr=1,
                     name_solver=name_solver,
                     name_scenario=param.name_scenario[scenario],
@@ -1240,6 +1247,7 @@ def cutting_plane_method(
     nSteps_bellman: int,
     method: str,
     correlations: np.ndarray,
+    saving_dir: str,
     maxiter: Optional[int] = None,
     precision: float = 5e-2,
     interp_mode: bool = False,
@@ -1385,6 +1393,7 @@ def cutting_plane_method(
             param=param,
             multi_stock_management=multi_stock_management,
             controls_list=controls_list,
+            saving_directory=saving_dir,
             output_path=output_path,
             name_solver=name_solver,
             verbose=verbose,
@@ -1449,6 +1458,7 @@ def iter_bell_vals(
     starting_pt: np.ndarray,
     nSteps_bellman: int,
     method: str,
+    saving_dir: str,
     name_solver: str = "CLP",
     precision: float = 1e-2,
     maxiter: int = 2,
@@ -1537,6 +1547,7 @@ def iter_bell_vals(
         param=param,
         multi_stock_management=multi_stock_management,
         output_path=output_path,
+        saving_directory=saving_dir,
         name_solver=name_solver,
         controls_list=controls_list,
         load_from_protos=True,
@@ -1577,6 +1588,7 @@ def iter_bell_vals(
             name_solver=name_solver,
             starting_pt=starting_pt,
             costs_approx=costs_approx,
+            saving_dir=saving_dir,
             costs=costs,
             future_costs_approx=future_costs_approx,
             nSteps_bellman=nSteps_bellman,
@@ -1629,6 +1641,7 @@ def sddp_cutting_planes(
     costs_approx: LinearCostEstimator,
     costs: np.ndarray,
     level_init: np.ndarray,
+    saving_dir: str,
     normalization: Dict[str, float],
     maxiter: Optional[int] = None,
     precision: float = 1e-2,
@@ -1719,6 +1732,7 @@ def sddp_cutting_planes(
             multi_stock_management=multi_stock_management,
             controls_list=controls,
             output_path=output_path,
+            saving_directory=saving_dir,
             name_solver=name_solver,
             verbose=False,
             load_from_protos=True,
@@ -1766,6 +1780,7 @@ def iter_bell_vals_v2(
     output_path: str,
     n_controls_init: int,
     starting_pt: np.ndarray,
+    saving_dir: str,
     normalization: Dict[str, float],
     name_solver: str = "CLP",
     precision: float = 1e-2,
@@ -1803,6 +1818,7 @@ def iter_bell_vals_v2(
         param=param,
         multi_stock_management=multi_stock_management,
         output_path=output_path,
+        saving_directory=saving_dir,
         name_solver=name_solver,
         controls_list=controls_list,
         load_from_protos=False,
@@ -1819,6 +1835,7 @@ def iter_bell_vals_v2(
         output_path=output_path,
         name_solver=name_solver,
         costs_approx=costs_approx,
+        saving_dir=saving_dir,
         costs=costs,
         level_init=starting_pt,
         precision=precision,

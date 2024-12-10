@@ -49,6 +49,7 @@ def test_bellman_value_iterative_method() -> None:
         multi_stock_management=multi_management,
         n_controls_init=2,
         output_path="test_data/two_nodes",
+        saving_dir="dev/test",
         name_solver="CLP",
         nSteps_bellman=5,
         starting_pt=np.array(
@@ -249,6 +250,7 @@ def test_bellman_value_iterative_method_with_sddp() -> None:
         multi_stock_management=multi_management,
         n_controls_init=2,
         output_path="test_data/two_nodes",
+        saving_dir="dev/test",
         starting_pt=np.array(
             [
                 mng.reservoir.bottom_rule_curve[0] * 0.7

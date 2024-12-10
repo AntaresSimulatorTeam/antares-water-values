@@ -1,11 +1,11 @@
 import re
-from typing import Any, Optional
+from typing import Optional
 from calculate_reward_and_bellman_values import (
     BellmanValueCalculation,
     MultiStockBellmanValueCalculation,
     MultiStockManagement,
 )
-from estimation import Estimator, LinearInterpolator, LinearCostEstimator
+from estimation import Estimator, LinearInterpolator
 from read_antares_data import TimeScenarioParameter
 import numpy as np
 from time import time
@@ -444,7 +444,7 @@ class AntaresProblem:
         for area in self.range_reservoir:
             self.set_constraints_predefined_control(control[area], area)
         try:
-            beta, lamb, final_level, _, _, itr, computing_time = self.solve_problem(
+            beta, lamb, _, _, _, itr, computing_time = self.solve_problem(
                 direct_bellman_mode=False
             )
             # print(f"✔ for controls {control}")
@@ -1384,34 +1384,8 @@ class WeeklyBellmanProblem:
         # 0 <= control_cost
         control_cost = self.solver.NumVar(0, inf, name=f"control_cost")
 
-        # - max_pump * eff - max_generating <= control_diff <= max_pump * eff + max_generating
-        # control_diffs = [
-        #     [
-        #        [ self.solver.NumVar(
-        #             -mng.reservoir.max_pumping[week] * mng.reservoir.efficiency - mng.reservoir.max_generating[week],
-        #             mng.reservoir.max_pumping[week] * mng.reservoir.efficiency + mng.reservoir.max_generating[week],
-        #             name=f"control_diff_{area}_{s}_{c}"
-        #         )
-        #         for c, _ in enumerate(self.week_costs_estimation[week,s].inputs)]
-        #     for s in range(self.n_scenarios)]
-        # for area, mng in self.managements.items()]
-
         # ========= Constraints ==========
 
-        # Control diffs definition
-        # control_diff_constraints = [
-        #     [
-        #         [
-        #             self.solver.Add(
-        #                 control_diffs[r][s][c] == controls[r,s] - input[r],
-        #                 name=f"control_diff_{r}_{s}_{c}"
-        #             )
-        #         for c, input in enumerate(self.week_costs_estimation[week,s].inputs)]
-        #     for s in range(self.n_scenarios)]
-        # for r, _ in enumerate(self.managements)]
-
-        # Cuts on control costs
-        # control_cost_per_scenario >= cost + <X - X_ref | duals >
         control_cost_constraints = [
             [
                 self.solver.Add(
@@ -1719,7 +1693,6 @@ class WeeklyBellmanProblem:
         # Removing unwanted parts of the cost
         cost -= self.future_cost.solution_value() * remove_future_costs
         cost -= self.penalty_cost.solution_value() * remove_penalties
-        # penalty = self.total_penalty.solution_value()
         penalty_duals = np.array(
             [cstr.dual_value() for cstr in self.initial_level_csts]
         )
@@ -1741,11 +1714,9 @@ def solve_for_optimal_trajectory(
     multi_stock_management: MultiStockManagement,
     costs_approx: Estimator,
     future_costs_approx_l: list[LinearInterpolator],
-    inflows: np.ndarray,
     starting_pt: np.ndarray,
     name_solver: str,
     divisor: dict[str, float],
-    verbose: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Finds the optimal trajectory starting from starting_pts
 

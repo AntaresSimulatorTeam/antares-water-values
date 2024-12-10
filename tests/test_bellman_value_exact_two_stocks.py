@@ -3,7 +3,12 @@ from functions_iterative import (
     ReservoirManagement,
     TimeScenarioIndex,
 )
-from multi_stock_bellman_value_calculation import *
+from multi_stock_bellman_value_calculation import (
+    AntaresProblem,
+    Dict,
+    solve_problem_with_multivariate_bellman_values,
+    calculate_bellman_value_multi_stock,
+)
 from calculate_reward_and_bellman_values import (
     MultiStockManagement,
     BellmanValueCalculation,

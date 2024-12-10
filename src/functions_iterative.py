@@ -274,7 +274,7 @@ def itr_control(
     ) = init_iterative_calculation(param, reservoir_management, output_path, X, solver)
     i = 0
 
-    while (gap >= tol_gap and gap >= 0) and i < N:  # and (i<3):
+    while (gap >= tol_gap and gap >= 0) and i < N:
         debut = time()
 
         initial_x, controls = compute_x_multi_scenario(
@@ -391,7 +391,6 @@ def init_iterative_calculation(
         stock_discretization=X,
     )
 
-    i = 0
     gap = 1e3
     fin = time()
     tot_t.append(fin - debut)

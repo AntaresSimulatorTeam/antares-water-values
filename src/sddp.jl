@@ -74,9 +74,7 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
         stages = 3*n_weeks,
         sense = :Min,
         lower_bound = 0.0,
-        optimizer = Clp.Optimizer,
-        # optimizer = HiGHS.Optimizer,
-        # cut_oracle = SDDP.LevelOneCutOracle()
+        optimizer = Clp.Optimizer
     ) do subproblem, stage
 
         # Declaring the state variable 
@@ -121,10 +119,6 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
         end)
         
         # Define scenarios for inflows
-        # inflows = [
-        #     [reservoirs[r]["inflows"][stage][scenario] for r in 1:n_reservoirs]
-        #     for scenario in 1:n_scenarios
-        # ]
         Ω = [
             (
                 inflows = [reservoirs[r].inflows[modulo_stage, scenario] for r in 1:n_reservoirs],
@@ -178,10 +172,6 @@ function manage_reservoirs(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Ma
     #Simulating
     simulation_results = get_trajectory(n_weeks, n_scenarios, reservoirs, model, norms)
     return simulation_results, model
-    # #Getting the usage values
-    # n_disc = 101
-    # VU, costs = get_usage_values(n_weeks, n_scenarios, reservoirs, model, norms, n_disc)
-    # return VU, costs, simulation_results
 end
 
 function get_trajectory(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, model, norms::Normalizer)
@@ -238,8 +228,3 @@ end
 
 export manage_reservoirs, get_usage_values, stability_report, reinit_cuts
 end
-# Call the function
-# results = manage_reservoirs(n_weeks, n_scenarios, reservoirs, costs_approx)
-
-# Print the results
-# println(results)

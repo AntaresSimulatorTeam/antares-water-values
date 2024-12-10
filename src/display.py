@@ -31,8 +31,6 @@ def draw_usage_values(
                 closest_level
             ]
 
-    # z = np.maximum(np.zeros(reinterpolated_usage_values[area].T.shape), np.minimum(ub*np.ones(reinterpolated_usage_values[area].T.shape), reinterpolated_usage_values[area].T))
-    # z = np.maximum(np.zeros(reinterpolated_usage_values[area].T.shape) - ub, np.minimum(ub*np.ones(reinterpolated_usage_values[area].T.shape), reinterpolated_usage_values[area].T))
     usage_values_plot = go.Figure(
         data=[
             go.Heatmap(
@@ -64,9 +62,7 @@ def draw_usage_values(
                 marker=dict(symbol="circle"),
                 showlegend=True,
             )
-            for i, (area, mng) in enumerate(
-                multi_stock_management.dict_reservoirs.items()
-            )
+            for i, (_, _) in enumerate(multi_stock_management.dict_reservoirs.items())
         ]
         + [
             go.Scatter(
@@ -78,9 +74,7 @@ def draw_usage_values(
                 line=dict(dash="dash"),
                 showlegend=True,
             )
-            for i, (area, mng) in enumerate(
-                multi_stock_management.dict_reservoirs.items()
-            )
+            for i, (_, mng) in enumerate(multi_stock_management.dict_reservoirs.items())
         ]
         + [
             go.Scatter(
@@ -92,9 +86,7 @@ def draw_usage_values(
                 line=dict(dash="dash"),
                 showlegend=True,
             )
-            for i, (area, mng) in enumerate(
-                multi_stock_management.dict_reservoirs.items()
-            )
+            for i, (_, mng) in enumerate(multi_stock_management.dict_reservoirs.items())
         ],
         layout=dict(title=f"Usage Values"),
     )
@@ -168,7 +160,7 @@ def draw_uvs_sddp(
                 showlegend=True,
                 visible=(r == 0),
             )
-            for r, res in enumerate(reservoirs)
+            for r, _ in enumerate(reservoirs)
         ]
         + [
             go.Scatter(

@@ -311,7 +311,6 @@ class LinearCostEstimator(Estimator):
         costs: np.ndarray,
         duals: np.ndarray,
         correlations: Optional[np.ndarray] = None,
-        interp_mode: bool = False,
     ) -> None:
         """
         Instanciates a LinearCostEstimator
@@ -324,9 +323,6 @@ class LinearCostEstimator(Estimator):
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        # self.true_controls=controls
-        # self.true_costs=costs
-        # self.true_duals=duals
         self.estimators = np.array(
             [
                 [
@@ -335,7 +331,6 @@ class LinearCostEstimator(Estimator):
                         costs=costs[week, scenario],
                         duals=duals[week, scenario],
                         correlations=correlations,
-                        # interp_mode=interp_mode,
                     )
                     for scenario in range(param.len_scenario)
                 ]
@@ -389,7 +384,6 @@ class LinearCostEstimator(Estimator):
         inputs: np.ndarray,
         costs: np.ndarray,
         duals: np.ndarray,
-        interp_mode: bool = False,
     ) -> None:
         """
         Updates the parameters of the Linear Interpolators
@@ -409,10 +403,9 @@ class LinearCostEstimator(Estimator):
                     inputs=inputs,
                     costs=costs,
                     duals=duals,
-                    #    interp_mode=interp_mode,
                 )
 
-    def enrich_estimator(self, n_splits: int = 3) -> None:
+    def enrich_estimator(self) -> None:
         """
         Adds 'mid_cuts' to our cost estimator to smoothen the curves and (hopefully) accelerate convergence
 
@@ -441,8 +434,6 @@ class LinearCostEstimator(Estimator):
         for week_estimators in self.estimators:
             for estimator in week_estimators:
                 estimator.remove_incoherence()
-                # controls=true_controls[week, scenario],
-                # real_costs=true_costs[week, scenario])
 
     def remove_redundants(
         self,

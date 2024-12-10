@@ -1,7 +1,6 @@
 from functions_iterative import (
     TimeScenarioParameter,
     ReservoirManagement,
-    TimeScenarioIndex,
 )
 from simple_bellman_value_calculation import (
     calculate_bellman_value_directly,

@@ -391,7 +391,6 @@ def init_iterative_calculation(
         stock_discretization=X,
     )
 
-    i = 0
     gap = 1e3
     fin = time()
     tot_t.append(fin - debut)

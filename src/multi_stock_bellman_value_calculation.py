@@ -18,7 +18,7 @@ from optimization import (
     solve_problem_with_multivariate_bellman_values,
     solve_for_optimal_trajectory,
 )
-from typing import Annotated, List, Literal, Dict, Optional, Any
+from typing import Annotated, Literal, Dict, Optional, Any
 import numpy.typing as npt
 import numpy as np
 
@@ -289,7 +289,6 @@ def get_bellman_values_from_costs(
     trajectory: np.ndarray,
     correlations: np.ndarray,
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
-    rounding: int = 6,
     verbose: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, list[LinearInterpolator]]:
     """
@@ -322,7 +321,6 @@ def get_bellman_values_from_costs(
         name_solver=name_solver,
         divisor=divisor,
     )
-    # problem.parameters.SetDoubleParam(problem.parameters.PRESOLVE, problem.parameters.PRESOLVE_ON)
 
     # Keeping in memory all future costs approximations
     future_costs_approx_l = [future_costs_approx]
@@ -406,10 +404,8 @@ def get_bellman_values_from_costs(
 
 
 def initialize_future_costs(
-    param: TimeScenarioParameter,
     starting_pt: np.ndarray,
     multi_stock_management: MultiStockManagement,
-    costs_approx: Estimator,
     mult: float = 0.0,
 ) -> LinearInterpolator:
     """
@@ -531,7 +527,6 @@ def get_all_costs(
     """
     tot_iter = 0
     times = []
-    n_reservoirs = len(multi_stock_management.dict_reservoirs)
     if keep_intermed_res or already_init:
         assert saving_dir is not None
         filename = saving_dir + "/get_all_costs_run.pkl"
@@ -562,10 +557,6 @@ def get_all_costs(
                     controls_list=controls_list[week, scenario],
                 )
             except ValueError:
-                reservoirs = [
-                    mng.reservoir
-                    for mng in multi_stock_management.dict_reservoirs.values()
-                ]
                 print(
                     f"Failed at week {week}, the conditions on control were: {controls_list[week, scenario]}"
                 )
@@ -700,7 +691,6 @@ def generate_controls(
             for mng in multi_stock_management.dict_reservoirs.values()
         ]
     )
-    mean_res = (max_res + min_res) / 2
 
     # Points to start lines at
     start_pts = [
@@ -756,7 +746,7 @@ def generate_controls(
                             manag.reservoir.max_generating,
                             xNsteps,
                         )
-                        for area, manag in multi_stock_management.dict_reservoirs.items()
+                        for _, manag in multi_stock_management.dict_reservoirs.items()
                     ]
                 )
             ]
@@ -798,9 +788,6 @@ def precalculated_method(
     -------
         Bellman Values:Dict[int, Dict[str, npt.NDArray[np.float32]]]: Bellman values
     """
-    # __________________________________________________________________________________________
-    #                           PRECALCULATION PART
-    # __________________________________________________________________________________________
 
     # Initialize the problems
     list_models = initialize_antares_problems(
@@ -830,15 +817,11 @@ def precalculated_method(
         verbose=verbose,
     )
 
-    # print("=======================[       Reward approximation       ]=======================")
     # Initialize cost functions
     costs_approx = LinearCostEstimator(
         param=param, controls=controls_list, costs=costs, duals=slopes
     )
 
-    # __________________________________________________________________________________________
-    #                           BELLMAN CALCULATION PART
-    # __________________________________________________________________________________________
     print(
         "=======================[       Dynamic  Programming       ]======================="
     )
@@ -851,9 +834,7 @@ def precalculated_method(
     )
 
     future_costs_approx = initialize_future_costs(
-        param=param,
         multi_stock_management=multi_stock_management,
-        costs_approx=costs_approx,
         starting_pt=starting_pt,
     )
 
@@ -861,7 +842,6 @@ def precalculated_method(
     trajectory = np.swapaxes(trajectory, 1, 2)
 
     correlations = get_correlation_matrix(
-        param=param,
         multi_stock_management=multi_stock_management,
         corr_type="no_corrs",
     )
@@ -1028,7 +1008,6 @@ def select_controls_to_explore(
 
 
 def get_correlation_matrix(
-    param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
     adjacency_mat: Optional[np.ndarray] = None,
     corr_type: str = "no_corrs",
@@ -1067,7 +1046,6 @@ def compute_usage_values_from_costs(
     nSteps_bellman: int,
     correlations: np.ndarray,
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
-    rounding: int = 6,
     verbose: bool = False,
 ) -> tuple[dict[str, np.ndarray], np.ndarray]:
     """For now we want this function to solve a lot of optimization problems for different initial values of stock
@@ -1242,9 +1220,7 @@ def cutting_plane_method(
     saving_dir: str,
     maxiter: Optional[int] = None,
     precision: float = 5e-2,
-    interp_mode: bool = False,
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
-    rounding: int = 6,
     output_path: str = "",
     verbose: bool = False,
 ) -> tuple[
@@ -1274,12 +1250,6 @@ def cutting_plane_method(
     iter = 0
     opt_gap = 1.0
     maxiter = int(1e2) if maxiter is None else maxiter
-    inflows = np.array(
-        [
-            mng.reservoir.inflow[: param.len_week, : param.len_scenario]
-            for mng in multi_stock_management.dict_reservoirs.values()
-        ]
-    ).T
     # Init trajectory
     trajectory = np.array([[starting_pt] * param.len_scenario] * param.len_week)
     trajectory = np.swapaxes(trajectory, 1, 2)
@@ -1301,8 +1271,8 @@ def cutting_plane_method(
         (
             levels,
             bellman_costs,
-            bellman_duals,
-            bellman_controls,
+            _,
+            _,
             future_costs_approx_l,
         ) = get_bellman_values_from_costs(
             param=param,
@@ -1315,24 +1285,19 @@ def cutting_plane_method(
             trajectory=trajectory,
             correlations=correlations,
             divisor=divisor,
-            rounding=rounding,
             verbose=verbose,
         )
         future_costs_approx = future_costs_approx_l[0]
 
         # Evaluate optimal
-        trajectory, pseudo_opt_controls, pseudo_opt_costs = (
-            solve_for_optimal_trajectory(
-                param=param,
-                multi_stock_management=multi_stock_management,
-                costs_approx=costs_approx,
-                future_costs_approx_l=future_costs_approx_l,
-                inflows=inflows,
-                starting_pt=starting_pt,
-                name_solver=name_solver,
-                divisor=divisor,
-                verbose=verbose,
-            )
+        trajectory, pseudo_opt_controls, _ = solve_for_optimal_trajectory(
+            param=param,
+            multi_stock_management=multi_stock_management,
+            costs_approx=costs_approx,
+            future_costs_approx_l=future_costs_approx_l,
+            starting_pt=starting_pt,
+            name_solver=name_solver,
+            divisor=divisor,
         )
         # Beware, some trajectories seem to be overstep the bounds with values such as -2e-12
 
@@ -1368,9 +1333,7 @@ def cutting_plane_method(
             max_gap=max_gap,
         )
 
-        costs_approx.update(
-            inputs=controls_list, costs=costs, duals=slopes, interp_mode=interp_mode
-        )
+        costs_approx.update(inputs=controls_list, costs=costs, duals=slopes)
         costs_approx.remove_redundants(tolerance=1e-2)
 
         # If we want to look at the usage values evolution
@@ -1386,7 +1349,6 @@ def cutting_plane_method(
                 nSteps_bellman=nSteps_bellman,
                 correlations=correlations,
                 divisor=divisor,
-                rounding=rounding,
             )
             draw_usage_values(
                 usage_values=usage_values,
@@ -1415,14 +1377,9 @@ def iter_bell_vals(
     saving_dir: str,
     name_solver: str = "CLP",
     precision: float = 1e-2,
-    maxiter: int = 2,
     correlations: Optional[np.ndarray] = None,
-    interp_mode: bool = False,
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
-    rounding: int = 6,
     verbose: bool = False,
-    already_init: bool = False,
-    keep_intermed_res: bool = False,
 ) -> tuple[Any, Any, Any, Any, Any, Any]:
     """
     In a similar fashion to Kelley's algorithm (1960), the idea is to approximate the (convex) cost function
@@ -1488,15 +1445,12 @@ def iter_bell_vals(
 
     # Initialize our approximation on future costs
     future_costs_approx = initialize_future_costs(
-        param=param,
         starting_pt=starting_pt,
         multi_stock_management=multi_stock_management,
-        costs_approx=costs_approx,
     )
 
     # Correlations matrix
     correlations = get_correlation_matrix(
-        param=param,
         multi_stock_management=multi_stock_management,
         corr_type="no_corrs",
     )
@@ -1516,16 +1470,14 @@ def iter_bell_vals(
             method=method,
             correlations=correlations,
             precision=precision,
-            interp_mode=interp_mode,
             divisor=divisor,
-            rounding=rounding,
             output_path=output_path,
             verbose=verbose,
         )
     )
 
     # Deducing usage values
-    usage_values, levels_imposed = compute_usage_values_from_costs(
+    usage_values, _ = compute_usage_values_from_costs(
         param=param,
         multi_stock_management=multi_stock_management,
         name_solver=name_solver,
@@ -1535,7 +1487,6 @@ def iter_bell_vals(
         nSteps_bellman=101,
         correlations=correlations,
         divisor=divisor,
-        rounding=rounding,
     )
 
     return (
@@ -1560,7 +1511,6 @@ def sddp_cutting_planes(
     normalization: Dict[str, float],
     maxiter: Optional[int] = None,
     precision: float = 1e-2,
-    interp_mode: bool = False,
     verbose: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, LinearCostEstimator, list[np.ndarray]]:
 
@@ -1681,9 +1631,7 @@ def sddp_cutting_planes(
             )
             pbar.update(precision=opt_gap)
 
-        costs_approx.update(
-            inputs=controls, costs=costs, duals=slopes, interp_mode=interp_mode
-        )
+        costs_approx.update(inputs=controls, costs=costs, duals=slopes)
         costs_approx.remove_redundants(tolerance=1e-2)
     usage_values, bellman_costs = jl_sddp.get_usage_values(
         param.len_week, param.len_scenario, jl_reservoirs, model, norms, 101
@@ -1702,7 +1650,6 @@ def iter_bell_vals_v2(
     name_solver: str = "CLP",
     precision: float = 1e-2,
     maxiter: int = 2,
-    interp_mode: bool = False,
     verbose: bool = False,
 ) -> Any:
 
@@ -1740,7 +1687,6 @@ def iter_bell_vals_v2(
         precision=precision,
         normalization=normalization,
         maxiter=maxiter,
-        interp_mode=interp_mode,
         verbose=verbose,
     )
 

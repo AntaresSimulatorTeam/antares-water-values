@@ -1,6 +1,0 @@
-juliacall==0.9.22
-numpy==2.1.2
-ortools==9.9.9999
-plotly==5.23.0
-scipy==1.14.1
-tqdm==4.66.5

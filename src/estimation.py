@@ -311,7 +311,6 @@ class LinearCostEstimator(Estimator):
         costs: np.ndarray,
         duals: np.ndarray,
         correlations: Optional[np.ndarray] = None,
-        interp_mode: bool = False,
     ) -> None:
         """
         Instanciates a LinearCostEstimator
@@ -385,7 +384,6 @@ class LinearCostEstimator(Estimator):
         inputs: np.ndarray,
         costs: np.ndarray,
         duals: np.ndarray,
-        interp_mode: bool = False,
     ) -> None:
         """
         Updates the parameters of the Linear Interpolators
@@ -407,7 +405,7 @@ class LinearCostEstimator(Estimator):
                     duals=duals,
                 )
 
-    def enrich_estimator(self, n_splits: int = 3) -> None:
+    def enrich_estimator(self) -> None:
         """
         Adds 'mid_cuts' to our cost estimator to smoothen the curves and (hopefully) accelerate convergence
 

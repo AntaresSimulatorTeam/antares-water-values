@@ -122,10 +122,6 @@ def interpolate_between(
     return mlr, data
 
 
-mlrs: list = []
-datas: list = []
-
-
 def enrich_by_interpolation(
     controls_init: np.ndarray, costs: np.ndarray, slopes: np.ndarray, n_splits: int = 3
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:

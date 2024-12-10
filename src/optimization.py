@@ -1,11 +1,11 @@
 import re
-from typing import Any, Optional
+from typing import Optional
 from calculate_reward_and_bellman_values import (
     BellmanValueCalculation,
     MultiStockBellmanValueCalculation,
     MultiStockManagement,
 )
-from estimation import Estimator, LinearInterpolator, LinearCostEstimator
+from estimation import Estimator, LinearInterpolator
 from read_antares_data import TimeScenarioParameter
 import numpy as np
 from time import time
@@ -444,7 +444,7 @@ class AntaresProblem:
         for area in self.range_reservoir:
             self.set_constraints_predefined_control(control[area], area)
         try:
-            beta, lamb, final_level, _, _, itr, computing_time = self.solve_problem(
+            beta, lamb, _, _, _, itr, computing_time = self.solve_problem(
                 direct_bellman_mode=False
             )
             # print(f"✔ for controls {control}")
@@ -1714,11 +1714,9 @@ def solve_for_optimal_trajectory(
     multi_stock_management: MultiStockManagement,
     costs_approx: Estimator,
     future_costs_approx_l: list[LinearInterpolator],
-    inflows: np.ndarray,
     starting_pt: np.ndarray,
     name_solver: str,
     divisor: dict[str, float],
-    verbose: bool = False,
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Finds the optimal trajectory starting from starting_pts
 

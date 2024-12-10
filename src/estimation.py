@@ -324,9 +324,6 @@ class LinearCostEstimator(Estimator):
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        # self.true_controls=controls
-        # self.true_costs=costs
-        # self.true_duals=duals
         self.estimators = np.array(
             [
                 [
@@ -335,7 +332,6 @@ class LinearCostEstimator(Estimator):
                         costs=costs[week, scenario],
                         duals=duals[week, scenario],
                         correlations=correlations,
-                        # interp_mode=interp_mode,
                     )
                     for scenario in range(param.len_scenario)
                 ]
@@ -409,7 +405,6 @@ class LinearCostEstimator(Estimator):
                     inputs=inputs,
                     costs=costs,
                     duals=duals,
-                    #    interp_mode=interp_mode,
                 )
 
     def enrich_estimator(self, n_splits: int = 3) -> None:
@@ -441,8 +436,6 @@ class LinearCostEstimator(Estimator):
         for week_estimators in self.estimators:
             for estimator in week_estimators:
                 estimator.remove_incoherence()
-                # controls=true_controls[week, scenario],
-                # real_costs=true_costs[week, scenario])
 
     def remove_redundants(
         self,

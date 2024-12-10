@@ -41,14 +41,11 @@ def BezierAv(
     if last_axify:
         p[:-1] = (p0[:-1] + p1[:-1]) / 2
         p[-1] = p0[-1] * diff_rate + p1[-1] * (1 - diff_rate)
-        # v_sum = np.sum(v[:-1])
-        # v[-1] /= v_sum
         v = v0 * (t) + v1 * (1 - t)
         v[-1] = v0[-1] * (t * (1 - partage) + partage * diff_rate) + v1[-1] * (
             (1 - t) * (1 - partage) + partage * (1 - diff_rate)
         )
     elif norm(v) > 1e-12:
-        # v = v / sum(v[:-1])
         v = v / norm(v) * (n0 + n1) / 2
     return np.array([p, v])
 

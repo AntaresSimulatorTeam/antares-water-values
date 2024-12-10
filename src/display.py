@@ -31,8 +31,6 @@ def draw_usage_values(
                 closest_level
             ]
 
-    # z = np.maximum(np.zeros(reinterpolated_usage_values[area].T.shape), np.minimum(ub*np.ones(reinterpolated_usage_values[area].T.shape), reinterpolated_usage_values[area].T))
-    # z = np.maximum(np.zeros(reinterpolated_usage_values[area].T.shape) - ub, np.minimum(ub*np.ones(reinterpolated_usage_values[area].T.shape), reinterpolated_usage_values[area].T))
     usage_values_plot = go.Figure(
         data=[
             go.Heatmap(

@@ -11,7 +11,6 @@ from ortools.linear_solver.python import model_builder
 from estimation import Estimator, LinearCostEstimator, LinearInterpolator
 from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
 
-# from julia_sddp import python_to_julia_data, manage_reservoirs_py
 from optimization import (
     AntaresProblem,
     WeeklyBellmanProblem,
@@ -23,8 +22,6 @@ from typing import Annotated, List, Literal, Dict, Optional, Any
 import numpy.typing as npt
 import numpy as np
 
-# from scipy.interpolate import interp1d
-# from functions_iterative import compute_upper_bound
 from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
 from scipy.stats import random_correlation
 import pickle as pkl
@@ -383,7 +380,6 @@ def get_bellman_values_from_costs(
                     f"We were using the following future costs estimation: {[f'Cost(lvl) >= {cost} +  (lvl_0 - {input[0]})*{duals[0]} + (lvl_1 - {input[1]})*{duals[1]}' for input, cost, duals in zip(future_costs_approx.inputs, future_costs_approx.costs, future_costs_approx.duals)]}"
                 )
                 raise ValueError
-            # assert (np.min(np.abs(duals_wl))>.1 or np.random.rand()> .01)
 
             # Writing down results
             controls_w[lvl_id] = controls_wls
@@ -1025,7 +1021,6 @@ def select_controls_to_explore(
         * (2 * n_inputs + 1),
         size=(n_weeks, n_scenarios, n_reservoirs),
     )
-    # pseudo_opt_controls += np.random.normal(scale=np.exp(-relative_proximity) * max_var[: ,None ,:]/10, size=(n_weeks, n_scenarios, n_reservoirs))
     controls_to_explore[:, :, 0, :] = np.maximum(
         np.minimum(pseudo_opt_controls, max_gen[:, None, :]), max_pump[:, None, :]
     )
@@ -1174,11 +1169,8 @@ def compute_usage_values_from_costs(
             for j, levels in enumerate(levels_to_test[week, :, i]):
                 # Remove previous constraints / vars
                 problem.reset_solver()
-                # problem.solver.SetSolverSpecificParametersAsString("presolve off")
-
                 try:
                     # Rewrite problem
-                    # print(levels, future_costs_approx_l[week].costs)
                     problem.write_problem(
                         week=week,
                         level_init=levels,
@@ -1229,13 +1221,10 @@ def get_opt_gap(
         ]
     )
     # Computing the optimality gap
-    # pre_update_tot_costs = np.sum(pre_update_costs, axis=0)
-    # real_tot_costs = np.sum(costs, axis=0)
     costs = np.mean(costs, axis=-1)
     opt_gap = max(
         1e-10, min(1, np.max(np.mean((costs - pre_update_costs), axis=1) / max_gap))
     )
-    # print(f"Gap {np.max(np.mean((costs - pre_update_costs),axis=1)/max_gap)}")
     return opt_gap
 
 
@@ -1298,32 +1287,6 @@ def cutting_plane_method(
     max_gap = np.mean(np.max(costs, axis=2) - np.min(costs, axis=2), axis=1)
     rng = np.random.default_rng(1234115)
 
-    # hlpr = Caller(
-    #     param=param,
-    #     multi_stock_management=multi_stock_management,
-    #     name_solver=name_solver,
-    #     list_models=list_models,
-    #     starting_pt=starting_pt,
-    #     inflows=inflows,
-    #     trajectory=trajectory,
-    #     max_gap=max_gap,
-    #     costs_approx=costs_approx,
-    #     future_costs_approx=future_costs_approx,
-    #     nSteps_bellman=nSteps_bellman,
-    #     method=method,
-    #     correlations=correlations,
-    #     maxiter=maxiter,
-    #     precision=precision,
-    #     interp_mode=interp_mode,
-    #     opt_gap=opt_gap,
-    #     divisor=divisor,
-    #     rounding=rounding,
-    #     output_path=output_path,
-    #     rng=rng,
-    #     verbose=False,
-    #     prefix="cut_plan")
-    # prefix="cut_plan"
-
     # To display convergence:
     if verbose:
         pbar = ConvergenceProgressBar(
@@ -1335,8 +1298,6 @@ def cutting_plane_method(
         if verbose:
             pbar.describe("Dynamic Programming")
 
-        # levels, bellman_costs, _, _, future_costs_approx_l = hlpr(get_bellman_values_from_costs,\
-        #            ("levels", "bellman_costs", "bellman_duals", "bellman_controls", "future_costs_approx_l", "usage_values"))
         (
             levels,
             bellman_costs,
@@ -1358,11 +1319,8 @@ def cutting_plane_method(
             verbose=verbose,
         )
         future_costs_approx = future_costs_approx_l[0]
-        # hlpr.update(future_costs_approx = future_costs_approx)
 
         # Evaluate optimal
-        # trajectory, _, _ = hlpr(solve_for_optimal_trajectory,\
-        #                                     ("trajectory", "pseudo_opt_controls", "pseudo_opt_costs"))
         trajectory, pseudo_opt_controls, pseudo_opt_costs = (
             solve_for_optimal_trajectory(
                 param=param,
@@ -1378,7 +1336,6 @@ def cutting_plane_method(
         )
         # Beware, some trajectories seem to be overstep the bounds with values such as -2e-12
 
-        # controls_list = hlpr(select_controls_to_explore, ("controls_list"))
         controls_list = select_controls_to_explore(
             param=param,
             multi_stock_management=multi_stock_management,
@@ -1390,8 +1347,6 @@ def cutting_plane_method(
             pbar.describe("Simulation")
 
         # Evaluating this "optimal" trajectory
-        # hlpr.update(prefix=f"cut_plan_iter_{iter}_")
-        # controls_list, costs, slopes = hlpr(Lget_costs, ("controls_list", "costs", "slopes"))
         controls, costs, slopes = Lget_costs(
             param=param,
             multi_stock_management=multi_stock_management,
@@ -1404,7 +1359,6 @@ def cutting_plane_method(
             prefix=f"cut_plan_iter_{iter}_",
         )
 
-        # opt_gap = hlpr(get_opt_gap, "opt_gap")
         opt_gap = get_opt_gap(
             param=param,
             costs=costs,
@@ -1422,7 +1376,6 @@ def cutting_plane_method(
         # If we want to look at the usage values evolution
         if verbose:
             pbar.describe("Drawing")
-            # hlpr.update(optimal_trajectory=trajectory, n_weeks=param.len_week)
             usage_values, levels_uv = compute_usage_values_from_costs(
                 param=param,
                 multi_stock_management=multi_stock_management,
@@ -1435,7 +1388,6 @@ def cutting_plane_method(
                 divisor=divisor,
                 rounding=rounding,
             )
-            # hlpr(compute_usage_values_from_costs, ("usage_values", "levels_uv"))
             draw_usage_values(
                 usage_values=usage_values,
                 levels_uv=levels_uv,
@@ -1445,7 +1397,6 @@ def cutting_plane_method(
                 trajectory=trajectory,
                 ub=500,
             )
-            # hlpr(draw_usage_values)
             pbar.update(precision=opt_gap)
 
     if verbose:
@@ -1512,40 +1463,14 @@ def iter_bell_vals(
     Returns:
         tuple[np.ndarray, Estimator, list[LinearInterpolator], np.ndarray]: Bellman costs, costs approximation, future costs approximation, levels
     """
-    # Initialize the caller
-    # hlpr = Caller(
-    #     param=param,
-    #     multi_stock_management=multi_stock_management,
-    #     output_path=output_path,
-    #     n_controls_init=n_controls_init,
-    #     starting_pt=starting_pt,
-    #     nSteps_bellman=nSteps_bellman,
-    #     method=method,
-    #     name_solver=name_solver,
-    #     precision=precision,
-    #     maxiter=maxiter,
-    #     correlations=correlations,
-    #     interp_mode=interp_mode,
-    #     divisor=divisor,
-    #     rounding=rounding,
-    #     verbose=verbose,
-    #     already_init=already_init,
-    #     keep_intermed_res=keep_intermed_res)
-
     # Choose first controls to test
-    # controls = hlpr(initialize_controls, 'controls_list')
     controls_list = initialize_controls(
         param=param,
         multi_stock_management=multi_stock_management,
         n_controls_init=n_controls_init,
     )
 
-    # #Initialize the Antares problems
-    # hlpr(initialize_antares_problems, 'list_models')
-
-    # #Get hyperplanes resulting from initial controls
-    # _, duals = hlpr(get_all_costs, ('costs', 'slopes'))
-    # controls, costs, duals = hlpr(Lget_costs, ('controls_list', 'costs', 'slopes'))
+    # Get hyperplanes resulting from initial controls
     controls, costs, duals = Lget_costs(
         param=param,
         multi_stock_management=multi_stock_management,
@@ -1556,16 +1481,12 @@ def iter_bell_vals(
         load_from_protos=True,
         verbose=verbose,
     )
-    # hlpr.update(duals=duals, controls=controls)
-    # hlpr.update(list_models=[])
 
-    # costs_approx = hlpr(LinearCostEstimator, "costs_approx")
     costs_approx = LinearCostEstimator(
         param=param, controls=controls, costs=costs, duals=duals
     )
 
     # Initialize our approximation on future costs
-    # hlpr(initialize_future_costs, "future_costs_approx")
     future_costs_approx = initialize_future_costs(
         param=param,
         starting_pt=starting_pt,
@@ -1574,7 +1495,6 @@ def iter_bell_vals(
     )
 
     # Correlations matrix
-    # hlpr(get_correlation_matrix, "correlations")
     correlations = get_correlation_matrix(
         param=param,
         multi_stock_management=multi_stock_management,
@@ -1582,8 +1502,6 @@ def iter_bell_vals(
     )
 
     # Iterative part
-    # hlpr(cutting_plane_method, ("bellman_costs", "levels", "future_costs_approx_l",
-    #                                   "costs_approx", "optimal_trajectory"))
     bellman_costs, levels, future_costs_approx_l, costs_approx, optimal_trajectory = (
         cutting_plane_method(
             param=param,
@@ -1607,8 +1525,6 @@ def iter_bell_vals(
     )
 
     # Deducing usage values
-    # hlpr.update(nSteps_bellman=101)
-    # hlpr(compute_usage_values_from_costs, ('usage_values', 'levels_imposed'))
     usage_values, levels_imposed = compute_usage_values_from_costs(
         param=param,
         multi_stock_management=multi_stock_management,
@@ -1622,10 +1538,6 @@ def iter_bell_vals(
         rounding=rounding,
     )
 
-    # returns = ("bellman_costs", "costs_approx", "future_costs_approx_l", "levels", "optimal_trajectory",\
-    #       "usage_values")
-    # bellman_costs, costs_approx, future_costs_approx_l,\
-    #       levels, optimal_trajectory, usage_values = hlpr.get(returns)
     return (
         bellman_costs,
         costs_approx,
@@ -1801,24 +1713,6 @@ def iter_bell_vals_v2(
         n_controls_init=n_controls_init,
     )
 
-    # #Initialize the Antares problems
-    # list_models = initialize_antares_problems(
-    #     param=param,
-    #     multi_stock_management=multi_stock_management,
-    #     output_path=output_path,
-    #     name_solver=name_solver,
-    #     direct_bellman_calc=False,
-    #     verbose=verbose,
-    # )
-
-    # Get hyperplanes resulting from initial
-    # costs, duals = get_all_costs(
-    #     param=param,
-    #     list_models=list_models,
-    #     multi_stock_management=multi_stock_management,
-    #     controls_list=controls_list,
-    #     verbose=verbose,
-    # )
     controls_list, costs, duals = Lget_costs(
         param=param,
         multi_stock_management=multi_stock_management,

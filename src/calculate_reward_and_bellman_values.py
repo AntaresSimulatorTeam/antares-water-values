@@ -160,9 +160,6 @@ class MultiStockManagement:
             n_pts_below + n_pts_in + n_pts_above
         )  # Make sure total adds up
         if method == "lines":
-            # in_curve_pts = np.linspace(lbs, ubs, xNsteps-2) # Disc-2 * R
-            # all_pts = np.insert(in_curve_pts, 0, empty, axis=0) # (Disc-1) * R
-            # all_pts = np.insert(all_pts, all_pts.shape[0], full, axis=0) # Disc * R
             above_curve_pts = [
                 np.linspace(ubs[r], full[r], n_pts_above[r], endpoint=True)
                 for r in range(n_reservoirs)
@@ -183,7 +180,6 @@ class MultiStockManagement:
                     for r in range(n_reservoirs)
                 ]
             ).T
-            # all_pts = np.concatenate((below_curve_pts, in_curve_pts, above_curve_pts), axis=0) # Disc * R
             diffs_to_ref = all_pts[:, None] - reference_pt[None, :]  # Disc * R
             diffs_to_ref = (
                 diffs_to_ref[:, :, None] * np.eye(n_reservoirs)[None, :, :]

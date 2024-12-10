@@ -620,7 +620,7 @@ def Lget_costs(
         if week >= week_start:
             for scenario in range(param.len_scenario):
                 if not (os.path.exists(saving_directory)):
-                    os.mkdir(saving_directory)
+                    os.makedirs(saving_directory)
                 proto_path = (
                     saving_directory
                     + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"

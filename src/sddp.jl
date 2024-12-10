@@ -167,15 +167,15 @@ end
 
 function reinit_cuts(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, costs_approx::Vector{Vector{Main.Jl_SDDP.LinInterp}}, norms::Normalizer)
     model = generate_model(n_weeks, n_scenarios, reservoirs, costs_approx, norms)
-    SDDP.write_cuts_to_file(model, "dev/cuts/sddp_current_cuts")
+    SDDP.write_cuts_to_file(model, "sddp_current_cuts")
 end
 
 function manage_reservoirs(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, costs_approx::Vector{Vector{Main.Jl_SDDP.LinInterp}}, norms::Normalizer)
     model = generate_model(n_weeks, n_scenarios, reservoirs, costs_approx, norms)
-    SDDP.read_cuts_from_file(model, "dev/cuts/sddp_current_cuts")
+    SDDP.read_cuts_from_file(model, "sddp_current_cuts")
     # Training the model
     SDDP.train(model, stopping_rules = [SDDP.BoundStalling(40, 1e1)], iteration_limit = 700, cut_type = SDDP.MULTI_CUT)
-    SDDP.write_cuts_to_file(model, "dev/cuts/sddp_current_cuts")
+    SDDP.write_cuts_to_file(model, "sddp_current_cuts")
     
     #Simulating
     simulation_results = get_trajectory(n_weeks, n_scenarios, reservoirs, model, norms)

@@ -513,6 +513,7 @@ def get_all_costs(
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     multi_stock_management: MultiStockManagement,
     controls_list: np.ndarray,
+    saving_dir: Optional[str] = None,
     verbose: bool = False,
     already_init: bool = False,
     keep_intermed_res: bool = False,
@@ -535,7 +536,9 @@ def get_all_costs(
     tot_iter = 0
     times = []
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
-    filename = "get_all_costs_run.pkl"
+    if keep_intermed_res or already_init:
+        assert saving_dir is not None
+        filename = saving_dir + "/get_all_costs_run.pkl"
 
     # Initializing the n_weeks*n_scenarios*n_controls*n_stocks values to fill
     shape_controls = list(controls_list.shape)
@@ -594,7 +597,7 @@ def Lget_costs(
     load_from_protos: bool = False,
     prefix: str = "",
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
-    filename = f"{prefix}get_all_costs_run_{output_path.replace('/','_')[-27:]}.pkl"
+    filename = f"{saving_directory}/{prefix}get_all_costs_run_{output_path.replace('/','_')[-27:]}.pkl"
 
     # Initializing the n_weeks*n_scenarios*n_controls(*n_stocks) values to fill
     shape_controls = list(controls_list.shape)
@@ -1691,6 +1694,7 @@ def sddp_cutting_planes(
         param.len_scenario,
         julia_reservoirs,
         julia_capp,
+        saving_dir,
         normalization["euro"],
         normalization["energy"],
     )
@@ -1704,6 +1708,7 @@ def sddp_cutting_planes(
             param.len_scenario,
             julia_reservoirs,
             julia_capp,
+            saving_dir,
             normalization["euro"],
             normalization["energy"],
         )

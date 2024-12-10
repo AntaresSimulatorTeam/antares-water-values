@@ -34,7 +34,7 @@ struct Normalizer
 end
 
 # Function to convert Python data to Julia structures
-function formater(n_weeks, n_scenarios, reservoirs_data, costs_approx_data, norm_euros::Float64=1e7, norm_enrgy::Float64=1e5)
+function formater(n_weeks, n_scenarios, reservoirs_data, costs_approx_data, saving_dir::String, norm_euros::Float64=1e7, norm_enrgy::Float64=1e5)
     round_energy = 4
     round_euro = 8
     round_price = 5
@@ -64,7 +64,7 @@ function formater(n_weeks, n_scenarios, reservoirs_data, costs_approx_data, norm
             round.(pyconvert(Matrix, costs_approx_data[i,j]["duals"])   /norm_price, digits=round_price), # € / MWh
             ) for j in 1:size_ca_data[2]] for i in 1:size_ca_data[1]]
             
-    return (n_weeks, n_scenarios, reservoirs, costs_approx, norms)
+    return (n_weeks, n_scenarios, reservoirs, costs_approx, norms, saving_dir)
 end
 
 
@@ -163,17 +163,17 @@ function stability_report(model)
     return SDDP.numerical_stability_report(model)
 end
 
-function reinit_cuts(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, costs_approx::Vector{Vector{Main.Jl_SDDP.LinInterp}}, norms::Normalizer)
+function reinit_cuts(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, costs_approx::Vector{Vector{Main.Jl_SDDP.LinInterp}}, norms::Normalizer, saving_dir::String)
     model = generate_model(n_weeks, n_scenarios, reservoirs, costs_approx, norms)
-    SDDP.write_cuts_to_file(model, "sddp_current_cuts")
+    SDDP.write_cuts_to_file(model, saving_dir*"/sddp_current_cuts")
 end
 
-function manage_reservoirs(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, costs_approx::Vector{Vector{Main.Jl_SDDP.LinInterp}}, norms::Normalizer)
+function manage_reservoirs(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, costs_approx::Vector{Vector{Main.Jl_SDDP.LinInterp}}, norms::Normalizer, saving_dir::String)
     model = generate_model(n_weeks, n_scenarios, reservoirs, costs_approx, norms)
-    SDDP.read_cuts_from_file(model, "sddp_current_cuts")
+    SDDP.read_cuts_from_file(model, saving_dir*"/sddp_current_cuts")
     # Training the model
     SDDP.train(model, stopping_rules = [SDDP.BoundStalling(40, 1e1)], iteration_limit = 700, cut_type = SDDP.MULTI_CUT)
-    SDDP.write_cuts_to_file(model, "sddp_current_cuts")
+    SDDP.write_cuts_to_file(model, saving_dir*"/sddp_current_cuts")
     
     #Simulating
     simulation_results = get_trajectory(n_weeks, n_scenarios, reservoirs, model, norms)

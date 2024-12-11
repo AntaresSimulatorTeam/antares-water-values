@@ -1,13 +1,14 @@
-from functions_iterative import (
-    TimeScenarioParameter,
-    itr_control,
-    ReservoirManagement,
-    TimeScenarioIndex,
-)
-from read_antares_data import Reservoir
-import pytest
 import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
+import pytest
+
+from functions_iterative import (
+    ReservoirManagement,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    itr_control,
+)
+from read_antares_data import Reservoir
 
 
 def test_itr_control() -> None:

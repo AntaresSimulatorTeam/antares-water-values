@@ -1,5 +1,6 @@
 import numpy as np
 from numpy.linalg import norm
+
 from type_definition import Array1D
 
 

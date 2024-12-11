@@ -29,11 +29,31 @@ jobs:
 
       - name: Test
         run: |
-          pytest
+          pytest --cov --cov-report xml
+
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-code-coverage-report
+          path: coverage.xml
 
       - name: Check typing
         run: |
           python -m mypy src
+
+      - name: Check imports sort order
+        uses: isort/isort-action@v1
+        with:
+          sort-paths: src, tests
+          configuration: --profile black --check-only --diff
+          requirements-files: "requirements.txt requirements-dev.txt"
+
+      - name: Check formatting
+        uses: psf/black@stable
+        with:
+          # Version of Black should match the versions set in `requirements-dev.txt`
+          version: "~=24.3.0"
+          options: --check --diff
 
 
 

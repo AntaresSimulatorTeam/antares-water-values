@@ -1,7 +1,9 @@
+from typing import Any, Dict, Optional, Union
+
 import numpy as np
-from typing import Dict, Union, Any, Optional
-from read_antares_data import TimeScenarioParameter
+
 from hyperplane_interpolation import get_interpolation
+from read_antares_data import TimeScenarioParameter
 from type_definition import Array1D
 
 

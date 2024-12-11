@@ -1,10 +1,10 @@
+from calculate_reward_and_bellman_values import ReservoirManagement
+from functions_iterative import itr_control
+from read_antares_data import TimeScenarioParameter
 from simple_bellman_value_calculation import (
     calculate_bellman_value_directly,
     calculate_bellman_value_with_precalculated_reward,
 )
-from functions_iterative import itr_control
-from read_antares_data import TimeScenarioParameter
-from calculate_reward_and_bellman_values import ReservoirManagement
 from type_definition import Array1D, Array2D
 
 

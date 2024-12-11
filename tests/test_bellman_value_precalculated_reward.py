@@ -1,14 +1,15 @@
+import numpy as np
+import pytest
+
 from functions_iterative import (
-    TimeScenarioParameter,
     ReservoirManagement,
     TimeScenarioIndex,
+    TimeScenarioParameter,
 )
+from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
-from read_antares_data import Reservoir
-import pytest
-import numpy as np
 
 
 def test_bellman_value_precalculated_reward() -> None:

@@ -59,16 +59,11 @@ def test_bellman_value_iterative_method() -> None:
                 for mng in multi_management.dict_reservoirs.values()
             ]
         ),
-        maxiter=10,
         precision=1e-3,
         method="lines",
         correlations=None,
-        interp_mode=False,
         divisor={"euro": 1e8, "energy": 1e4},
-        rounding=6,
         verbose=False,
-        keep_intermed_res=False,
-        already_init=True,
     )
 
     assert bell_costs == pytest.approx(
@@ -262,7 +257,6 @@ def test_bellman_value_iterative_method_with_sddp() -> None:
         name_solver="CLP",
         maxiter=3,
         precision=1e-2,
-        interp_mode=False,
         verbose=False,
     )
 

@@ -50,7 +50,7 @@ def calculate_bellman_values(
 
     elif method == "precalculated":
         # or with precalulated reward
-        vb, G = calculate_bellman_value_with_precalculated_reward(
+        vb, _ = calculate_bellman_value_with_precalculated_reward(
             len_controls=len_controls,
             param=param,
             reservoir_management=reservoir_management,
@@ -61,7 +61,7 @@ def calculate_bellman_values(
 
     elif method == "iterative":
         # or with iterative algorithm
-        vb, G, _, _, controls_upper, traj = itr_control(
+        vb, _, _, _, _, _ = itr_control(
             param=param,
             reservoir_management=reservoir_management,
             output_path=output_path,

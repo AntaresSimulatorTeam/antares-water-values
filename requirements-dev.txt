@@ -2,3 +2,5 @@ black
 isort
 mypy
 pytest
+coverage
+pytest-cov

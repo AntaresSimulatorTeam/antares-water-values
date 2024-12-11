@@ -29,7 +29,13 @@ jobs:
 
       - name: Test
         run: |
-          pytest
+          pytest --cov --cov-report xml
+
+      - name: Archive code coverage results
+        uses: actions/upload-artifact@v3
+        with:
+          name: python-code-coverage-report
+          path: coverage.xml
 
       - name: Check typing
         run: |

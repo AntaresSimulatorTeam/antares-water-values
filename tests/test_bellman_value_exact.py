@@ -1,13 +1,9 @@
-from functions_iterative import (
-    TimeScenarioParameter,
-    ReservoirManagement,
-)
-from simple_bellman_value_calculation import (
-    calculate_bellman_value_directly,
-)
-from read_antares_data import Reservoir
-import pytest
 import numpy as np
+import pytest
+
+from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from read_antares_data import Reservoir
+from simple_bellman_value_calculation import calculate_bellman_value_directly
 
 
 def test_bellman_value_exact() -> None:

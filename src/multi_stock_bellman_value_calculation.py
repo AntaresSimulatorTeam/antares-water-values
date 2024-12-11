@@ -1,34 +1,33 @@
+import os as os
+import pickle as pkl
 from itertools import product
-from calculate_reward_and_bellman_values import (
-    RewardApproximation,
-    BellmanValueCalculation,
-    MultiStockManagement,
-    MultiStockBellmanValueCalculation,
-)
+from pathlib import Path
+from typing import Annotated, Any, Dict, Literal, Optional
 
+import juliacall
+import numpy as np
+import numpy.typing as npt
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
-from estimation import Estimator, LinearCostEstimator, LinearInterpolator
-from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
+from scipy.stats import random_correlation
+from tqdm import tqdm
 
+from calculate_reward_and_bellman_values import (
+    BellmanValueCalculation,
+    MultiStockBellmanValueCalculation,
+    MultiStockManagement,
+    RewardApproximation,
+)
+from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
+from estimation import Estimator, LinearCostEstimator, LinearInterpolator
 from optimization import (
     AntaresProblem,
-    WeeklyBellmanProblem,
     Basis,
-    solve_problem_with_multivariate_bellman_values,
+    WeeklyBellmanProblem,
     solve_for_optimal_trajectory,
+    solve_problem_with_multivariate_bellman_values,
 )
-from typing import Annotated, Literal, Dict, Optional, Any
-import numpy.typing as npt
-import numpy as np
-
-from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
-from scipy.stats import random_correlation
-import pickle as pkl
-from tqdm import tqdm
-from pathlib import Path
-import juliacall
-import os as os
+from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 
 jl = juliacall.Main
 

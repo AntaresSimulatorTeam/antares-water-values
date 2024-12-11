@@ -1,13 +1,11 @@
-from functions_iterative import (
-    TimeScenarioParameter,
-    ReservoirManagement,
-)
+import numpy as np
+from scipy.interpolate import interp1d
+
+from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
-from read_antares_data import Reservoir
-import numpy as np
-from scipy.interpolate import interp1d
 
 
 def test_bellman_value_precalculated_reward_overflow() -> None:

@@ -1,24 +1,26 @@
+from itertools import product
+
+import numpy as np
+import pytest
+
+from calculate_reward_and_bellman_values import (
+    BellmanValueCalculation,
+    MultiStockBellmanValueCalculation,
+    MultiStockManagement,
+    RewardApproximation,
+)
 from functions_iterative import (
-    TimeScenarioParameter,
     ReservoirManagement,
     TimeScenarioIndex,
+    TimeScenarioParameter,
 )
 from multi_stock_bellman_value_calculation import (
     AntaresProblem,
     Dict,
-    solve_problem_with_multivariate_bellman_values,
     calculate_bellman_value_multi_stock,
-)
-from calculate_reward_and_bellman_values import (
-    MultiStockManagement,
-    BellmanValueCalculation,
-    MultiStockBellmanValueCalculation,
-    RewardApproximation,
+    solve_problem_with_multivariate_bellman_values,
 )
 from read_antares_data import Reservoir
-import pytest
-import numpy as np
-from itertools import product
 
 
 def test_iterate_over_stock_discretization() -> None:

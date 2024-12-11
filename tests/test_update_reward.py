@@ -1,5 +1,6 @@
-from calculate_reward_and_bellman_values import RewardApproximation
 from pytest import approx
+
+from calculate_reward_and_bellman_values import RewardApproximation
 
 
 def test_construct_initial_reward_approximation() -> None:

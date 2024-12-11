@@ -1,18 +1,17 @@
+from time import time
+
 import numpy as np
 from scipy.interpolate import interp1d
-from time import time
-from optimization import (
-    AntaresProblem,
-    Basis,
-)
-from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
+
 from calculate_reward_and_bellman_values import (
-    RewardApproximation,
-    ReservoirManagement,
     BellmanValueCalculation,
-    MultiStockManagement,
     MultiStockBellmanValueCalculation,
+    MultiStockManagement,
+    ReservoirManagement,
+    RewardApproximation,
 )
+from optimization import AntaresProblem, Basis
+from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
 
 

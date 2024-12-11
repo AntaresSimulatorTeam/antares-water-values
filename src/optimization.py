@@ -1,5 +1,13 @@
+import pickle as pkl
 import re
+from time import time
 from typing import Optional
+
+import numpy as np
+import ortools.linear_solver.pywraplp as pywraplp
+from ortools.linear_solver.python import model_builder
+from scipy.interpolate import interp1d
+
 from calculate_reward_and_bellman_values import (
     BellmanValueCalculation,
     MultiStockBellmanValueCalculation,
@@ -7,13 +15,7 @@ from calculate_reward_and_bellman_values import (
 )
 from estimation import Estimator, LinearInterpolator
 from read_antares_data import TimeScenarioParameter
-import numpy as np
-from time import time
-from scipy.interpolate import interp1d
-from ortools.linear_solver.python import model_builder
-import ortools.linear_solver.pywraplp as pywraplp
-from type_definition import Array2D, List, Dict, Array1D, npt
-import pickle as pkl
+from type_definition import Array1D, Array2D, Dict, List, npt
 
 
 class Basis:

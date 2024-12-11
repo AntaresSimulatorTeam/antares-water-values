@@ -1,8 +1,10 @@
-from read_antares_data import TimeScenarioParameter, Reservoir, TimeScenarioIndex
-from scipy.interpolate import interp1d
-import numpy as np
-from type_definition import Array1D, Array2D, Optional, Dict, Callable, List, Iterable
 from itertools import product
+
+import numpy as np
+from scipy.interpolate import interp1d
+
+from read_antares_data import Reservoir, TimeScenarioIndex, TimeScenarioParameter
+from type_definition import Array1D, Array2D, Callable, Dict, Iterable, List, Optional
 
 
 class ReservoirManagement:

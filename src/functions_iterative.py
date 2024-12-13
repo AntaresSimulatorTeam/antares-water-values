@@ -224,6 +224,8 @@ def itr_control(
     list[float],
     list[Array2D],
     list[Array2D],
+    float,
+    float,
 ]:
     """
     Algorithm to evaluate Bellman values. Each iteration of the algorithm consists in computing optimal trajectories based on reward approximation then evaluating rewards for those trajectories and finally updating reward approximation and calculating Bellman values. The algorithm stops when a certain number of iterations is done or when the gap between the lower bound and the upper bound is small enough.
@@ -326,6 +328,8 @@ def itr_control(
         tot_t,
         controls_upper,
         traj,
+        V0,
+        upper_bound,
     )
 
 

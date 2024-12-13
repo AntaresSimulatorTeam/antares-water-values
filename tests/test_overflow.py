@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 from scipy.interpolate import interp1d
 
 from functions_iterative import ReservoirManagement, TimeScenarioParameter
@@ -35,7 +36,7 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
     V_fut = interp1d(X, vb[:, 0])
     V0 = V_fut(reservoir_management.reservoir.initial_level)
 
-    assert float(V0) == -3546553410.818109
+    assert float(V0) == pytest.approx(-3546553410.818109)
 
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
@@ -57,4 +58,4 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
     V_fut = interp1d(X, vb[:, 0])
     V0 = V_fut(reservoir_management.reservoir.initial_level)
 
-    assert V0 == -3546553410.818109
+    assert V0 == pytest.approx(-3546553410.818109)

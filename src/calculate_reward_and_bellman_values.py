@@ -3,7 +3,7 @@ from itertools import product
 import numpy as np
 from scipy.interpolate import interp1d
 
-from estimation import RewardApproximation
+from estimation import PieceWiseLinearInterpolator, RewardApproximation
 from read_antares_data import Reservoir, TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Array2D, Callable, Dict, Iterable, List, Optional
 
@@ -250,7 +250,7 @@ class BellmanValueCalculation:
         week: int,
         scenario: int,
         level_i: float,
-        V_fut: Callable,
+        V_fut: PieceWiseLinearInterpolator,
     ) -> tuple[float, float, float]:
         """
         Optimize control of reservoir during a week based on reward approximation and current Bellman values.
@@ -341,7 +341,7 @@ class BellmanValueCalculation:
     def calculate_VU(
         self,
         final_values: Array1D = np.zeros(1, dtype=np.float32),
-    ) -> Array2D:
+    ) -> Dict[int, PieceWiseLinearInterpolator]:
         """
         Calculate Bellman values for every week based on reward approximation
 
@@ -353,21 +353,20 @@ class BellmanValueCalculation:
 
         """
         X = self.stock_discretization
-        V = np.zeros(
-            (
-                len(X),
-                self.time_scenario_param.len_week + 1,
-                self.time_scenario_param.len_scenario,
+        V = {
+            week: np.zeros(
+                (len(X), self.time_scenario_param.len_scenario), dtype=np.float32
             )
-        )
+            for week in range(self.time_scenario_param.len_week + 1)
+        }
         if len(final_values) == len(X):
             for scenario in range(self.time_scenario_param.len_scenario):
-                V[:, self.time_scenario_param.len_week, scenario] = final_values
+                V[self.time_scenario_param.len_week][:, scenario] = final_values
 
         for week in range(self.time_scenario_param.len_week - 1, -1, -1):
 
             for scenario in range(self.time_scenario_param.len_scenario):
-                V_fut = interp1d(X, V[:, week + 1, scenario])
+                V_fut = PieceWiseLinearInterpolator(X, V[week + 1][:, scenario])
                 for i in range(len(X)):
 
                     Vu, _, _ = self.solve_weekly_problem_with_approximation(
@@ -377,14 +376,17 @@ class BellmanValueCalculation:
                         scenario=scenario,
                     )
 
-                    V[i, week, scenario] = Vu + V[i, week, scenario]
+                    V[week][i, scenario] = Vu + V[week][i, scenario]
 
-            V[:, week, :] = np.repeat(
-                np.mean(V[:, week, :], axis=1, keepdims=True),
+            V[week] = np.repeat(
+                np.mean(V[week], axis=1, keepdims=True),
                 self.time_scenario_param.len_scenario,
                 axis=1,
             )
-        return np.mean(V, axis=2)
+        return {
+            week: PieceWiseLinearInterpolator(X, np.mean(v, axis=1))
+            for (week, v) in V.items()
+        }
 
 
 class MultiStockBellmanValueCalculation:

@@ -8,6 +8,7 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     RewardApproximation,
 )
+from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
 from functions_iterative import compute_upper_bound
 from optimization import AntaresProblem, Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
@@ -140,8 +141,7 @@ def calculate_bellman_value_with_precalculated_reward(
 
     V = bellman_value_calculation.calculate_VU()
 
-    V_fut = interp1d(X, V[:, 0])
-    V0 = V_fut(reservoir_management.reservoir.initial_level)
+    V0 = V[0](reservoir_management.reservoir.initial_level)
 
     upper_bound, controls, current_itr = compute_upper_bound(
         bellman_value_calculation=bellman_value_calculation,
@@ -152,7 +152,7 @@ def calculate_bellman_value_with_precalculated_reward(
     gap = upper_bound + V0
     print(gap, upper_bound, -V0)
 
-    return (V, reward)
+    return (np.transpose([V[week].costs for week in range(param.len_week + 1)]), reward)
 
 
 def calculate_bellman_value_directly(
@@ -222,7 +222,10 @@ def calculate_bellman_value_directly(
         stock_discretization=X,
     )
 
-    V = np.zeros((len(X), param.len_week + 1), dtype=np.float32)
+    V = {
+        week: PieceWiseLinearInterpolator(X, np.zeros(len(X), dtype=np.float32))
+        for week in range(param.len_week + 1)
+    }
 
     for week in range(param.len_week - 1, -1, -1):
         for scenario in range(param.len_scenario):
@@ -234,15 +237,14 @@ def calculate_bellman_value_directly(
                     multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
                         [bellman_value_calculation]
                     ),
-                    V={reservoir_management.reservoir.area: V},
+                    V=UniVariateEstimator({reservoir_management.reservoir.area: V}),
                     level_i={reservoir_management.reservoir.area: X[i]},
                     find_optimal_basis=False,
                     take_into_account_z_and_y=True,
                 )
-                V[i, week] += -Vu / param.len_scenario
+                V[week].costs[i] += -Vu / param.len_scenario
 
-    V_fut = interp1d(X, V[:, 0])
-    V0 = V_fut(reservoir_management.reservoir.initial_level)
+    V0 = V[0](reservoir_management.reservoir.initial_level)
 
     upper_bound, controls, current_itr = compute_upper_bound(
         bellman_value_calculation=bellman_value_calculation,
@@ -253,4 +255,4 @@ def calculate_bellman_value_directly(
     gap = upper_bound + V0
     print(gap, upper_bound, -V0)
 
-    return V
+    return np.transpose([V[week].costs for week in range(param.len_week + 1)])

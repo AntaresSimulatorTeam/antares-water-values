@@ -13,7 +13,12 @@ from calculate_reward_and_bellman_values import (
     MultiStockBellmanValueCalculation,
     MultiStockManagement,
 )
-from estimation import LinearCostEstimator, LinearInterpolator
+from estimation import (
+    LinearCostEstimator,
+    LinearInterpolator,
+    PieceWiseLinearInterpolator,
+    UniVariateEstimator,
+)
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Array2D, Dict, List, npt
 
@@ -518,7 +523,7 @@ class AntaresProblem:
         )
 
     def set_constraints_initial_level_and_bellman_values(
-        self, level_i: float, X: Array1D, bellman_value: Array1D, area: str
+        self, level_i: float, bellman_value: PieceWiseLinearInterpolator, area: str
     ) -> List[pywraplp.Constraint]:
         self.stored_variables_and_constraints[area]["energy_constraint"].SetCoefficient(
             self.stored_variables_and_constraints[area]["reservoir_control"], -1
@@ -535,36 +540,34 @@ class AntaresProblem:
 
         bellman_constraint: List = []
 
+        X = bellman_value.inputs
+        cost = bellman_value.costs
+
         for j in range(len(X) - 1):
-            if (bellman_value[j + 1] < float("inf")) & (
-                bellman_value[j] < float("inf")
-            ):
+            if (cost[j + 1] < float("inf")) & (cost[j] < float("inf")):
                 cst = self.solver.LookupConstraint(
                     f"BellmanValueBetween{j}And{j+1}::area<{area}>::week<{self.week}>"
                 )
                 if cst:
                     cst.SetCoefficient(
                         self.stored_variables_and_constraints[area]["final_level"],
-                        -(-bellman_value[j + 1] + bellman_value[j]) / (X[j + 1] - X[j]),
+                        -(-cost[j + 1] + cost[j]) / (X[j + 1] - X[j]),
                     )
                     cst.SetLb(
-                        (-bellman_value[j + 1] + bellman_value[j])
-                        / (X[j + 1] - X[j])
-                        * (-X[j])
-                        - bellman_value[j]
+                        (-cost[j + 1] + cost[j]) / (X[j + 1] - X[j]) * (-X[j]) - cost[j]
                     )
                 else:
                     cst = self.solver.Add(
                         self.stored_variables_and_constraints[area][
                             "final_bellman_value"
                         ]
-                        >= (-bellman_value[j + 1] + bellman_value[j])
+                        >= (-cost[j + 1] + cost[j])
                         / (X[j + 1] - X[j])
                         * (
                             self.stored_variables_and_constraints[area]["final_level"]
                             - X[j]
                         )
-                        - bellman_value[j],
+                        - cost[j],
                         name=f"BellmanValueBetween{j}And{j+1}::area<{area}>::week<{self.week}>",
                     )
                 bellman_constraint.append(cst)
@@ -670,7 +673,7 @@ class AntaresProblem:
     def solve_problem_with_bellman_values(
         self,
         multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
-        V: Dict[str, Array2D],
+        V: UniVariateEstimator,
         level_i: Dict[str, float],
         take_into_account_z_and_y: bool,
         find_optimal_basis: bool = True,
@@ -683,10 +686,7 @@ class AntaresProblem:
             additional_constraint += (
                 self.set_constraints_initial_level_and_bellman_values(
                     level_i=level_i[area],
-                    X=multi_bellman_value_calculation.dict_reservoirs[
-                        area
-                    ].stock_discretization,
-                    bellman_value=V[area][:, self.week + 1],
+                    bellman_value=V[area, self.week + 1],
                     area=area,
                 )
             )
@@ -699,13 +699,11 @@ class AntaresProblem:
                         bellman_value_calculation = (
                             multi_bellman_value_calculation.dict_reservoirs[area]
                         )
-                        X = bellman_value_calculation.stock_discretization
-                        V_fut = interp1d(X, V[area][:, self.week + 1])
 
                         _, _, likely_control = (
                             bellman_value_calculation.solve_weekly_problem_with_approximation(
                                 level_i=level_i[area],
-                                V_fut=V_fut,
+                                V_fut=V[area, self.week + 1],
                                 week=self.week,
                                 scenario=self.scenario,
                             )

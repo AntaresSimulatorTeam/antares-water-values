@@ -3,6 +3,7 @@ import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
 from calculate_reward_and_bellman_values import MultiStockManagement
+from estimation import PieceWiseLinearInterpolator
 from functions_iterative import (
     BellmanValueCalculation,
     ReservoirManagement,
@@ -90,7 +91,11 @@ def test_basis_with_upper_bound() -> None:
         )
 
         list_models = {TimeScenarioIndex(0, 0): problem}
-        V = np.zeros((20, 2), dtype=np.float32)
+        X = np.linspace(0, reservoir.capacity, num=20)
+        V = {
+            week: PieceWiseLinearInterpolator(X, np.zeros(20, dtype=np.float32))
+            for week in range(2)
+        }
 
         bellman_value_calculation = BellmanValueCalculation(
             param=param,
@@ -102,7 +107,7 @@ def test_basis_with_upper_bound() -> None:
                 )
             },
             reservoir_management=reservoir_management,
-            stock_discretization=np.linspace(0, reservoir.capacity, num=20),
+            stock_discretization=X,
         )
 
         _, _, _, _ = problem.solve_with_predefined_controls(

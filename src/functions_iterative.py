@@ -10,6 +10,7 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     RewardApproximation,
 )
+from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
 from optimization import AntaresProblem, Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
@@ -17,7 +18,7 @@ from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
 
 def compute_x_multi_scenario(
     bellman_value_calculation: BellmanValueCalculation,
-    V: Array2D,
+    V: Dict[int, PieceWiseLinearInterpolator],
     itr: int,
 ) -> tuple[Array2D, Array2D]:
     """
@@ -61,7 +62,6 @@ def compute_x_multi_scenario(
 
     for week in range(param.len_week):
 
-        V_fut = interp1d(bellman_value_calculation.stock_discretization, V[:, week + 1])
         for trajectory, scenario in enumerate(
             np.random.permutation(range(param.len_scenario))
         ):
@@ -71,7 +71,7 @@ def compute_x_multi_scenario(
                     week=week,
                     scenario=scenario,
                     level_i=initial_x[week, trajectory],
-                    V_fut=V_fut,
+                    V_fut=V[week + 1],
                 )
             )
 
@@ -84,7 +84,7 @@ def compute_x_multi_scenario(
 def compute_upper_bound(
     bellman_value_calculation: BellmanValueCalculation,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    V: Array2D,
+    V: Dict[int, PieceWiseLinearInterpolator],
 ) -> tuple[float, Array2D, Array3D]:
     """
     Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
@@ -127,9 +127,11 @@ def compute_upper_bound(
                     multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
                         [bellman_value_calculation]
                     ),
-                    V={
-                        bellman_value_calculation.reservoir_management.reservoir.area: V
-                    },
+                    V=UniVariateEstimator(
+                        {
+                            bellman_value_calculation.reservoir_management.reservoir.area: V
+                        }
+                    ),
                     level_i=level_i,
                     take_into_account_z_and_y=(
                         week
@@ -301,8 +303,7 @@ def itr_control(
 
         V = bellman_value_calculation.calculate_VU()
 
-        V_fut = interp1d(X, V[:, 0])
-        V0 = V_fut(reservoir_management.reservoir.initial_level)
+        V0 = V[0](reservoir_management.reservoir.initial_level)
 
         upper_bound, controls, current_itr = compute_upper_bound(
             bellman_value_calculation=bellman_value_calculation,
@@ -318,7 +319,14 @@ def itr_control(
         i += 1
         fin = time()
         tot_t.append(fin - debut)
-    return (V, G, np.array(itr_tot), tot_t, controls_upper, traj)
+    return (
+        np.transpose([V[week].costs for week in range(param.len_week + 1)]),
+        G,
+        np.array(itr_tot),
+        tot_t,
+        controls_upper,
+        traj,
+    )
 
 
 def init_iterative_calculation(
@@ -330,7 +338,7 @@ def init_iterative_calculation(
 ) -> tuple[
     List,
     Dict[TimeScenarioIndex, AntaresProblem],
-    Array2D,
+    Dict[int, PieceWiseLinearInterpolator],
     List,
     List,
     List,
@@ -365,7 +373,10 @@ def init_iterative_calculation(
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 
-    V = np.zeros((len(X), len_week + 1), dtype=np.float32)
+    V = {
+        week: PieceWiseLinearInterpolator(X, np.zeros((len(X)), dtype=np.float32))
+        for week in range(len_week + 1)
+    }
 
     G: Dict[TimeScenarioIndex, RewardApproximation] = {}
     for week in range(len_week):

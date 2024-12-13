@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.interpolate import interp1d
 
 from hyperplane_decomposition import decompose_hyperplanes
 from hyperplane_interpolation import get_interpolation
@@ -6,7 +7,34 @@ from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Callable, Dict, List, Optional, Union
 
 
-class Estimator:
+class PieceWiseLinearInterpolator:
+
+    def __init__(
+        self,
+        controls: Array1D,
+        costs: Array1D,
+    ):
+        self.inputs = controls
+        self.costs = costs
+
+    def __call__(self, x: float) -> float:
+        fn = interp1d(self.inputs, self.costs)
+        return fn(x)
+
+
+class UniVariateEstimator:
+
+    def __init__(
+        self,
+        estimators: Dict[str, Dict[int, PieceWiseLinearInterpolator]],
+    ):
+        self.estimators = estimators
+
+    def __getitem__(self, key: tuple[str, int]) -> PieceWiseLinearInterpolator:
+        return self.estimators[key[0]][key[1]]
+
+
+class MultiVariateEstimator:
 
     def __init__(
         self, controls: Optional[np.ndarray], costs: np.ndarray, duals: np.ndarray
@@ -45,7 +73,7 @@ class Estimator:
         return NotImplemented
 
 
-class LinearInterpolator(Estimator):
+class LinearInterpolator(MultiVariateEstimator):
     """Class to enable use of n-dimensionnal linear interpolation"""
 
     def __init__(
@@ -439,7 +467,7 @@ class LinearDecomposer(LinearInterpolator):
         self.duals = np.round(self.duals, precision)
 
 
-class RewardApproximation(Estimator):
+class RewardApproximation(MultiVariateEstimator):
     """Class to store and update reward approximation for a given week and a given scenario"""
 
     def __init__(self, lb_control: float, ub_control: float, ub_reward: float) -> None:
@@ -598,7 +626,7 @@ class LinearCostEstimator:
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        estimators: Dict[TimeScenarioIndex, Estimator] = {}
+        estimators: Dict[TimeScenarioIndex, MultiVariateEstimator] = {}
         for week in range(param.len_week):
             for scenario in range(param.len_scenario):
                 r = LinearDecomposer(
@@ -611,7 +639,7 @@ class LinearCostEstimator:
         self.estimators = estimators
         self.param = param
 
-    def __getitem__(self, index: TimeScenarioIndex) -> Estimator:
+    def __getitem__(self, index: TimeScenarioIndex) -> MultiVariateEstimator:
         """
         Gets a LinearInterpolators
 

@@ -984,11 +984,11 @@ def select_controls_to_explore(
     ).T
     max_var = max_gen - max_pump
     proximity_to_other_control = np.zeros((n_weeks, n_scenarios, n_reservoirs))
-    n_inputs = costs_approx[0, 0].true_costs.shape[0]
+    n_inputs = costs_approx[TimeScenarioIndex(0, 0)].true_costs.shape[0]
     for week in range(n_weeks):
         for scen in range(n_scenarios):
             proximity_to_other_control[week, scen] = np.min(
-                costs_approx[week, scen].true_inputs
+                costs_approx[TimeScenarioIndex(week, scen)].true_inputs
                 - pseudo_opt_controls[week, scen][None, :],
                 axis=0,
             )
@@ -1191,7 +1191,9 @@ def get_opt_gap(
     pre_update_costs = np.array(
         [
             [
-                costs_approx[week, scenario](controls_list[week, scenario])
+                costs_approx[TimeScenarioIndex(week, scenario)](
+                    controls_list[week, scenario]
+                )
                 for scenario in range(param.len_scenario)
             ]
             for week in range(param.len_week)

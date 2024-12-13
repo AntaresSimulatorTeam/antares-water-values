@@ -14,7 +14,7 @@ from calculate_reward_and_bellman_values import (
     MultiStockManagement,
 )
 from estimation import LinearCostEstimator, LinearInterpolator
-from read_antares_data import TimeScenarioParameter
+from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Array2D, Dict, List, npt
 
 
@@ -1068,20 +1068,30 @@ class WeeklyBellmanProblem:
             [
                 solver.Add(
                     control_costs_per_scenario[s]
-                    >= self.week_costs_estimation[week, s].costs[ctrl_id]
+                    >= self.week_costs_estimation[TimeScenarioIndex(week, s)].costs[
+                        ctrl_id
+                    ]
                     + sum(
                         [
                             (
                                 x[r, s]
-                                - self.week_costs_estimation[week, s].inputs[ctrl_id][r]
+                                - self.week_costs_estimation[
+                                    TimeScenarioIndex(week, s)
+                                ].inputs[ctrl_id][r]
                             )
-                            * (self.week_costs_estimation[week, s].duals[ctrl_id, r])
+                            * (
+                                self.week_costs_estimation[
+                                    TimeScenarioIndex(week, s)
+                                ].duals[ctrl_id, r]
+                            )
                             for r, _ in enumerate(self.managements)
                         ]
                     ),
                     name=f"control_cost_lb_scenario_{s}_cont_{ctrl_id}",
                 )
-                for ctrl_id, _ in enumerate(self.week_costs_estimation[week, s].inputs)
+                for ctrl_id, _ in enumerate(
+                    self.week_costs_estimation[TimeScenarioIndex(week, s)].inputs
+                )
             ]
             for s in range(self.n_scenarios)
         ]
@@ -1404,9 +1414,9 @@ class WeeklyBellmanProblem:
                 )
                 for ctrl_id, (control, cost, duals) in enumerate(
                     zip(
-                        self.week_costs_estimation[week, s].inputs,
-                        self.week_costs_estimation[week, s].costs,
-                        self.week_costs_estimation[week, s].duals,
+                        self.week_costs_estimation[TimeScenarioIndex(week, s)].inputs,
+                        self.week_costs_estimation[TimeScenarioIndex(week, s)].costs,
+                        self.week_costs_estimation[TimeScenarioIndex(week, s)].duals,
                     )
                 )
             ]

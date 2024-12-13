@@ -2,7 +2,7 @@ import numpy as np
 
 from hyperplane_decomposition import decompose_hyperplanes
 from hyperplane_interpolation import get_interpolation
-from read_antares_data import TimeScenarioParameter
+from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Callable, Dict, List, Optional, Union
 
 
@@ -11,7 +11,13 @@ class Estimator:
     def __init__(
         self, controls: Optional[np.ndarray], costs: np.ndarray, duals: np.ndarray
     ):
-        raise NotImplemented
+        if controls is not None:
+            self.true_inputs = controls
+            self.inputs = controls
+        self.costs = costs.ravel()
+        self.duals = duals
+        self.true_costs = costs.ravel()
+        self.true_duals = duals
 
     def update(
         self,
@@ -44,7 +50,7 @@ class LinearInterpolator(Estimator):
 
     def __init__(
         self,
-        controls: np.ndarray,
+        controls: Optional[np.ndarray],
         costs: np.ndarray,
         duals: np.ndarray,
         interp_mode: Optional[bool] = False,
@@ -59,6 +65,7 @@ class LinearInterpolator(Estimator):
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
+        assert controls is not None
         self.inputs = controls
         self.costs = costs.ravel()
         self.duals = duals
@@ -591,22 +598,20 @@ class LinearCostEstimator:
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        self.estimators = np.array(
-            [
-                [
-                    LinearDecomposer(
-                        inputs=controls[week, scenario],
-                        costs=costs[week, scenario],
-                        duals=duals[week, scenario],
-                        correlations=correlations,
-                    )
-                    for scenario in range(param.len_scenario)
-                ]
-                for week in range(param.len_week)
-            ]
-        )
+        estimators: Dict[TimeScenarioIndex, Estimator] = {}
+        for week in range(param.len_week):
+            for scenario in range(param.len_scenario):
+                r = LinearDecomposer(
+                    inputs=controls[week, scenario],
+                    costs=costs[week, scenario],
+                    duals=duals[week, scenario],
+                    correlations=correlations,
+                )
+                estimators[TimeScenarioIndex(week, scenario)] = r
+        self.estimators = estimators
+        self.param = param
 
-    def __getitem__(self, ws: Union[tuple[int, int], int]) -> LinearInterpolator:
+    def __getitem__(self, index: TimeScenarioIndex) -> Estimator:
         """
         Gets a LinearInterpolators
 
@@ -618,7 +623,7 @@ class LinearCostEstimator:
         -------
             Array of ... or LinearInterpolator
         """
-        return self.estimators[ws]
+        return self.estimators[index]
 
     def update(
         self,
@@ -642,7 +647,7 @@ class LinearCostEstimator:
             for scenario, (controls, costs, duals) in enumerate(
                 zip(inputs_w, costs_w, duals_w)
             ):
-                self.estimators[week, scenario].update(
+                self.estimators[TimeScenarioIndex(week, scenario)].update(
                     controls=controls,
                     costs=costs,
                     duals=duals,
@@ -652,30 +657,30 @@ class LinearCostEstimator:
         self,
         tolerance: float = 1e-7,
     ) -> None:
-        for week_estimators in self.estimators:
-            for estimator in week_estimators:
-                estimator.count_redundant(tolerance=tolerance, remove=True)
+        for estimator in self.estimators.values():
+            estimator.count_redundant(tolerance=tolerance, remove=True)
 
     def remove_interpolations(
         self,
     ) -> None:
-        for week_estimators in self.estimators:
-            for estimator in week_estimators:
-                estimator.remove_interps()
+        for estimator in self.estimators.values():
+            estimator.remove_interps()
 
     def round(
         self,
         precision: int = 6,
     ) -> None:
-        for week_estimators in self.estimators:
-            for estimator in week_estimators:
-                estimator.round(precision)
+        for estimator in self.estimators.values():
+            estimator.round(precision)
 
     def to_julia_compatible_structure(self) -> Array1D:
         julia_structure = np.array(
             [
-                [estimator_scenario.to_julia_dict() for estimator_scenario in week]
-                for week in self.estimators
+                [
+                    self.estimators[TimeScenarioIndex(week, scenario)].to_julia_dict()
+                    for scenario in range(self.param.len_scenario)
+                ]
+                for week in range(self.param.len_week)
             ]
         )
         return julia_structure

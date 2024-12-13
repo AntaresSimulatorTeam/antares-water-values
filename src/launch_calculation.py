@@ -61,7 +61,7 @@ def calculate_bellman_values(
 
     elif method == "iterative":
         # or with iterative algorithm
-        vb, _, _, _, _, _ = itr_control(
+        vb, _, _, _, _, _, _, _ = itr_control(
             param=param,
             reservoir_management=reservoir_management,
             output_path=output_path,

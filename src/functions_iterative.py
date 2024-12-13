@@ -197,10 +197,9 @@ def calculate_reward(
             else:
                 basis_0 = Basis([], [])
 
-            G[TimeScenarioIndex(week, scenario)].update_reward_approximation(
-                slope_new_cut=-lamb[name_reservoir],
-                intercept_new_cut=-beta
-                + lamb[name_reservoir] * controls[week][scenario],
+            G[TimeScenarioIndex(week, scenario)].update(
+                duals=-lamb[name_reservoir],
+                costs=-beta + lamb[name_reservoir] * controls[week][scenario],
             )
 
             current_itr[week, scenario] = (itr, computation_time)

@@ -13,7 +13,7 @@ from calculate_reward_and_bellman_values import (
     MultiStockBellmanValueCalculation,
     MultiStockManagement,
 )
-from estimation import Estimator, LinearInterpolator
+from estimation import LinearCostEstimator, LinearInterpolator
 from read_antares_data import TimeScenarioParameter
 from type_definition import Array1D, Array2D, Dict, List, npt
 
@@ -919,7 +919,7 @@ class WeeklyBellmanProblem:
         self,
         param: TimeScenarioParameter,
         multi_stock_management: MultiStockManagement,
-        week_costs_estimation: Estimator,
+        week_costs_estimation: LinearCostEstimator,
         name_solver: str,
         divisor: dict[str, float] = {"euro": 1.0, "energy": 1.0},
     ) -> None:
@@ -1618,7 +1618,6 @@ class WeeklyBellmanProblem:
         # Precaution
         future_costs_estimation.round(precision=self.precision)
         future_costs_estimation.count_redundant(tolerance=0, remove=True)
-        # future_costs_estimation.remove_doublons(precision=precision)
 
         # Base variables and constraints
         controls, initial_levels, next_levels, overflows = self.get_control_dynamic(
@@ -1714,7 +1713,7 @@ class WeeklyBellmanProblem:
 def solve_for_optimal_trajectory(
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
-    costs_approx: Estimator,
+    costs_approx: LinearCostEstimator,
     future_costs_approx_l: list[LinearInterpolator],
     starting_pt: np.ndarray,
     name_solver: str,

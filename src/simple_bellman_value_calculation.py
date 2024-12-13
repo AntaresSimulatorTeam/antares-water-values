@@ -63,10 +63,9 @@ def calculate_complete_reward(
                 else:
                     basis_0 = Basis([], [])
 
-                reward[TimeScenarioIndex(week, scenario)].update_reward_approximation(
-                    slope_new_cut=-lamb[reservoir_management.reservoir.area],
-                    intercept_new_cut=-beta
-                    + lamb[reservoir_management.reservoir.area] * u,
+                reward[TimeScenarioIndex(week, scenario)].update(
+                    duals=-lamb[reservoir_management.reservoir.area],
+                    costs=-beta + lamb[reservoir_management.reservoir.area] * u,
                 )
 
     return reward

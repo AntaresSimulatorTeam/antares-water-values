@@ -19,7 +19,7 @@ from calculate_reward_and_bellman_values import (
     RewardApproximation,
 )
 from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
-from estimation import Estimator, LinearCostEstimator, LinearInterpolator
+from estimation import LinearCostEstimator, LinearInterpolator
 from optimization import (
     AntaresProblem,
     Basis,
@@ -280,7 +280,7 @@ def initialize_antares_problems(
 def get_bellman_values_from_costs(
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
-    costs_approx: Estimator,
+    costs_approx: LinearCostEstimator,
     future_costs_approx: LinearInterpolator,
     nSteps_bellman: int,
     name_solver: str,
@@ -390,7 +390,7 @@ def get_bellman_values_from_costs(
         # Updating the future estimator
         # costs_w - np.min(costs_w)
         future_costs_approx = LinearInterpolator(
-            inputs=levels, costs=costs_w - np.min(costs_w), duals=duals_w
+            controls=levels, costs=costs_w - np.min(costs_w), duals=duals_w
         )
         future_costs_approx_l.insert(0, future_costs_approx)
     return (
@@ -428,7 +428,7 @@ def initialize_future_costs(
         duals[i][i] = mult
         duals[i + 1][i] = -mult
     return LinearInterpolator(
-        inputs=inputs,
+        controls=inputs,
         costs=np.zeros(2 * n_reservoirs),
         duals=duals,
     )
@@ -949,7 +949,7 @@ def select_controls_to_explore(
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
     pseudo_opt_controls: np.ndarray,
-    costs_approx: Estimator,
+    costs_approx: LinearCostEstimator,
     rng: Optional[Any] = None,
 ) -> np.ndarray:
     """Takes in some optimal (for now) controls and returns a list of controls to explore,
@@ -1332,7 +1332,7 @@ def cutting_plane_method(
             max_gap=max_gap,
         )
 
-        costs_approx.update(inputs=controls_list, costs=costs, duals=slopes)
+        costs_approx.update(controls=controls_list, costs=costs, duals=slopes)
         costs_approx.remove_redundants(tolerance=1e-2)
 
         # If we want to look at the usage values evolution
@@ -1630,7 +1630,7 @@ def sddp_cutting_planes(
             )
             pbar.update(precision=opt_gap)
 
-        costs_approx.update(inputs=controls, costs=costs, duals=slopes)
+        costs_approx.update(controls=controls, costs=costs, duals=slopes)
         costs_approx.remove_redundants(tolerance=1e-2)
     usage_values, bellman_costs = jl_sddp.get_usage_values(
         param.len_week, param.len_scenario, jl_reservoirs, model, norms, 101

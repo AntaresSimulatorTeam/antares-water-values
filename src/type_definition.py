@@ -1,4 +1,4 @@
-from typing import Annotated, Callable, Dict, Iterable, List, Literal, Optional
+from typing import Annotated, Callable, Dict, Iterable, List, Literal, Optional, Union
 
 import numpy as np
 import numpy.typing as npt

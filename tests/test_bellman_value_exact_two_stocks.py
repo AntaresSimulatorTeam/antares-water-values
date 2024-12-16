@@ -9,6 +9,7 @@ from calculate_reward_and_bellman_values import (
     MultiStockManagement,
     RewardApproximation,
 )
+from estimation import BellmanValueEstimation
 from functions_iterative import (
     ReservoirManagement,
     TimeScenarioIndex,
@@ -18,7 +19,6 @@ from multi_stock_bellman_value_calculation import (
     AntaresProblem,
     Dict,
     calculate_bellman_value_multi_stock,
-    solve_problem_with_multivariate_bellman_values,
 )
 from read_antares_data import Reservoir
 
@@ -227,16 +227,15 @@ def test_solve_with_bellman_multi_stock() -> None:
         ),
     }
 
-    _, _, Vu, slope, xf, _ = solve_problem_with_multivariate_bellman_values(
+    _, _, Vu, slope, _, xf, _ = m.solve_problem_with_bellman_values(
         multi_bellman_value_calculation=multi_bellman_value_calculation,
-        V=V,
+        V=BellmanValueEstimation(V),
         level_i={
             area: multi_bellman_value_calculation.dict_reservoirs[
                 area
             ].reservoir_management.reservoir.initial_level
             for i, area in enumerate(m.range_reservoir)
         },
-        m=m,
         take_into_account_z_and_y=True,
     )
 

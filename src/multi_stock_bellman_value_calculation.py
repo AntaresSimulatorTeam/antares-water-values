@@ -19,13 +19,12 @@ from calculate_reward_and_bellman_values import (
     RewardApproximation,
 )
 from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
-from estimation import LinearCostEstimator, LinearInterpolator
+from estimation import BellmanValueEstimation, LinearCostEstimator, LinearInterpolator
 from optimization import (
     AntaresProblem,
     Basis,
     WeeklyBellmanProblem,
     solve_for_optimal_trajectory,
-    solve_problem_with_multivariate_bellman_values,
 )
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 
@@ -120,16 +119,15 @@ def calculate_bellman_value_multi_stock(
             for (
                 idx
             ) in multi_bellman_value_calculation.get_product_stock_discretization():
-                _, _, Vu, slope, _, _ = solve_problem_with_multivariate_bellman_values(
+                _, _, Vu, slope, _, _, _ = m.solve_problem_with_bellman_values(
                     multi_bellman_value_calculation=multi_bellman_value_calculation,
-                    V=V[week + 1],
+                    V=BellmanValueEstimation(V[week + 1]),
                     level_i={
                         area: multi_bellman_value_calculation.dict_reservoirs[
                             area
                         ].stock_discretization[idx[i]]
                         for i, area in enumerate(m.range_reservoir)
                     },
-                    m=m,
                     take_into_account_z_and_y=True,
                 )
                 V[week]["intercept"][idx] += Vu / param.len_scenario
@@ -190,14 +188,11 @@ def compute_upper_bound_multi_stock(
             print(f"{scenario} {week}", end="\r")
             m = list_models[TimeScenarioIndex(week, scenario)]
 
-            _, _, current_cost, _, level_i, _ = (
-                solve_problem_with_multivariate_bellman_values(
-                    multi_bellman_value_calculation=multi_bellman_value_calculation,
-                    V=V[week + 1],
-                    level_i=level_i,
-                    m=m,
-                    take_into_account_z_and_y=(week == param.len_week - 1),
-                )
+            _, _, current_cost, _, _, level_i, _ = m.solve_problem_with_bellman_values(
+                multi_bellman_value_calculation=multi_bellman_value_calculation,
+                V=BellmanValueEstimation(V[week + 1]),
+                level_i=level_i,
+                take_into_account_z_and_y=(week == param.len_week - 1),
             )
             cout += current_cost
 

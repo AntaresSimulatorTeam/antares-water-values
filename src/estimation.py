@@ -7,6 +7,12 @@ from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Callable, Dict, List, Optional, Union
 
 
+class Estimator:
+
+    def __init__(self) -> None:
+        raise NotImplemented
+
+
 class PieceWiseLinearInterpolator:
 
     def __init__(
@@ -22,16 +28,25 @@ class PieceWiseLinearInterpolator:
         return fn(x)
 
 
-class UniVariateEstimator:
+class UniVariateEstimator(Estimator):
 
     def __init__(
         self,
-        estimators: Dict[str, Dict[int, PieceWiseLinearInterpolator]],
+        estimators: Dict[str, PieceWiseLinearInterpolator],
     ):
         self.estimators = estimators
 
-    def __getitem__(self, key: tuple[str, int]) -> PieceWiseLinearInterpolator:
-        return self.estimators[key[0]][key[1]]
+    def __getitem__(self, key: str) -> PieceWiseLinearInterpolator:
+        return self.estimators[key]
+
+
+class BellmanValueEstimation(Estimator):
+
+    def __init__(self, value: Dict[str, Array1D]):
+        self.V = value
+
+    def __getitem__(self, key: str) -> Array1D:
+        return self.V[key]
 
 
 class MultiVariateEstimator:

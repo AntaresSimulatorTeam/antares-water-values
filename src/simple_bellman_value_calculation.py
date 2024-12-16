@@ -233,11 +233,13 @@ def calculate_bellman_value_directly(
             m = list_models[TimeScenarioIndex(week, scenario)]
 
             for i in range(len(X)):
-                _, _, Vu, _, _ = m.solve_problem_with_bellman_values(
+                _, _, Vu, _, _, _, _ = m.solve_problem_with_bellman_values(
                     multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
                         [bellman_value_calculation]
                     ),
-                    V=UniVariateEstimator({reservoir_management.reservoir.area: V}),
+                    V=UniVariateEstimator(
+                        {reservoir_management.reservoir.area: V[week + 1]}
+                    ),
                     level_i={reservoir_management.reservoir.area: X[i]},
                     find_optimal_basis=False,
                     take_into_account_z_and_y=True,

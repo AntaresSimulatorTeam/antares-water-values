@@ -145,7 +145,7 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
         param=param, multi_stock_management=reservoir_management
     )
 
-    X = np.linspace(0, reservoir.capacity, num=5)
+    X = np.linspace(0, reservoir.capacity, num=20)
 
     bellman_value_calculation = MultiStockBellmanValueCalculation(
         [
@@ -170,7 +170,9 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
     }
 
     problem.set_constraints_initial_level_and_bellman_values(
-        reservoir.initial_level, V[1], "area"
+        UniVariateEstimator({"area": V[1]}),
+        {"area": reservoir.initial_level},
+        bellman_value_calculation,
     )
 
     lp = problem.solver.ExportModelAsLpFormat(False)
@@ -178,13 +180,13 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
     with open("test_data/one_node/lp_problem.txt", "r") as file:
         assert lp == file.read()
 
-    _, _, cout, optimal_controls, _ = problem.solve_problem_with_bellman_values(
+    _, _, cout, _, optimal_controls, _, _ = problem.solve_problem_with_bellman_values(
         bellman_value_calculation,
-        UniVariateEstimator({"area": V}),
+        UniVariateEstimator({"area": V[1]}),
         {"area": reservoir.initial_level},
         True,
         False,
     )
 
-    assert cout == pytest.approx(5520019463.255913)
-    assert optimal_controls["area"] == pytest.approx(2072010.9999999995)
+    assert cout == pytest.approx(5046990806.783945)
+    assert optimal_controls["area"] == pytest.approx(1146984.0000000005)

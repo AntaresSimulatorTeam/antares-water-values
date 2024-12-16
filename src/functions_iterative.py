@@ -122,14 +122,16 @@ def compute_upper_bound(
             print(f"{scenario} {week}", end="\r")
             m = list_models[TimeScenarioIndex(week, scenario)]
 
-            computational_time, itr, current_cost, control, level_i = (
+            computational_time, itr, current_cost, _, control, level_i, _ = (
                 m.solve_problem_with_bellman_values(
                     multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
                         [bellman_value_calculation]
                     ),
                     V=UniVariateEstimator(
                         {
-                            bellman_value_calculation.reservoir_management.reservoir.area: V
+                            bellman_value_calculation.reservoir_management.reservoir.area: V[
+                                week + 1
+                            ]
                         }
                     ),
                     level_i=level_i,

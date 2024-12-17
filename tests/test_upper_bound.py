@@ -2,8 +2,11 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
-from calculate_reward_and_bellman_values import MultiStockManagement
-from estimation import PieceWiseLinearInterpolator
+from calculate_reward_and_bellman_values import (
+    MultiStockBellmanValueCalculation,
+    MultiStockManagement,
+)
+from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
 from functions_iterative import (
     BellmanValueCalculation,
     ReservoirManagement,
@@ -219,25 +222,37 @@ def test_upper_bound() -> None:
     assert len(problem.solver.variables()) == 3533
 
     upper_bound, controls, _ = compute_upper_bound(
-        bellman_value_calculation=bellman_value_calculation,
+        param=param,
+        multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+            [bellman_value_calculation]
+        ),
         list_models=list_models,
-        V=V,
+        V={
+            week: UniVariateEstimator({reservoir.area: V[week]})
+            for week in range(param.len_week + 1)
+        },
     )
 
     assert upper_bound == pytest.approx(380492940.000565)
-    assert controls[0, 0] == pytest.approx(4482011.0)
+    assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(4482011.0)
     assert len(problem.solver.constraints()) == 3555
     assert len(problem.solver.variables()) == 3533
 
     V[1].costs = np.linspace(-5e9, -3e9, num=20)
     upper_bound, controls, _ = compute_upper_bound(
-        bellman_value_calculation=bellman_value_calculation,
+        param=param,
+        multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+            [bellman_value_calculation]
+        ),
         list_models=list_models,
-        V=V,
+        V={
+            week: UniVariateEstimator({reservoir.area: V[week]})
+            for week in range(param.len_week + 1)
+        },
     )
 
     assert upper_bound == pytest.approx(5046992854.133574)
-    assert controls[0, 0] == pytest.approx(1146984.0)
+    assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(1146984.0)
     assert len(problem.solver.constraints()) == 3555
     assert len(problem.solver.variables()) == 3533
 
@@ -281,12 +296,18 @@ def test_upper_bound_with_bellman_values() -> None:
 
     V[1].costs = bellman_values[:, 1]
     upper_bound, controls, _ = compute_upper_bound(
-        bellman_value_calculation=bellman_value_calculation,
+        param=param,
+        multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+            [bellman_value_calculation]
+        ),
         list_models=list_models,
-        V=V,
+        V={
+            week: UniVariateEstimator({reservoir.area: V[week]})
+            for week in range(param.len_week + 1)
+        },
     )
 
-    assert controls[0, 0] == pytest.approx(133776)
+    assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(133776)
 
     control = 123864.0
     vb = V[1](reservoir.initial_level + reservoir.inflow[0, 0] - control)
@@ -352,25 +373,41 @@ def test_upper_bound_with_xpress() -> None:
         assert len(problem.solver.variables()) == 3533
 
         upper_bound, controls, _ = compute_upper_bound(
-            bellman_value_calculation=bellman_value_calculation,
+            param=param,
+            multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+                [bellman_value_calculation]
+            ),
             list_models=list_models,
-            V=V,
+            V={
+                week: UniVariateEstimator({reservoir.area: V[week]})
+                for week in range(param.len_week + 1)
+            },
         )
 
         assert upper_bound == pytest.approx(380492940.000565)
-        assert controls[0, 0] == pytest.approx(4482011.0)
+        assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(
+            4482011.0
+        )
         assert len(problem.solver.constraints()) == 3555
         assert len(problem.solver.variables()) == 3533
 
         V[1].costs = np.linspace(-5e9, -3e9, num=20)
         upper_bound, controls, _ = compute_upper_bound(
-            bellman_value_calculation=bellman_value_calculation,
+            param=param,
+            multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+                [bellman_value_calculation]
+            ),
             list_models=list_models,
-            V=V,
+            V={
+                week: UniVariateEstimator({reservoir.area: V[week]})
+                for week in range(param.len_week + 1)
+            },
         )
 
         assert upper_bound == pytest.approx(5046992854.133574)
-        assert controls[0, 0] == pytest.approx(1146984.0)
+        assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(
+            1146984.0
+        )
         assert len(problem.solver.constraints()) == 3555
         assert len(problem.solver.variables()) == 3533
     else:

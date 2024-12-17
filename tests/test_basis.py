@@ -3,7 +3,7 @@ import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
 from calculate_reward_and_bellman_values import MultiStockManagement
-from estimation import PieceWiseLinearInterpolator
+from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
 from functions_iterative import (
     BellmanValueCalculation,
     ReservoirManagement,
@@ -12,6 +12,7 @@ from functions_iterative import (
     TimeScenarioParameter,
     compute_upper_bound,
 )
+from multi_stock_bellman_value_calculation import MultiStockBellmanValueCalculation
 from optimization import AntaresProblem, Basis
 from read_antares_data import Reservoir
 
@@ -115,9 +116,15 @@ def test_basis_with_upper_bound() -> None:
         )
 
         upper_bound_1, _, _ = compute_upper_bound(
-            bellman_value_calculation=bellman_value_calculation,
+            param=param,
+            multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+                [bellman_value_calculation]
+            ),
             list_models=list_models,
-            V=V,
+            V={
+                week: UniVariateEstimator({reservoir.area: V[week]})
+                for week in range(param.len_week + 1)
+            },
         )
 
         _, _, _, _ = problem.solve_with_predefined_controls(
@@ -125,9 +132,15 @@ def test_basis_with_upper_bound() -> None:
         )
 
         upper_bound_2, _, itr_with_basis = compute_upper_bound(
-            bellman_value_calculation=bellman_value_calculation,
+            param=param,
+            multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+                [bellman_value_calculation]
+            ),
             list_models=list_models,
-            V=V,
+            V={
+                week: UniVariateEstimator({reservoir.area: V[week]})
+                for week in range(param.len_week + 1)
+            },
         )
         assert upper_bound_2 == pytest.approx(upper_bound_1)
         assert itr_with_basis[0, 0, 0] == 0

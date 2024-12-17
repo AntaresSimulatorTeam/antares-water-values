@@ -10,10 +10,14 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     RewardApproximation,
 )
-from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
+from estimation import (
+    BellmanValueEstimation,
+    PieceWiseLinearInterpolator,
+    UniVariateEstimator,
+)
 from optimization import AntaresProblem, Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
-from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
+from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List, Union
 
 
 def compute_x_multi_scenario(
@@ -82,10 +86,11 @@ def compute_x_multi_scenario(
 
 
 def compute_upper_bound(
-    bellman_value_calculation: BellmanValueCalculation,
+    param: TimeScenarioParameter,
+    multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    V: Dict[int, PieceWiseLinearInterpolator],
-) -> tuple[float, Array2D, Array3D]:
+    V: Dict[int, Union[UniVariateEstimator, BellmanValueEstimation]],
+) -> tuple[float, Dict[TimeScenarioIndex, Dict[str, float]], Array3D]:
     """
     Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
 
@@ -107,16 +112,18 @@ def compute_upper_bound(
     current_itr:Array2D :
         Time and simplex iterations used to solve the problem
     """
-    param = bellman_value_calculation.time_scenario_param
 
     current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
 
     cout = 0.0
-    controls = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
+    controls = {}
     for scenario in range(param.len_scenario):
 
         level_i = {
-            bellman_value_calculation.reservoir_management.reservoir.area: bellman_value_calculation.reservoir_management.reservoir.initial_level
+            area: multi_bellman_value_calculation.dict_reservoirs[
+                area
+            ].reservoir_management.reservoir.initial_level
+            for area in multi_bellman_value_calculation.dict_reservoirs.keys()
         }
         for week in range(param.len_week):
             print(f"{scenario} {week}", end="\r")
@@ -124,27 +131,14 @@ def compute_upper_bound(
 
             computational_time, itr, current_cost, _, control, level_i, _ = (
                 m.solve_problem_with_bellman_values(
-                    multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
-                        [bellman_value_calculation]
-                    ),
-                    V=UniVariateEstimator(
-                        {
-                            bellman_value_calculation.reservoir_management.reservoir.area: V[
-                                week + 1
-                            ]
-                        }
-                    ),
+                    multi_bellman_value_calculation=multi_bellman_value_calculation,
+                    V=V[week + 1],
                     level_i=level_i,
-                    take_into_account_z_and_y=(
-                        week
-                        == bellman_value_calculation.time_scenario_param.len_week - 1
-                    ),
+                    take_into_account_z_and_y=(week == param.len_week - 1),
                 )
             )
             cout += current_cost
-            controls[week, scenario] = control[
-                bellman_value_calculation.reservoir_management.reservoir.area
-            ]
+            controls[TimeScenarioIndex(week, scenario)] = control
             current_itr[week, scenario] = (itr, computational_time)
 
         upper_bound = cout / param.len_scenario
@@ -224,7 +218,7 @@ def itr_control(
     Dict[TimeScenarioIndex, RewardApproximation],
     Array4D,
     list[float],
-    list[Array2D],
+    list[Dict[TimeScenarioIndex, Dict[str, float]]],
     list[Array2D],
     float,
     float,
@@ -309,13 +303,21 @@ def itr_control(
 
         V0 = V[0](reservoir_management.reservoir.initial_level)
 
-        upper_bound, controls, current_itr = compute_upper_bound(
-            bellman_value_calculation=bellman_value_calculation,
+        upper_bound, ctr, current_itr = compute_upper_bound(
+            param=param,
+            multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+                [bellman_value_calculation]
+            ),
             list_models=list_models,
-            V=V,
+            V={
+                week: UniVariateEstimator(
+                    {reservoir_management.reservoir.area: V[week]}
+                )
+                for week in range(param.len_week + 1)
+            },
         )
         itr_tot.append(current_itr)
-        controls_upper.append(controls)
+        controls_upper.append(ctr)
 
         gap = upper_bound + V0
         print(gap, upper_bound, -V0)

@@ -191,12 +191,12 @@ def test_bellman_value_exact() -> None:
 
     vb = calculate_bellman_value_directly(
         param=param,
-        reservoir_management=reservoir_management,
+        multi_stock_management=MultiStockManagement([reservoir_management]),
         output_path="test_data/one_node",
-        X=X,
+        X={reservoir.area: X},
     )
 
-    assert vb == pytest.approx(expected_vb)
+    assert vb[reservoir.area] == pytest.approx(expected_vb)
 
 
 def test_bellman_value_exact_with_multi_stock() -> None:

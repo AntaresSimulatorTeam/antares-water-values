@@ -144,9 +144,15 @@ def calculate_bellman_value_with_precalculated_reward(
     V0 = V[0](reservoir_management.reservoir.initial_level)
 
     upper_bound, controls, current_itr = compute_upper_bound(
-        bellman_value_calculation=bellman_value_calculation,
+        param=param,
+        multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
+            [bellman_value_calculation]
+        ),
         list_models=list_models,
-        V=V,
+        V={
+            week: UniVariateEstimator({reservoir_management.reservoir.area: V[week]})
+            for week in range(param.len_week + 1)
+        },
     )
 
     gap = upper_bound + V0
@@ -157,11 +163,11 @@ def calculate_bellman_value_with_precalculated_reward(
 
 def calculate_bellman_value_directly(
     param: TimeScenarioParameter,
-    reservoir_management: ReservoirManagement,
+    multi_stock_management: MultiStockManagement,
     output_path: str,
-    X: Array1D,
+    X: Dict[str, Array1D],
     solver: str = "CLP",
-) -> Array2D:
+) -> Dict[str, Array2D]:
     """
     Algorithm to evaluate Bellman values directly.
 
@@ -200,31 +206,44 @@ def calculate_bellman_value_directly(
             )
             m.create_weekly_problem_itr(
                 param=param,
-                multi_stock_management=MultiStockManagement([reservoir_management]),
+                multi_stock_management=multi_stock_management,
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 
-    reward: Dict[TimeScenarioIndex, RewardApproximation] = {}
-    for week in range(param.len_week):
-        for scenario in range(param.len_scenario):
-            r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week]
-                * reservoir_management.reservoir.efficiency,
-                ub_control=reservoir_management.reservoir.max_generating[week],
-                ub_reward=0,
-            )
-            reward[TimeScenarioIndex(week, scenario)] = r
+    reward: Dict[str, Dict[TimeScenarioIndex, RewardApproximation]] = {}
+    for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
+        reward[area] = {}
+        for week in range(param.len_week):
+            for scenario in range(param.len_scenario):
+                r = RewardApproximation(
+                    lb_control=-reservoir_management.reservoir.max_pumping[week],
+                    ub_control=reservoir_management.reservoir.max_generating[week],
+                    ub_reward=0,
+                )
+                reward[area][TimeScenarioIndex(week, scenario)] = r
 
-    bellman_value_calculation = BellmanValueCalculation(
-        param=param,
-        reward=reward,
-        reservoir_management=reservoir_management,
-        stock_discretization=X,
+    bellman_value_calculation = []
+    for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
+        bellman_value_calculation.append(
+            BellmanValueCalculation(
+                param=param,
+                reward=reward[area],
+                reservoir_management=reservoir_management,
+                stock_discretization=X[area],
+            )
+        )
+    multi_bellman_value_calculation = MultiStockBellmanValueCalculation(
+        bellman_value_calculation
     )
 
     V = {
-        week: PieceWiseLinearInterpolator(X, np.zeros(len(X), dtype=np.float32))
-        for week in range(param.len_week + 1)
+        area: {
+            week: PieceWiseLinearInterpolator(
+                X[area], np.zeros(len(X[area]), dtype=np.float32)
+            )
+            for week in range(param.len_week + 1)
+        }
+        for area in multi_stock_management.dict_reservoirs.keys()
     }
 
     for week in range(param.len_week - 1, -1, -1):
@@ -232,29 +251,53 @@ def calculate_bellman_value_directly(
             print(f"{week} {scenario}", end="\r")
             m = list_models[TimeScenarioIndex(week, scenario)]
 
-            for i in range(len(X)):
+            for (
+                idx
+            ) in multi_bellman_value_calculation.get_product_stock_discretization():
                 _, _, Vu, _, _, _, _ = m.solve_problem_with_bellman_values(
-                    multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
-                        [bellman_value_calculation]
-                    ),
+                    multi_bellman_value_calculation=multi_bellman_value_calculation,
                     V=UniVariateEstimator(
-                        {reservoir_management.reservoir.area: V[week + 1]}
+                        {area: V[area][week + 1] for area in m.range_reservoir}
                     ),
-                    level_i={reservoir_management.reservoir.area: X[i]},
+                    level_i={
+                        area: multi_bellman_value_calculation.dict_reservoirs[
+                            area
+                        ].stock_discretization[idx[i]]
+                        for i, area in enumerate(m.range_reservoir)
+                    },
                     find_optimal_basis=False,
                     take_into_account_z_and_y=True,
                 )
-                V[week].costs[i] += -Vu / param.len_scenario
+                V[area][week].costs[idx] += -Vu / param.len_scenario
 
-    V0 = V[0](reservoir_management.reservoir.initial_level)
+    V0 = sum(
+        [
+            V[area][0](
+                multi_stock_management.dict_reservoirs[area].reservoir.initial_level
+            )
+            for area in multi_stock_management.dict_reservoirs.keys()
+        ]
+    )
 
     upper_bound, controls, current_itr = compute_upper_bound(
-        bellman_value_calculation=bellman_value_calculation,
+        param=param,
+        multi_bellman_value_calculation=multi_bellman_value_calculation,
         list_models=list_models,
-        V=V,
+        V={
+            week: UniVariateEstimator(
+                {
+                    area: V[area][week]
+                    for area in multi_stock_management.dict_reservoirs.keys()
+                }
+            )
+            for week in range(param.len_week + 1)
+        },
     )
 
     gap = upper_bound + V0
     print(gap, upper_bound, -V0)
 
-    return np.transpose([V[week].costs for week in range(param.len_week + 1)])
+    return {
+        area: np.transpose([V[area][week].costs for week in range(param.len_week + 1)])
+        for area in multi_stock_management.dict_reservoirs.keys()
+    }

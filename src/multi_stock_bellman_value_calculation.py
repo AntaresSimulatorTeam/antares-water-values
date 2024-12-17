@@ -20,6 +20,7 @@ from calculate_reward_and_bellman_values import (
 )
 from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
 from estimation import BellmanValueEstimation, LinearCostEstimator, LinearInterpolator
+from functions_iterative import compute_upper_bound
 from optimization import (
     AntaresProblem,
     Basis,
@@ -157,48 +158,14 @@ def calculate_bellman_value_multi_stock(
         ]
     )
 
-    upper_bound = compute_upper_bound_multi_stock(
+    upper_bound, _, _ = compute_upper_bound(
         param=param,
         multi_bellman_value_calculation=multi_bellman_value_calculation,
         list_models=list_models,
-        V=V,
+        V={week: BellmanValueEstimation(V[week]) for week in range(param.len_week + 1)},
     )
 
     return V, lower_bound, upper_bound
-
-
-def compute_upper_bound_multi_stock(
-    param: TimeScenarioParameter,
-    multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
-    list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    V: Dict[int, Dict[str, npt.NDArray[np.float32]]],
-) -> float:
-
-    cout = 0.0
-    for scenario in range(param.len_scenario):
-
-        level_i = {
-            area: multi_bellman_value_calculation.dict_reservoirs[
-                area
-            ].reservoir_management.reservoir.initial_level
-            for area in multi_bellman_value_calculation.dict_reservoirs.keys()
-        }
-
-        for week in range(param.len_week):
-            print(f"{scenario} {week}", end="\r")
-            m = list_models[TimeScenarioIndex(week, scenario)]
-
-            _, _, current_cost, _, _, level_i, _ = m.solve_problem_with_bellman_values(
-                multi_bellman_value_calculation=multi_bellman_value_calculation,
-                V=BellmanValueEstimation(V[week + 1]),
-                level_i=level_i,
-                take_into_account_z_and_y=(week == param.len_week - 1),
-            )
-            cout += current_cost
-
-    upper_bound = cout / param.len_scenario
-
-    return upper_bound
 
 
 def initialize_antares_problems(

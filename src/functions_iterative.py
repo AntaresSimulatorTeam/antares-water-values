@@ -6,17 +6,18 @@ from scipy.interpolate import interp1d
 from calculate_reward_and_bellman_values import (
     BellmanValueCalculation,
     MultiStockBellmanValueCalculation,
-    MultiStockManagement,
     ReservoirManagement,
     RewardApproximation,
 )
 from estimation import (
     BellmanValueEstimation,
+    Estimator,
     PieceWiseLinearInterpolator,
     UniVariateEstimator,
 )
 from optimization import AntaresProblem, Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
+from reservoir_management import MultiStockManagement
 from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List, Union
 
 
@@ -89,7 +90,7 @@ def compute_upper_bound(
     param: TimeScenarioParameter,
     multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    V: Dict[int, Union[UniVariateEstimator, BellmanValueEstimation]],
+    V: Dict[int, Estimator],
 ) -> tuple[float, Dict[TimeScenarioIndex, Dict[str, float]], Array3D]:
     """
     Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.

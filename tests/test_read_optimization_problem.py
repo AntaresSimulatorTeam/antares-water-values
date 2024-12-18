@@ -5,7 +5,6 @@ import pytest
 from calculate_reward_and_bellman_values import (
     BellmanValueCalculation,
     MultiStockBellmanValueCalculation,
-    MultiStockManagement,
     RewardApproximation,
 )
 from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
@@ -16,6 +15,7 @@ from functions_iterative import (
 )
 from optimization import AntaresProblem, Basis
 from read_antares_data import Reservoir
+from reservoir_management import MultiStockManagement
 
 
 def test_create_and_modify_weekly_problem() -> None:

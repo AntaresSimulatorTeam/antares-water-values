@@ -4,6 +4,8 @@ from scipy.interpolate import interp1d
 from hyperplane_decomposition import decompose_hyperplanes
 from hyperplane_interpolation import get_interpolation
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
+from reservoir_management import MultiStockManagement
+from stock_discretization import StockDiscretization
 from type_definition import Array1D, Callable, Dict, List, Optional, Union
 
 
@@ -11,6 +13,19 @@ class Estimator:
 
     def __init__(self) -> None:
         raise NotImplemented
+
+    def update(
+        self,
+        Vu: float,
+        slope: Dict[str, float],
+        n_scenario: int,
+        idx: int,
+        list_areas: List[str],
+    ) -> None:
+        raise NotImplemented
+
+    def get_value(self, x: Dict[str, float]) -> float:
+        return NotImplemented
 
 
 class PieceWiseLinearInterpolator:
@@ -39,14 +54,63 @@ class UniVariateEstimator(Estimator):
     def __getitem__(self, key: str) -> PieceWiseLinearInterpolator:
         return self.estimators[key]
 
+    def update(
+        self,
+        Vu: float,
+        slope: Dict[str, float],
+        n_scenario: int,
+        idx: int,
+        list_areas: List[str],
+    ) -> None:
+        for area in list_areas:
+            self.estimators[area].costs[idx] += -Vu / n_scenario
+
+    def get_value(self, x: Dict[str, float]) -> float:
+        return -sum([self.estimators[area](y) for area, y in x.items()])
+
 
 class BellmanValueEstimation(Estimator):
 
-    def __init__(self, value: Dict[str, Array1D]):
+    def __init__(
+        self, value: Dict[str, Array1D], stock_discretization: StockDiscretization
+    ):
         self.V = value
+        self.discretization = stock_discretization
 
     def __getitem__(self, key: str) -> Array1D:
         return self.V[key]
+
+    def update(
+        self,
+        Vu: float,
+        slope: Dict[str, float],
+        n_scenario: int,
+        idx: int,
+        list_areas: List[str],
+    ) -> None:
+        self.V["intercept"][idx] += Vu / n_scenario
+        for area in list_areas:
+            self.V[f"slope_{area}"][idx] += slope[area] / n_scenario
+
+    def get_value(self, x: Dict[str, float]) -> float:
+        return max(
+            [
+                sum(
+                    [
+                        self.V[f"slope_{area}"][idx]
+                        * (
+                            x[area]
+                            - self.discretization.list_discretization[area][idx[i]]
+                        )
+                        for i, area in enumerate(
+                            self.discretization.list_discretization.keys()
+                        )
+                    ]
+                )
+                + self.V["intercept"][idx]
+                for idx in self.discretization.get_product_stock_discretization()
+            ]
+        )
 
 
 class MultiVariateEstimator:

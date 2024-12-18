@@ -15,7 +15,6 @@ from tqdm import tqdm
 from calculate_reward_and_bellman_values import (
     BellmanValueCalculation,
     MultiStockBellmanValueCalculation,
-    MultiStockManagement,
     RewardApproximation,
 )
 from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
@@ -28,144 +27,13 @@ from optimization import (
     solve_for_optimal_trajectory,
 )
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
+from reservoir_management import MultiStockManagement
+from stock_discretization import StockDiscretization
 
 jl = juliacall.Main
 
 Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
 Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
-
-
-def calculate_bellman_value_multi_stock(
-    param: TimeScenarioParameter,
-    multi_stock_management: MultiStockManagement,
-    output_path: str,
-    X: Dict[str, Array1D],
-    name_solver: str = "CLP",
-) -> tuple[Dict[int, Dict[str, npt.NDArray[np.float32]]], float, float]:
-    """Function to calculate multivariate Bellman values
-
-    Args:
-        param (TimeScenarioParameter): Time-related parameters for the Antares study
-        multi_stock_management (MultiStockManagement): Stocks considered for Bellman values
-        output_path (str): Path to mps files describing optimization problems
-        X (Dict[str, Array1D]): Discretization of sotck levels for Bellman values for each reservoir
-        name_solver (str, optional): Solver to use with ortools. Defaults to "CLP".
-
-    Returns:
-        Dict[int, Dict[str, npt.NDArray[np.float32]]]: Bellman values for each week. Bellman values are described by a slope for each area and a intercept
-    """
-
-    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
-    for week in range(param.len_week):
-        for scenario in range(param.len_scenario):
-            m = AntaresProblem(
-                scenario=scenario,
-                week=week,
-                path=output_path,
-                itr=1,
-                name_solver=name_solver,
-                name_scenario=param.name_scenario[scenario],
-            )
-
-            m.create_weekly_problem_itr(
-                param=param,
-                multi_stock_management=multi_stock_management,
-            )
-            list_models[TimeScenarioIndex(week, scenario)] = m
-
-    reward: Dict[str, Dict[TimeScenarioIndex, RewardApproximation]] = {}
-    for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
-        reward[area] = {}
-        for week in range(param.len_week):
-            for scenario in range(param.len_scenario):
-                r = RewardApproximation(
-                    lb_control=-reservoir_management.reservoir.max_pumping[week],
-                    ub_control=reservoir_management.reservoir.max_generating[week],
-                    ub_reward=0,
-                )
-                reward[area][TimeScenarioIndex(week, scenario)] = r
-
-    bellman_value_calculation = []
-    for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
-        bellman_value_calculation.append(
-            BellmanValueCalculation(
-                param=param,
-                reward=reward[area],
-                reservoir_management=reservoir_management,
-                stock_discretization=X[area],
-            )
-        )
-    multi_bellman_value_calculation = MultiStockBellmanValueCalculation(
-        bellman_value_calculation
-    )
-
-    dim_bellman_value = tuple(len(x) for x in X.values())
-    V = {
-        week: {
-            name: np.zeros((dim_bellman_value), dtype=np.float32)
-            for name in ["intercept"]
-            + [
-                f"slope_{area}"
-                for area in multi_bellman_value_calculation.dict_reservoirs.keys()
-            ]
-        }
-        for week in range(param.len_week + 1)
-    }
-
-    for week in range(param.len_week - 1, -1, -1):
-        for scenario in range(param.len_scenario):
-            print(f"{week} {scenario}", end="\r")
-            m = list_models[TimeScenarioIndex(week, scenario)]
-
-            for (
-                idx
-            ) in multi_bellman_value_calculation.get_product_stock_discretization():
-                _, _, Vu, slope, _, _, _ = m.solve_problem_with_bellman_values(
-                    multi_bellman_value_calculation=multi_bellman_value_calculation,
-                    V=BellmanValueEstimation(V[week + 1]),
-                    level_i={
-                        area: multi_bellman_value_calculation.dict_reservoirs[
-                            area
-                        ].stock_discretization[idx[i]]
-                        for i, area in enumerate(m.range_reservoir)
-                    },
-                    take_into_account_z_and_y=True,
-                )
-                V[week]["intercept"][idx] += Vu / param.len_scenario
-                for area in m.range_reservoir:
-                    V[week][f"slope_{area}"][idx] += slope[area] / param.len_scenario
-
-    lower_bound = max(
-        [
-            sum(
-                [
-                    V[0][f"slope_{area}"][idx]
-                    * (
-                        multi_bellman_value_calculation.dict_reservoirs[
-                            area
-                        ].reservoir_management.reservoir.initial_level
-                        - multi_bellman_value_calculation.dict_reservoirs[
-                            area
-                        ].stock_discretization[idx[i]]
-                    )
-                    for i, area in enumerate(
-                        multi_bellman_value_calculation.dict_reservoirs.keys()
-                    )
-                ]
-            )
-            + V[0]["intercept"][idx]
-            for idx in multi_bellman_value_calculation.get_product_stock_discretization()
-        ]
-    )
-
-    upper_bound, _, _ = compute_upper_bound(
-        param=param,
-        multi_bellman_value_calculation=multi_bellman_value_calculation,
-        list_models=list_models,
-        V={week: BellmanValueEstimation(V[week]) for week in range(param.len_week + 1)},
-    )
-
-    return V, lower_bound, upper_bound
 
 
 def initialize_antares_problems(

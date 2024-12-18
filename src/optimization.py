@@ -6,22 +6,18 @@ from typing import Optional
 import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
-from scipy.interpolate import interp1d
 
-from calculate_reward_and_bellman_values import (
-    BellmanValueCalculation,
-    MultiStockBellmanValueCalculation,
-    MultiStockManagement,
-)
+from calculate_reward_and_bellman_values import MultiStockBellmanValueCalculation
 from estimation import (
     BellmanValueEstimation,
+    Estimator,
     LinearCostEstimator,
     LinearInterpolator,
-    PieceWiseLinearInterpolator,
     UniVariateEstimator,
 )
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
-from type_definition import Array1D, Array2D, Dict, List, Union, npt
+from reservoir_management import MultiStockManagement
+from type_definition import Array1D, Dict, List, Union
 
 
 class Basis:
@@ -469,7 +465,7 @@ class AntaresProblem:
 
     def set_constraints_initial_level_and_bellman_values(
         self,
-        V: Union[UniVariateEstimator, BellmanValueEstimation],
+        V: Estimator,
         all_level_i: Dict[str, float],
         multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
     ) -> List[pywraplp.Constraint]:
@@ -652,7 +648,7 @@ class AntaresProblem:
     def solve_problem_with_bellman_values(
         self,
         multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
-        V: Union[UniVariateEstimator, BellmanValueEstimation],
+        V: Estimator,
         level_i: Dict[str, float],
         take_into_account_z_and_y: bool,
         find_optimal_basis: bool = True,

@@ -2,10 +2,7 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
-from calculate_reward_and_bellman_values import (
-    MultiStockBellmanValueCalculation,
-    MultiStockManagement,
-)
+from calculate_reward_and_bellman_values import MultiStockBellmanValueCalculation
 from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
 from functions_iterative import (
     BellmanValueCalculation,
@@ -17,6 +14,7 @@ from functions_iterative import (
 )
 from optimization import AntaresProblem
 from read_antares_data import Reservoir
+from reservoir_management import MultiStockManagement
 
 bellman_values = np.array(
     [

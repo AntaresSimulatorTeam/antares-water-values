@@ -2,8 +2,8 @@ import numpy as np
 import plotly.graph_objects as go
 from tqdm import tqdm
 
-from multi_stock_bellman_value_calculation import MultiStockManagement
 from read_antares_data import TimeScenarioParameter
+from reservoir_management import MultiStockManagement
 from type_definition import Array1D, Dict
 
 

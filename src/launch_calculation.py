@@ -1,4 +1,7 @@
+import numpy as np
+
 from calculate_reward_and_bellman_values import ReservoirManagement
+from estimation import UniVariateEstimator
 from functions_iterative import itr_control
 from multi_stock_bellman_value_calculation import MultiStockManagement
 from read_antares_data import TimeScenarioParameter
@@ -41,13 +44,26 @@ def calculate_bellman_values(
 
     if method == "direct":
         # Compute Bellman values directly
-        vb = calculate_bellman_value_directly(
+        intermediate_vb, _, _ = calculate_bellman_value_directly(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
             output_path=output_path,
             X={reservoir_management.reservoir.area: X},
             solver=solver,
-        )[reservoir_management.reservoir.area]
+            univariate=True,
+        )
+
+        vb = np.transpose(
+            [
+                [
+                    intermediate_vb[week].get_value(
+                        {reservoir_management.reservoir.area: x}
+                    )
+                    for x in X
+                ]
+                for week in range(param.len_week + 1)
+            ]
+        )
 
     elif method == "precalculated":
         # or with precalulated reward

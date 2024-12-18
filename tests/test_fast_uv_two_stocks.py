@@ -1,10 +1,10 @@
 import numpy as np
 import pytest
 
-from calculate_reward_and_bellman_values import MultiStockManagement
 from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import generate_fast_uvs_v2
 from read_antares_data import Reservoir
+from reservoir_management import MultiStockManagement
 
 
 def test_fast_usage_values_multi_stock() -> None:

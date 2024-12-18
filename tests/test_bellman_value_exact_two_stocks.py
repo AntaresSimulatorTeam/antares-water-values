@@ -6,7 +6,6 @@ import pytest
 from calculate_reward_and_bellman_values import (
     BellmanValueCalculation,
     MultiStockBellmanValueCalculation,
-    MultiStockManagement,
     RewardApproximation,
 )
 from estimation import BellmanValueEstimation
@@ -15,12 +14,11 @@ from functions_iterative import (
     TimeScenarioIndex,
     TimeScenarioParameter,
 )
-from multi_stock_bellman_value_calculation import (
-    AntaresProblem,
-    Dict,
-    calculate_bellman_value_multi_stock,
-)
+from multi_stock_bellman_value_calculation import AntaresProblem, Dict
 from read_antares_data import Reservoir
+from reservoir_management import MultiStockManagement
+from simple_bellman_value_calculation import calculate_bellman_value_directly
+from stock_discretization import StockDiscretization
 
 
 def test_iterate_over_stock_discretization() -> None:
@@ -229,7 +227,7 @@ def test_solve_with_bellman_multi_stock() -> None:
 
     _, _, Vu, slope, _, xf, _ = m.solve_problem_with_bellman_values(
         multi_bellman_value_calculation=multi_bellman_value_calculation,
-        V=BellmanValueEstimation(V),
+        V=BellmanValueEstimation(V, StockDiscretization(X)),
         level_i={
             area: multi_bellman_value_calculation.dict_reservoirs[
                 area
@@ -279,16 +277,18 @@ def test_bellman_value_exact_calculation_multi_stock() -> None:
     x_1 = np.linspace(0, reservoir_1.capacity, num=5)
     x_2 = np.linspace(0, reservoir_2.capacity, num=5)
 
-    vb, lb, ub = calculate_bellman_value_multi_stock(
+    vb, lb, ub = calculate_bellman_value_directly(
         param=param,
         multi_stock_management=all_reservoirs,
         output_path="test_data/two_nodes",
         X={"area_1": x_1, "area_2": x_2},
+        univariate=False,
     )
     assert lb == pytest.approx(419088906.63159156)
 
     assert ub == pytest.approx(798837417.3288709)
 
+    assert type(vb[0]) is BellmanValueEstimation
     assert vb[0]["intercept"] == pytest.approx(
         np.array(
             [
@@ -376,3 +376,46 @@ def test_bellman_value_exact_calculation_multi_stock() -> None:
             ]
         )
     )
+
+
+def test_bellman_value_exact_calculation_univariate() -> None:
+
+    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+
+    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
+    reservoir_management_1 = ReservoirManagement(
+        reservoir=reservoir_1,
+        penalty_bottom_rule_curve=3000,
+        penalty_upper_rule_curve=3000,
+        penalty_final_level=3000,
+        force_final_level=True,
+    )
+
+    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
+    reservoir_management_2 = ReservoirManagement(
+        reservoir=reservoir_2,
+        penalty_bottom_rule_curve=3000,
+        penalty_upper_rule_curve=3000,
+        penalty_final_level=3000,
+        force_final_level=True,
+    )
+
+    all_reservoirs = MultiStockManagement(
+        [reservoir_management_1, reservoir_management_2]
+    )
+
+    x_1 = np.linspace(0, reservoir_1.capacity, num=5)
+    x_2 = np.linspace(0, reservoir_2.capacity, num=5)
+
+    try:
+
+        vb, lb, ub = calculate_bellman_value_directly(
+            param=param,
+            multi_stock_management=all_reservoirs,
+            output_path="test_data/two_nodes",
+            X={"area_1": x_1, "area_2": x_2},
+            univariate=True,
+        )
+        assert False
+    except AssertionError:
+        assert True

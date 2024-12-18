@@ -1,10 +1,10 @@
 import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
-from calculate_reward_and_bellman_values import MultiStockManagement
 from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from optimization import AntaresProblem, Basis
 from read_antares_data import Reservoir
+from reservoir_management import MultiStockManagement
 
 
 def test_create_weekly_problem_with_two_stocks() -> None:

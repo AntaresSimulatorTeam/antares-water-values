@@ -2,24 +2,16 @@ import os as os
 import pickle as pkl
 from itertools import product
 from pathlib import Path
-from typing import Annotated, Any, Dict, Literal, Optional
 
 import juliacall
 import numpy as np
-import numpy.typing as npt
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
 from scipy.stats import random_correlation
 from tqdm import tqdm
 
-from calculate_reward_and_bellman_values import (
-    BellmanValueCalculation,
-    MultiStockBellmanValueCalculation,
-    RewardApproximation,
-)
 from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
-from estimation import BellmanValueEstimation, LinearCostEstimator, LinearInterpolator
-from functions_iterative import compute_upper_bound
+from estimation import LinearCostEstimator, LinearInterpolator
 from optimization import (
     AntaresProblem,
     Basis,
@@ -28,12 +20,9 @@ from optimization import (
 )
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import MultiStockManagement
-from stock_discretization import StockDiscretization
+from type_definition import Dict, List, Optional
 
 jl = juliacall.Main
-
-Array1D = Annotated[npt.NDArray[np.float32], Literal["N"]]
-Array2D = Annotated[npt.NDArray[np.float32], Literal["N", "N"]]
 
 
 def initialize_antares_problems(
@@ -780,7 +769,7 @@ def select_controls_to_explore(
     multi_stock_management: MultiStockManagement,
     pseudo_opt_controls: np.ndarray,
     costs_approx: LinearCostEstimator,
-    rng: Optional[Any] = None,
+    rng: Optional[np.random.Generator] = None,
 ) -> np.ndarray:
     """Takes in some optimal (for now) controls and returns a list of controls to explore,
     in this version: only returns the optimal control
@@ -796,7 +785,7 @@ def select_controls_to_explore(
     """
     # This only a first version:
     if not rng:
-        rng = rng = np.random.default_rng(seed=12345)
+        rng = np.random.default_rng(seed=12345)
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     n_weeks, n_scenarios = param.len_week, param.len_scenario
     controls_to_explore = np.zeros((n_weeks, n_scenarios, 1, n_reservoirs))
@@ -1211,7 +1200,14 @@ def iter_bell_vals(
     correlations: Optional[np.ndarray] = None,
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
     verbose: bool = False,
-) -> tuple[Any, Any, Any, Any, Any, Any]:
+) -> tuple[
+    np.ndarray,
+    LinearCostEstimator,
+    List[LinearInterpolator],
+    np.ndarray,
+    np.ndarray,
+    Dict[str, np.ndarray],
+]:
     """
     In a similar fashion to Kelley's algorithm (1960), the idea is to approximate the (convex) cost function
     of the antares solver using cutting planes to minimize the system cost over a year by choosing the best control for stocks
@@ -1482,7 +1478,7 @@ def iter_bell_vals_v2(
     precision: float = 1e-2,
     maxiter: int = 2,
     verbose: bool = False,
-) -> Any:
+) -> tuple[np.ndarray, np.ndarray, LinearCostEstimator, list[np.ndarray]]:
 
     # Choose first controls to test
     controls_list = initialize_controls(

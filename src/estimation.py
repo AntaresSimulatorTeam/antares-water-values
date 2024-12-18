@@ -586,11 +586,14 @@ class RewardApproximation(MultiVariateEstimator):
         -------
         None
         """
-        try:
-            slope_new_cut = float(duals)
-            intercept_new_cut = float(costs)
-        except TypeError:
-            raise TypeError
+        if isinstance(duals, np.ndarray):
+            slope_new_cut = float(duals[0])
+        else:
+            slope_new_cut = duals
+        if isinstance(costs, np.ndarray):
+            intercept_new_cut = float(costs[0])
+        else:
+            intercept_new_cut = costs
         previous_reward = self.reward_function()
         new_cut: Callable = lambda x: slope_new_cut * x + intercept_new_cut
         new_reward: list[tuple[float, float]] = []

@@ -3,6 +3,7 @@ import pytest
 from scipy.interpolate import interp1d
 
 from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from multi_stock_bellman_value_calculation import MultiStockManagement
 from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
@@ -28,9 +29,9 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
     vb, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
-        reservoir_management=reservoir_management,
+        multi_stock_management=MultiStockManagement([reservoir_management]),
         output_path="test_data/one_node",
-        X=X,
+        len_bellman=len(X),
     )
 
     V_fut = interp1d(X, vb[:, 0])
@@ -50,9 +51,9 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
     vb, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
-        reservoir_management=reservoir_management,
+        multi_stock_management=MultiStockManagement([reservoir_management]),
         output_path="test_data/one_node",
-        X=X,
+        len_bellman=len(X),
     )
 
     V_fut = interp1d(X, vb[:, 0])

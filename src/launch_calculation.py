@@ -70,10 +70,10 @@ def calculate_bellman_values(
         vb, _ = calculate_bellman_value_with_precalculated_reward(
             len_controls=len_controls,
             param=param,
-            reservoir_management=reservoir_management,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
             output_path=output_path,
-            X=X,
-            solver=solver,
+            len_bellman=len(X),
+            name_solver=solver,
         )
 
     elif method == "iterative":

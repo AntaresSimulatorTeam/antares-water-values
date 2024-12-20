@@ -20,7 +20,7 @@ from optimization import (
 )
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import MultiStockManagement
-from type_definition import Dict, List, Optional
+from type_definition import Array1D, Dict, List, Optional
 
 jl = juliacall.Main
 
@@ -255,9 +255,8 @@ def initialize_future_costs(
 
 def get_week_scenario_costs(
     m: AntaresProblem,
-    multi_stock_management: MultiStockManagement,
-    controls_list: np.ndarray,
-) -> tuple[np.ndarray, np.ndarray, int, list[float]]:
+    controls_list: List[Dict[str, float]],
+) -> tuple[List[float], List[Dict[str, float]], int, list[float]]:
     """
     Takes a control and an initialized Antares problem setup and returns the objective and duals
     for every week and every Scenario
@@ -283,34 +282,22 @@ def get_week_scenario_costs(
     # Initialize Basis
     basis = Basis([], [])
 
-    n_reservoirs = len(multi_stock_management.dict_reservoirs)
-
     # Initialize costs
-    n_controls = controls_list.shape[0]
-    costs = np.zeros(n_controls)
-    slopes = np.zeros([n_controls, n_reservoirs])
-    for i, stock_management in enumerate(controls_list):
-
-        # Formatting control
-        control = {
-            area: cont
-            for area, cont in zip(
-                multi_stock_management.dict_reservoirs, stock_management
-            )
-        }
+    costs: List[float] = []
+    slopes: List[Dict[str, float]] = []
+    for u in controls_list:
 
         # Solving the problem
         control_cost, control_slopes, itr, time_taken = (
-            m.solve_with_predefined_controls(control=control, prev_basis=basis)
+            m.solve_with_predefined_controls(control=u, prev_basis=basis)
         )
         tot_iter += itr
         times.append(time_taken)
 
         # Save results
         # print(f"Imposing control {control} costs {costs}, with duals {control_slopes}")
-        costs[i] = control_cost
-        for j, area in enumerate(multi_stock_management.dict_reservoirs):
-            slopes[i][j] = control_slopes[area]
+        costs.append(control_cost)
+        slopes.append(control_slopes)
 
         # Save basis
         rstatus, cstatus = m.get_basis()
@@ -321,13 +308,16 @@ def get_week_scenario_costs(
 def get_all_costs(
     param: TimeScenarioParameter,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    multi_stock_management: MultiStockManagement,
-    controls_list: np.ndarray,
+    controls_list: Dict[int, List[Dict[str, float]]],
     saving_dir: Optional[str] = None,
     verbose: bool = False,
     already_init: bool = False,
     keep_intermed_res: bool = False,
-) -> tuple[np.ndarray, np.ndarray, list[list[float]]]:
+) -> tuple[
+    Dict[TimeScenarioIndex, List[float]],
+    Dict[TimeScenarioIndex, List[Dict[str, float]]],
+    list[list[float]],
+]:
     """
     Takes a problem and a discretization level and solves the Antares pb for every combination of stock for every week
 
@@ -350,16 +340,15 @@ def get_all_costs(
         filename = saving_dir + "/get_all_costs_run.pkl"
 
     # Initializing the n_weeks*n_scenarios*n_controls*n_stocks values to fill
-    shape_controls = list(controls_list.shape)
-    costs = np.zeros(shape_controls[:-1])
-    slopes = np.zeros(shape_controls)
+    costs: Dict[TimeScenarioIndex, List[float]] = {}
+    slopes: Dict[TimeScenarioIndex, List[Dict[str, float]]] = {}
     week_start = 0
     if already_init:
         with open(filename, "rb") as file:
             pre_costs, pre_slopes = pkl.load(file)
-        week_start = pre_costs.shape[0]
-        costs[:week_start] = pre_costs
-        slopes[:week_start] = pre_slopes
+        week_start = len(pre_costs) // param.len_scenario
+        costs = pre_costs
+        slopes = pre_slopes
     week_range = range(week_start, param.len_week)
     if verbose:
         week_range = tqdm(range(param.len_week), colour="blue", desc="Simulation")
@@ -371,21 +360,20 @@ def get_all_costs(
             try:
                 costs_ws, slopes_ws, iters, times_ws = get_week_scenario_costs(
                     m=m,
-                    multi_stock_management=multi_stock_management,
-                    controls_list=controls_list[week, scenario],
+                    controls_list=controls_list[week],
                 )
             except ValueError:
                 print(
-                    f"Failed at week {week}, the conditions on control were: {controls_list[week, scenario]}"
+                    f"Failed at week {week}, the conditions on control were: {controls_list[week]}"
                 )
                 raise ValueError
             tot_iter += iters
             times.append(times_ws)
-            costs[week, scenario] = costs_ws
-            slopes[week, scenario] = slopes_ws
+            costs[TimeScenarioIndex(week, scenario)] = costs_ws
+            slopes[TimeScenarioIndex(week, scenario)] = slopes_ws
         if keep_intermed_res:
             with open(filename, "wb") as file:
-                pkl.dump((costs[: week + 1], slopes[: week + 1]), file)
+                pkl.dump((costs, slopes), file)
     # print(f"Number of simplex pivot {tot_iter}")
     return costs, slopes, times
 
@@ -457,7 +445,6 @@ def Lget_costs(
                         pkl.dump((proto, m.stored_variables_and_constraints_ids), file)
                 costs_ws, slopes_ws, _, _ = get_week_scenario_costs(
                     m=m,
-                    multi_stock_management=multi_stock_management,
                     controls_list=controls_list[week, scenario],
                 )
                 costs[week, scenario] = costs_ws
@@ -475,7 +462,7 @@ def generate_controls(
     multi_stock_management: MultiStockManagement,
     controls_looked_up: str,
     xNsteps: int,
-) -> np.ndarray:
+) -> Dict[int, List[Dict[str, float]]]:
     """
     Generates an array of controls that will be precalculated for every week / scenario
 
@@ -492,8 +479,6 @@ def generate_controls(
         Bellman Values:Dict[int, Dict[str, npt.NDArray[np.float32]]]: Bellman values
     """
     # General parameters
-    weeks = param.len_week
-    n_scenarios = param.len_scenario
     n_res = len(multi_stock_management.dict_reservoirs)
 
     # Useful data on reservoirs
@@ -533,14 +518,6 @@ def generate_controls(
             ]
         )
 
-    elif controls_looked_up == "random":
-        rand_placements = np.random.uniform(0, 1, size=(xNsteps, n_res, weeks))
-        rand_placements = (
-            min_res[None, :, :] + (max_res - min_res)[None, :, :] * rand_placements
-        )
-
-    elif controls_looked_up == "oval":
-        ...
     elif controls_looked_up == "line+diagonal":
         controls = np.concatenate(
             [
@@ -570,19 +547,26 @@ def generate_controls(
             ]
         )
 
-    controls = np.broadcast_to(controls, shape=[n_scenarios] + list(controls.shape))
-    controls = np.moveaxis(
-        controls, -1, 0
-    )  # Should be of shape [n_weeks, n_scenarios, n_controls, n_reservoirs]
-    return controls
+    controls = np.moveaxis(controls, -1, 0)
+    dict_control = {
+        week: [
+            {
+                area: cont
+                for area, cont in zip(multi_stock_management.dict_reservoirs.keys(), u)
+            }
+            for u in controls[week]
+        ]
+        for week in range(param.len_week)
+    }
+    return dict_control
 
 
 def precalculated_method(
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
     output_path: str,
-    xNsteps: int = 12,
-    Nsteps_bellman: int = 12,
+    len_controls: int = 12,
+    len_bellman: int = 12,
     name_solver: str = "CLP",
     controls_looked_up: str = "grid",
     verbose: bool = False,
@@ -621,28 +605,57 @@ def precalculated_method(
         param=param,
         multi_stock_management=multi_stock_management,
         controls_looked_up=controls_looked_up,
-        xNsteps=xNsteps,
+        xNsteps=len_controls,
     )
 
-    print(
-        "=======================[      Precalculation of costs     ]======================="
-    )
     costs, slopes, times = get_all_costs(
         param=param,
         list_models=list_models,
-        multi_stock_management=multi_stock_management,
         controls_list=controls_list,
         verbose=verbose,
     )
 
     # Initialize cost functions
     costs_approx = LinearCostEstimator(
-        param=param, controls=controls_list, costs=costs, duals=slopes
+        param=param,
+        controls=np.array(
+            [
+                np.broadcast_to(
+                    [[x for x in u.values()] for u in controls_list[w]],
+                    [
+                        param.len_scenario,
+                        len(controls_list[w]),
+                        len(multi_stock_management.dict_reservoirs),
+                    ],
+                )
+                for w in range(param.len_week)
+            ]
+        ),
+        costs=np.array(
+            [
+                [
+                    np.array(costs[TimeScenarioIndex(w, s)])
+                    for s in range(param.len_scenario)
+                ]
+                for w in range(param.len_week)
+            ]
+        ),
+        duals=np.array(
+            [
+                [
+                    np.array(
+                        [
+                            [y for y in x.values()]
+                            for x in slopes[TimeScenarioIndex(w, s)]
+                        ]
+                    )
+                    for s in range(param.len_scenario)
+                ]
+                for w in range(param.len_week)
+            ]
+        ),
     )
 
-    print(
-        "=======================[       Dynamic  Programming       ]======================="
-    )
     starting_pt = np.array(
         [
             mng.reservoir.bottom_rule_curve[0] * 0.7
@@ -678,7 +691,7 @@ def precalculated_method(
             multi_stock_management=multi_stock_management,
             costs_approx=costs_approx,
             future_costs_approx=future_costs_approx,
-            nSteps_bellman=Nsteps_bellman,
+            nSteps_bellman=len_bellman,
             name_solver=name_solver,
             verbose=verbose,
             method=method,

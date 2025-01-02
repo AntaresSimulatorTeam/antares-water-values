@@ -15,6 +15,7 @@ from estimation import (
 from functions_iterative import compute_upper_bound
 from multi_stock_bellman_value_calculation import (
     generate_controls,
+    get_all_costs,
     initialize_antares_problems,
 )
 from optimization import AntaresProblem, Basis
@@ -28,9 +29,11 @@ def calculate_complete_reward(
     controls: Dict[int, List[Dict[str, float]]],
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
-    output_path: str,
+    costs: Dict[TimeScenarioIndex, List[float]],
+    slopes: Dict[TimeScenarioIndex, List[Dict[str, float]]],
 ) -> Dict[str, Dict[TimeScenarioIndex, RewardApproximation]]:
     reward: Dict[str, Dict[TimeScenarioIndex, RewardApproximation]] = {}
+
     for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
         reward[area] = {}
         for week in range(param.len_week):
@@ -40,35 +43,15 @@ def calculate_complete_reward(
                     ub_control=reservoir_management.reservoir.max_generating[week],
                     ub_reward=0,
                 )
-                reward[area][TimeScenarioIndex(week, scenario)] = r
 
-    for scenario in range(param.len_scenario):
-        basis_0 = Basis([], [])
-        for week in range(param.len_week):
-            print(f"{scenario} {week}", end="\r")
-            m = AntaresProblem(scenario=scenario, week=week, path=output_path, itr=1)
-            m.create_weekly_problem_itr(
-                param=param,
-                multi_stock_management=multi_stock_management,
-            )
-            for u in controls[week]:
-                beta, lamb, itr, computation_time = m.solve_with_predefined_controls(
-                    control=u,
-                    prev_basis=basis_0,
-                )
-                if m.store_basis:
-                    basis_0 = m.basis[-1]
-                else:
-                    basis_0 = Basis([], [])
-
-                for (
-                    area,
-                    reservoir_management,
-                ) in multi_stock_management.dict_reservoirs.items():
-                    reward[area][TimeScenarioIndex(week, scenario)].update(
-                        duals=-lamb[area],
-                        costs=-beta + lamb[area] * u[area],
+                for i, u in enumerate(controls[week]):
+                    r.update(
+                        duals=-slopes[TimeScenarioIndex(week, scenario)][i][area],
+                        costs=-costs[TimeScenarioIndex(week, scenario)][i]
+                        + slopes[TimeScenarioIndex(week, scenario)][i][area] * u[area],
                     )
+
+                reward[area][TimeScenarioIndex(week, scenario)] = r
 
     return reward
 
@@ -125,11 +108,16 @@ def calculate_bellman_value_with_precalculated_reward(
         xNsteps=len_controls,
     )
 
+    costs, slopes, _ = get_all_costs(
+        param=param, list_models=list_models, controls_list=controls
+    )
+
     reward = calculate_complete_reward(
         controls=controls,
         param=param,
         multi_stock_management=multi_stock_management,
-        output_path=output_path,
+        costs=costs,
+        slopes=slopes,
     )
 
     bellman_value_calculation = []

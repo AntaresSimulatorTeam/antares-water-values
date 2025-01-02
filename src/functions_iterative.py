@@ -1,28 +1,25 @@
 from time import time
 
 import numpy as np
-from scipy.interpolate import interp1d
 
 from calculate_reward_and_bellman_values import (
-    BellmanValueCalculation,
-    MultiStockBellmanValueCalculation,
     ReservoirManagement,
     RewardApproximation,
+    calculate_VU,
+    solve_weekly_problem_with_approximation,
 )
-from estimation import (
-    BellmanValueEstimation,
-    Estimator,
-    PieceWiseLinearInterpolator,
-    UniVariateEstimator,
-)
+from estimation import Estimator, PieceWiseLinearInterpolator, UniVariateEstimator
 from optimization import AntaresProblem, Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import MultiStockManagement
-from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List, Union
+from stock_discretization import StockDiscretization
+from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List, Optional
 
 
 def compute_x_multi_scenario(
-    bellman_value_calculation: BellmanValueCalculation,
+    param: TimeScenarioParameter,
+    reservoir_management: ReservoirManagement,
+    reward: Dict[TimeScenarioIndex, RewardApproximation],
     V: Dict[int, PieceWiseLinearInterpolator],
     itr: int,
 ) -> tuple[Array2D, Array2D]:
@@ -45,7 +42,6 @@ def compute_x_multi_scenario(
     controls:np.array :
         Controls associated to trajectories
     """
-    param = bellman_value_calculation.time_scenario_param
     initial_x = np.zeros(
         (
             param.len_week + 1,
@@ -53,9 +49,7 @@ def compute_x_multi_scenario(
         ),
         dtype=np.float32,
     )
-    initial_x[0] = (
-        bellman_value_calculation.reservoir_management.reservoir.initial_level
-    )
+    initial_x[0] = reservoir_management.reservoir.initial_level
     np.random.seed(19 * itr)
     controls = np.zeros(
         (
@@ -71,13 +65,14 @@ def compute_x_multi_scenario(
             np.random.permutation(range(param.len_scenario))
         ):
 
-            _, xf, u = (
-                bellman_value_calculation.solve_weekly_problem_with_approximation(
-                    week=week,
-                    scenario=scenario,
-                    level_i=initial_x[week, trajectory],
-                    V_fut=V[week + 1],
-                )
+            _, xf, u = solve_weekly_problem_with_approximation(
+                week=week,
+                scenario=scenario,
+                level_i=initial_x[week, trajectory],
+                V_fut=V[week + 1],
+                reservoir_management=reservoir_management,
+                param=param,
+                reward=reward[TimeScenarioIndex(week, scenario)],
             )
 
             initial_x[week + 1, trajectory] = xf
@@ -87,10 +82,14 @@ def compute_x_multi_scenario(
 
 
 def compute_upper_bound(
+    multi_stock_management: MultiStockManagement,
+    stock_discretization: StockDiscretization,
     param: TimeScenarioParameter,
-    multi_bellman_value_calculation: MultiStockBellmanValueCalculation,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     V: Dict[int, Estimator],
+    reward_approximation: Optional[
+        Dict[str, Dict[TimeScenarioIndex, RewardApproximation]]
+    ] = None,
 ) -> tuple[float, Dict[TimeScenarioIndex, Dict[str, float]], Array3D]:
     """
     Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
@@ -116,15 +115,31 @@ def compute_upper_bound(
 
     current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
 
+    if reward_approximation is None:
+        reward: Dict[str, Dict[TimeScenarioIndex, RewardApproximation]] = {}
+        for (
+            area,
+            reservoir_management,
+        ) in multi_stock_management.dict_reservoirs.items():
+            reward[area] = {}
+            for week in range(param.len_week):
+                for scenario in range(param.len_scenario):
+                    r = RewardApproximation(
+                        lb_control=-reservoir_management.reservoir.max_pumping[week],
+                        ub_control=reservoir_management.reservoir.max_generating[week],
+                        ub_reward=0,
+                    )
+                    reward[area][TimeScenarioIndex(week, scenario)] = r
+    else:
+        reward = reward_approximation
+
     cout = 0.0
     controls = {}
     for scenario in range(param.len_scenario):
 
         level_i = {
-            area: multi_bellman_value_calculation.dict_reservoirs[
-                area
-            ].reservoir_management.reservoir.initial_level
-            for area in multi_bellman_value_calculation.dict_reservoirs.keys()
+            area: multi_stock_management.dict_reservoirs[area].reservoir.initial_level
+            for area in multi_stock_management.dict_reservoirs.keys()
         }
         for week in range(param.len_week):
             print(f"{scenario} {week}", end="\r")
@@ -132,10 +147,13 @@ def compute_upper_bound(
 
             computational_time, itr, current_cost, _, control, level_i, _ = (
                 m.solve_problem_with_bellman_values(
-                    multi_bellman_value_calculation=multi_bellman_value_calculation,
                     V=V[week + 1],
                     level_i=level_i,
                     take_into_account_z_and_y=(week == param.len_week - 1),
+                    multi_stock_management=multi_stock_management,
+                    stock_discretization=stock_discretization,
+                    param=param,
+                    reward=reward,
                 )
             )
             cout += current_cost
@@ -267,7 +285,6 @@ def itr_control(
         itr_tot,
         controls_upper,
         traj,
-        bellman_value_calculation,
         gap,
         G,
     ) = init_iterative_calculation(param, reservoir_management, output_path, X, solver)
@@ -277,9 +294,7 @@ def itr_control(
         debut = time()
 
         initial_x, controls = compute_x_multi_scenario(
-            bellman_value_calculation=bellman_value_calculation,
-            V=V,
-            itr=i,
+            V=V, itr=i, param=param, reservoir_management=reservoir_management, reward=G
         )
         traj.append(np.array(initial_x))
 
@@ -293,22 +308,18 @@ def itr_control(
         )
         itr_tot.append(current_itr)
 
-        bellman_value_calculation = BellmanValueCalculation(
-            param=param,
-            reward=G,
-            reservoir_management=reservoir_management,
+        V = calculate_VU(
             stock_discretization=X,
+            time_scenario_param=param,
+            reservoir_management=reservoir_management,
+            reward=G,
         )
-
-        V = bellman_value_calculation.calculate_VU()
 
         V0 = V[0](reservoir_management.reservoir.initial_level)
 
         upper_bound, ctr, current_itr = compute_upper_bound(
             param=param,
-            multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
-                [bellman_value_calculation]
-            ),
+            multi_stock_management=MultiStockManagement([reservoir_management]),
             list_models=list_models,
             V={
                 week: UniVariateEstimator(
@@ -316,6 +327,10 @@ def itr_control(
                 )
                 for week in range(param.len_week + 1)
             },
+            stock_discretization=StockDiscretization(
+                {reservoir_management.reservoir.area: X}
+            ),
+            reward_approximation={reservoir_management.reservoir.area: G},
         )
         itr_tot.append(current_itr)
         controls_upper.append(ctr)
@@ -351,7 +366,6 @@ def init_iterative_calculation(
     List,
     List,
     List,
-    BellmanValueCalculation,
     float,
     Dict[TimeScenarioIndex, RewardApproximation],
 ]:
@@ -402,13 +416,6 @@ def init_iterative_calculation(
     controls_upper: List = []
     traj: List = []
 
-    bellman_value_calculation = BellmanValueCalculation(
-        param=param,
-        reward=G,
-        reservoir_management=reservoir_management,
-        stock_discretization=X,
-    )
-
     gap = 1e3
     fin = time()
     tot_t.append(fin - debut)
@@ -419,7 +426,6 @@ def init_iterative_calculation(
         itr_tot,
         controls_upper,
         traj,
-        bellman_value_calculation,
         gap,
         G,
     )

@@ -2,20 +2,12 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
-from calculate_reward_and_bellman_values import (
-    BellmanValueCalculation,
-    MultiStockBellmanValueCalculation,
-    RewardApproximation,
-)
 from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
-from functions_iterative import (
-    ReservoirManagement,
-    TimeScenarioIndex,
-    TimeScenarioParameter,
-)
+from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from optimization import AntaresProblem, Basis
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
+from stock_discretization import StockDiscretization
 
 
 def test_create_and_modify_weekly_problem() -> None:
@@ -147,23 +139,6 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
 
     X = np.linspace(0, reservoir.capacity, num=20)
 
-    bellman_value_calculation = MultiStockBellmanValueCalculation(
-        [
-            BellmanValueCalculation(
-                param=param,
-                reward={
-                    TimeScenarioIndex(0, 0): RewardApproximation(
-                        lb_control=-reservoir.max_pumping[0],
-                        ub_control=reservoir.max_generating[0],
-                        ub_reward=0,
-                    )
-                },
-                reservoir_management=res_management,
-                stock_discretization=X,
-            )
-        ]
-    )
-
     V = {
         week: PieceWiseLinearInterpolator(X, np.linspace(-5e9, -3e9, num=20))
         for week in range(2)
@@ -172,7 +147,7 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
     problem.set_constraints_initial_level_and_bellman_values(
         UniVariateEstimator({"area": V[1]}),
         {"area": reservoir.initial_level},
-        bellman_value_calculation,
+        StockDiscretization({"area": X}),
     )
 
     lp = problem.solver.ExportModelAsLpFormat(False)
@@ -181,7 +156,8 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
         assert lp == file.read()
 
     _, _, cout, _, optimal_controls, _, _ = problem.solve_problem_with_bellman_values(
-        bellman_value_calculation,
+        reservoir_management,
+        StockDiscretization({"area": X}),
         UniVariateEstimator({"area": V[1]}),
         {"area": reservoir.initial_level},
         True,

@@ -3,18 +3,9 @@ from itertools import product
 import numpy as np
 import pytest
 
-from calculate_reward_and_bellman_values import (
-    BellmanValueCalculation,
-    MultiStockBellmanValueCalculation,
-    RewardApproximation,
-)
 from estimation import BellmanValueEstimation
-from functions_iterative import (
-    ReservoirManagement,
-    TimeScenarioIndex,
-    TimeScenarioParameter,
-)
-from multi_stock_bellman_value_calculation import AntaresProblem, Dict
+from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from multi_stock_bellman_value_calculation import AntaresProblem
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from simple_bellman_value_calculation import calculate_bellman_value_directly
@@ -22,60 +13,22 @@ from stock_discretization import StockDiscretization
 
 
 def test_iterate_over_stock_discretization() -> None:
-    param = TimeScenarioParameter(len_week=1, len_scenario=1)
 
     reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
 
     reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
 
     x_1 = np.linspace(0, reservoir_1.capacity, num=20)
     x_2 = np.linspace(0, reservoir_2.capacity, num=20)
 
-    calculation_1 = BellmanValueCalculation(
-        param=param,
-        reward={
-            TimeScenarioIndex(0, 0): RewardApproximation(
-                lb_control=-reservoir_1.max_pumping[0],
-                ub_control=reservoir_1.max_generating[0],
-                ub_reward=0,
-            )
-        },
-        reservoir_management=reservoir_management_1,
-        stock_discretization=x_1,
-    )
-    calculation_2 = BellmanValueCalculation(
-        param=param,
-        reward={
-            TimeScenarioIndex(0, 0): RewardApproximation(
-                lb_control=-reservoir_2.max_pumping[0],
-                ub_control=reservoir_2.max_generating[0],
-                ub_reward=0,
-            )
-        },
-        reservoir_management=reservoir_management_2,
-        stock_discretization=x_2,
+    stock_discretization = StockDiscretization(
+        {reservoir_1.area: x_1, reservoir_2.area: x_2}
     )
 
-    all_reservoirs = MultiStockBellmanValueCalculation([calculation_1, calculation_2])
-
-    assert [idx for idx in all_reservoirs.get_product_stock_discretization()][0] == [
-        i for i in product([i for i in range(20)], [i for i in range(20)])
-    ][0]
-    assert [idx for idx in all_reservoirs.get_product_stock_discretization()] == [
+    assert [idx for idx in stock_discretization.get_product_stock_discretization()][
+        0
+    ] == [i for i in product([i for i in range(20)], [i for i in range(20)])][0]
+    assert [idx for idx in stock_discretization.get_product_stock_discretization()] == [
         i for i in product([i for i in range(20)], [i for i in range(20)])
     ]
 
@@ -119,32 +72,6 @@ def test_solve_with_bellman_multi_stock() -> None:
     m.create_weekly_problem_itr(
         param=param,
         multi_stock_management=multi_stock_management,
-    )
-
-    reward: Dict[str, Dict[TimeScenarioIndex, RewardApproximation]] = {}
-    for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
-        reward[area] = {}
-        for week in range(param.len_week):
-            for scenario in range(param.len_scenario):
-                r = RewardApproximation(
-                    lb_control=-reservoir_management.reservoir.max_pumping[week],
-                    ub_control=reservoir_management.reservoir.max_generating[week],
-                    ub_reward=0,
-                )
-                reward[area][TimeScenarioIndex(week, scenario)] = r
-
-    bellman_value_calculation = []
-    for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
-        bellman_value_calculation.append(
-            BellmanValueCalculation(
-                param=param,
-                reward=reward[area],
-                reservoir_management=reservoir_management,
-                stock_discretization=X[area],
-            )
-        )
-    multi_bellman_value_calculation = MultiStockBellmanValueCalculation(
-        bellman_value_calculation
     )
 
     V = {
@@ -226,12 +153,13 @@ def test_solve_with_bellman_multi_stock() -> None:
     }
 
     _, _, Vu, slope, _, xf, _ = m.solve_problem_with_bellman_values(
-        multi_bellman_value_calculation=multi_bellman_value_calculation,
+        multi_stock_management=multi_stock_management,
+        stock_discretization=StockDiscretization(
+            {area: X[area] for area in m.range_reservoir}
+        ),
         V=BellmanValueEstimation(V, StockDiscretization(X)),
         level_i={
-            area: multi_bellman_value_calculation.dict_reservoirs[
-                area
-            ].reservoir_management.reservoir.initial_level
+            area: multi_stock_management.dict_reservoirs[area].reservoir.initial_level
             for i, area in enumerate(m.range_reservoir)
         },
         take_into_account_z_and_y=True,

@@ -445,10 +445,18 @@ def Lget_costs(
                         pkl.dump((proto, m.stored_variables_and_constraints_ids), file)
                 costs_ws, slopes_ws, _, _ = get_week_scenario_costs(
                     m=m,
-                    controls_list=controls_list[week, scenario],
+                    controls_list=[
+                        {
+                            a: u[i]
+                            for i, a in enumerate(
+                                multi_stock_management.dict_reservoirs.keys()
+                            )
+                        }
+                        for u in controls_list[week, scenario]
+                    ],
                 )
                 costs[week, scenario] = costs_ws
-                slopes[week, scenario] = slopes_ws
+                slopes[week, scenario] = [[sl for sl in s.values()] for s in slopes_ws]
             with open(filename, "wb") as file:
                 pkl.dump(
                     (controls_list[: week + 1], costs[: week + 1], slopes[: week + 1]),

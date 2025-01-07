@@ -459,9 +459,11 @@ class LinearDecomposer(LinearInterpolator):
         self.remove_incoherence()
 
     def __call__(self, x: np.ndarray) -> float:
+        if len(x.shape) > 1:
+            x = x[0]
         return np.maximum(
             self.lower_bound(x), np.sum([layer(x) for layer in self.layers], axis=0)
-        )[0]
+        )
 
     def remove_inconsistence(self, tolerance: float = 1) -> None:
         inputs, costs = self.lower_bound.inputs, self.lower_bound.costs

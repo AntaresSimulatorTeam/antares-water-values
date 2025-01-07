@@ -35,7 +35,7 @@ def test_bellman_value_iterative_method() -> None:
 
     (
         bell_costs,
-        _,
+        cost_approx,
         _,
         levels,
         opt_trajectory,
@@ -60,6 +60,18 @@ def test_bellman_value_iterative_method() -> None:
         correlations=None,
         divisor={"euro": 1e8, "energy": 1e4},
         verbose=False,
+    )
+
+    assert cost_approx.estimators[TimeScenarioIndex(0, 0)].inputs == pytest.approx(
+        np.array(
+            [
+                [0.0, -322182.0],
+                [306936.0, 419664.0],
+                [-0.0, 419664.0],
+                [73173.435482, 419663.750788],
+                [73173.435482, 419663.750788],
+            ]
+        )
     )
 
     assert bell_costs == pytest.approx(

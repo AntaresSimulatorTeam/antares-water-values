@@ -4,7 +4,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from read_antares_data import Reservoir
-from type_definition import Array1D, Callable, List, Optional
+from type_definition import AreaIndex, Array1D, Callable, Dict, List, Optional
 
 
 class ReservoirManagement:
@@ -102,9 +102,10 @@ class MultiStockManagement:
         Args:
             list_reservoirs (List[ReservoirManagement]): List of reservoir management
         """
-        self.dict_reservoirs = {}
+        self.dict_reservoirs: Dict[AreaIndex, ReservoirManagement] = {}
         for res in list_reservoirs:
-            self.dict_reservoirs[res.reservoir.area] = res
+            self.dict_reservoirs[AreaIndex(res.reservoir.area)] = res
+        self.areas: List[AreaIndex] = [a for a in self.dict_reservoirs.keys()]
 
     def get_disc(
         self,

@@ -30,7 +30,7 @@ def calculate_complete_reward(
     reward: Dict[str, Dict[TimeScenarioIndex, RewardApproximation]] = {}
 
     for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
-        reward[area] = {}
+        reward[area.area] = {}
         for week in range(param.len_week):
             for scenario in range(param.len_scenario):
                 r = RewardApproximation(
@@ -41,12 +41,13 @@ def calculate_complete_reward(
 
                 for i, u in enumerate(controls[week]):
                     r.update(
-                        duals=-slopes[TimeScenarioIndex(week, scenario)][i][area],
+                        duals=-slopes[TimeScenarioIndex(week, scenario)][i][area.area],
                         costs=-costs[TimeScenarioIndex(week, scenario)][i]
-                        + slopes[TimeScenarioIndex(week, scenario)][i][area] * u[area],
+                        + slopes[TimeScenarioIndex(week, scenario)][i][area.area]
+                        * u[area.area],
                     )
 
-                reward[area][TimeScenarioIndex(week, scenario)] = r
+                reward[area.area][TimeScenarioIndex(week, scenario)] = r
 
     return reward
 
@@ -122,7 +123,7 @@ def calculate_bellman_value_with_precalculated_reward(
             stock_discretization=X,
             time_scenario_param=param,
             reservoir_management=reservoir_management,
-            reward=reward[area],
+            reward=reward[area.area],
         )
 
     V0 = V[0](reservoir_management.reservoir.initial_level)
@@ -205,10 +206,10 @@ def calculate_bellman_value_directly(
         V = {
             week: UniVariateEstimator(
                 {
-                    area: PieceWiseLinearInterpolator(
-                        X[area], np.zeros(len(X[area]), dtype=np.float32)
+                    area.area: PieceWiseLinearInterpolator(
+                        X[area.area], np.zeros(len(X[area.area]), dtype=np.float32)
                     )
-                    for area in multi_stock_management.dict_reservoirs.keys()
+                    for area in multi_stock_management.areas
                 }
             )
             for week in range(param.len_week + 1)
@@ -239,7 +240,9 @@ def calculate_bellman_value_directly(
                 _, _, Vu, slope, _, _, _ = m.solve_problem_with_bellman_values(
                     V=V[week + 1],
                     level_i={
-                        area: stock_discretization.list_discretization[area][idx[i]]
+                        area.area: stock_discretization.list_discretization[area.area][
+                            idx[i]
+                        ]
                         for i, area in enumerate(m.range_reservoir)
                     },
                     find_optimal_basis=False,
@@ -252,13 +255,15 @@ def calculate_bellman_value_directly(
                     slope,
                     param.len_scenario,
                     idx,
-                    list(multi_stock_management.dict_reservoirs.keys()),
+                    list([a.area for a in multi_stock_management.areas]),
                 )
 
     V0 = V[0].get_value(
         {
-            area: multi_stock_management.dict_reservoirs[area].reservoir.initial_level
-            for area in multi_stock_management.dict_reservoirs.keys()
+            area.area: multi_stock_management.dict_reservoirs[
+                area
+            ].reservoir.initial_level
+            for area in multi_stock_management.areas
         }
     )
 

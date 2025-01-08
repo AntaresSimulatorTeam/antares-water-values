@@ -155,11 +155,13 @@ def test_solve_with_bellman_multi_stock() -> None:
     _, _, Vu, slope, _, xf, _ = m.solve_problem_with_bellman_values(
         multi_stock_management=multi_stock_management,
         stock_discretization=StockDiscretization(
-            {area: X[area] for area in m.range_reservoir}
+            {area.area: X[area.area] for area in m.range_reservoir}
         ),
         V=BellmanValueEstimation(V, StockDiscretization(X)),
         level_i={
-            area: multi_stock_management.dict_reservoirs[area].reservoir.initial_level
+            area.area: multi_stock_management.dict_reservoirs[
+                area
+            ].reservoir.initial_level
             for i, area in enumerate(m.range_reservoir)
         },
         take_into_account_z_and_y=True,

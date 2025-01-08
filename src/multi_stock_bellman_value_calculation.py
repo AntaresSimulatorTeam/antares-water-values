@@ -447,10 +447,8 @@ def Lget_costs(
                     m=m,
                     controls_list=[
                         {
-                            a: u[i]
-                            for i, a in enumerate(
-                                multi_stock_management.dict_reservoirs.keys()
-                            )
+                            a.area: u[i]
+                            for i, a in enumerate(multi_stock_management.areas)
                         }
                         for u in controls_list[week, scenario]
                     ],
@@ -558,10 +556,7 @@ def generate_controls(
     controls = np.moveaxis(controls, -1, 0)
     dict_control = {
         week: [
-            {
-                area: cont
-                for area, cont in zip(multi_stock_management.dict_reservoirs.keys(), u)
-            }
+            {area.area: cont for area, cont in zip(multi_stock_management.areas, u)}
             for u in controls[week]
         ]
         for week in range(param.len_week)
@@ -920,8 +915,8 @@ def compute_usage_values_from_costs(
 
     # Initialize usage values
     usage_values = {
-        area: np.zeros((n_weeks, discretization))
-        for area in multi_stock_management.dict_reservoirs.keys()
+        area.area: np.zeros((n_weeks, discretization))
+        for area in multi_stock_management.areas
     }
     base_levels = np.mean(optimal_trajectory, axis=2)[:n_weeks]
 
@@ -999,9 +994,7 @@ def compute_usage_values_from_costs(
                 except ValueError:
                     levels_dict = {
                         area: levels[i]
-                        for i, area in enumerate(
-                            multi_stock_management.dict_reservoirs.keys()
-                        )
+                        for i, area in enumerate(multi_stock_management.areas)
                     }
                     future_costs_approx = future_costs_approx_l[week]
                     print(
@@ -1015,7 +1008,7 @@ def compute_usage_values_from_costs(
                     )
                     raise ValueError
                 destination_levels[week, j, i] = np.mean(level, axis=1)[i]
-                usage_values[area][week, j] = -dual_vals[i]
+                usage_values[area.area][week, j] = -dual_vals[i]
     return usage_values, levels_imposed
 
 
@@ -1544,7 +1537,7 @@ def iter_bell_vals_v2(
 def generate_fast_uvs_v2(
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
-    mrg_prices: dict,
+    mrg_prices: Dict[str, Dict[str, float]],
 ) -> np.ndarray:
     disc = 101
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
@@ -1554,8 +1547,8 @@ def generate_fast_uvs_v2(
         res = mng.reservoir
         alpha = 1 + 4 * (area == "es")
         print(
-            mrg_prices[area]["mean"] - alpha * mrg_prices[area]["std"],
-            mrg_prices[area]["mean"] + alpha * mrg_prices[area]["std"],
+            mrg_prices[area.area]["mean"] - alpha * mrg_prices[area.area]["std"],
+            mrg_prices[area.area]["mean"] + alpha * mrg_prices[area.area]["std"],
         )
         low_curve = res.bottom_rule_curve[1:] / res.capacity
         high_curve = res.upper_rule_curve[1:] / res.capacity
@@ -1570,8 +1563,8 @@ def generate_fast_uvs_v2(
             uvs[week, :low, i] = 100
             uvs[week, high:, i] = 0
             uvs[week, low:high, i] = np.linspace(
-                mrg_prices[area]["mean"] - alpha * mrg_prices[area]["std"],
-                mrg_prices[area]["mean"] + alpha * mrg_prices[area]["std"],
+                mrg_prices[area.area]["mean"] - alpha * mrg_prices[area.area]["std"],
+                mrg_prices[area.area]["mean"] + alpha * mrg_prices[area.area]["std"],
                 dist,
             )[::-1]
     return uvs

@@ -214,7 +214,7 @@ class AntaresProblem:
         """
         self.stored_variables_and_constraints = {}
         self.stored_variables_and_constraints_ids = {}
-        self.range_reservoir = multi_stock_management.dict_reservoirs.keys()
+        self.range_reservoir = multi_stock_management.areas
         for area in multi_stock_management.dict_reservoirs:
             reservoir_management = multi_stock_management.dict_reservoirs[area]
 
@@ -355,34 +355,37 @@ class AntaresProblem:
                     name=f"BellmanValue::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
                 )  # Auxiliar variable to introduce the piecewise representation of the future cost
 
-            self.stored_variables_and_constraints[area] = {
+            self.stored_variables_and_constraints[area.area] = {
                 "energy_constraint": cst[binding_id[0]],
                 "reservoir_control": U,
                 "initial_level": x_s,
                 "final_level": x_s_1,
             }
-            self.stored_variables_and_constraints_ids[area] = {
+            self.stored_variables_and_constraints_ids[area.area] = {
                 "energy_constraint": cst[binding_id[0]].index(),
                 "reservoir_control": U.index(),
                 "initial_level": x_s.index(),
                 "final_level": x_s_1.index(),
             }
             if direct_bellman_calc:
-                self.stored_variables_and_constraints[area]["penalties"] = y
-                self.stored_variables_and_constraints[area]["final_bellman_value"] = z
-                self.stored_variables_and_constraints_ids[area]["penalties"] = y.index()
-                self.stored_variables_and_constraints_ids[area][
+                self.stored_variables_and_constraints[area.area]["penalties"] = y
+                self.stored_variables_and_constraints[area.area][
+                    "final_bellman_value"
+                ] = z
+                self.stored_variables_and_constraints_ids[area.area][
+                    "penalties"
+                ] = y.index()
+                self.stored_variables_and_constraints_ids[area.area][
                     "final_bellman_value"
                 ] = z.index()
 
     def reset_from_loaded_version(
         self, multi_stock_management: MultiStockManagement
     ) -> None:
-        assert (
-            multi_stock_management.dict_reservoirs.keys()
-            == self.stored_variables_and_constraints_ids.keys()
-        ), "Loaded Proto and current reservoir management should have same reservoirs"
-        self.range_reservoir = multi_stock_management.dict_reservoirs.keys()
+        assert [a.area for a in multi_stock_management.areas] == [
+            a for a in self.stored_variables_and_constraints_ids.keys()
+        ], "Loaded Proto and current reservoir management should have same reservoirs"
+        self.range_reservoir = multi_stock_management.areas
         self.stored_variables_and_constraints = {}
         constraints = self.solver.constraints()
         variables = self.solver.variables()
@@ -448,7 +451,7 @@ class AntaresProblem:
                 self.load_basis(basis)
 
         for area in self.range_reservoir:
-            self.set_constraints_predefined_control(control[area], area)
+            self.set_constraints_predefined_control(control[area.area], area.area)
         try:
             beta, lamb, _, _, _, itr, computing_time = self.solve_problem(
                 direct_bellman_mode=False
@@ -474,19 +477,25 @@ class AntaresProblem:
 
         for area in self.range_reservoir:
 
-            self.stored_variables_and_constraints[area][
+            self.stored_variables_and_constraints[area.area][
                 "energy_constraint"
             ].SetCoefficient(
-                self.stored_variables_and_constraints[area]["reservoir_control"], -1
+                self.stored_variables_and_constraints[area.area]["reservoir_control"],
+                -1,
             )
-            self.stored_variables_and_constraints[area]["energy_constraint"].SetLb(0.0)
-            self.stored_variables_and_constraints[area]["energy_constraint"].SetUb(0.0)
+            self.stored_variables_and_constraints[area.area]["energy_constraint"].SetLb(
+                0.0
+            )
+            self.stored_variables_and_constraints[area.area]["energy_constraint"].SetUb(
+                0.0
+            )
 
             self.solver.Objective().SetCoefficient(
-                self.stored_variables_and_constraints[area]["penalties"], 1
+                self.stored_variables_and_constraints[area.area]["penalties"], 1
             )
             self.solver.Objective().SetCoefficient(
-                self.stored_variables_and_constraints[area]["final_bellman_value"], 1
+                self.stored_variables_and_constraints[area.area]["final_bellman_value"],
+                1,
             )
         if type(V) is UniVariateEstimator:
             additional_constraint = self.build_univariate_bellman_constraints(V)
@@ -495,7 +504,7 @@ class AntaresProblem:
                 stock_discretization, V
             )
         for area in self.range_reservoir:
-            level_i = all_level_i[area]
+            level_i = all_level_i[area.area]
             cst_initial_level = self.solver.LookupConstraint(
                 f"InitialLevelReservoir::area<{area}>::week<{self.week}>"
             )
@@ -503,7 +512,7 @@ class AntaresProblem:
                 cst_initial_level.SetBounds(lb=level_i, ub=level_i)
             else:
                 cst_initial_level = self.solver.Add(
-                    self.stored_variables_and_constraints[area]["initial_level"]
+                    self.stored_variables_and_constraints[area.area]["initial_level"]
                     == level_i,
                     name=f"InitialLevelReservoir::area<{area}>::week<{self.week}>",
                 )
@@ -515,7 +524,7 @@ class AntaresProblem:
     ) -> List[pywraplp.Constraint]:
         additional_constraint = []
         for area in self.range_reservoir:
-            bellman_value = V[area]
+            bellman_value = V[area.area]
 
             X = bellman_value.inputs
             cost = bellman_value.costs
@@ -527,7 +536,9 @@ class AntaresProblem:
                     )
                     if cst:
                         cst.SetCoefficient(
-                            self.stored_variables_and_constraints[area]["final_level"],
+                            self.stored_variables_and_constraints[area.area][
+                                "final_level"
+                            ],
                             -(-cost[j + 1] + cost[j]) / (X[j + 1] - X[j]),
                         )
                         cst.SetLb(
@@ -536,13 +547,13 @@ class AntaresProblem:
                         )
                     else:
                         cst = self.solver.Add(
-                            self.stored_variables_and_constraints[area][
+                            self.stored_variables_and_constraints[area.area][
                                 "final_bellman_value"
                             ]
                             >= (-cost[j + 1] + cost[j])
                             / (X[j + 1] - X[j])
                             * (
-                                self.stored_variables_and_constraints[area][
+                                self.stored_variables_and_constraints[area.area][
                                     "final_level"
                                 ]
                                 - X[j]
@@ -572,17 +583,18 @@ class AntaresProblem:
                 ub=reservoir_management.reservoir.capacity,
             )
 
-            self.stored_variables_and_constraints[area][
+            self.stored_variables_and_constraints[area.area][
                 "energy_constraint"
             ].SetCoefficient(
-                self.stored_variables_and_constraints[area]["reservoir_control"], 0
+                self.stored_variables_and_constraints[area.area]["reservoir_control"], 0
             )
 
             self.solver.Objective().SetCoefficient(
-                self.stored_variables_and_constraints[area]["penalties"], 0
+                self.stored_variables_and_constraints[area.area]["penalties"], 0
             )
             self.solver.Objective().SetCoefficient(
-                self.stored_variables_and_constraints[area]["final_bellman_value"], 0
+                self.stored_variables_and_constraints[area.area]["final_bellman_value"],
+                0,
             )
 
     def solve_problem(self, direct_bellman_mode: bool = True) -> tuple[
@@ -626,8 +638,8 @@ class AntaresProblem:
     def get_dual_value(self, name_constraint: str) -> Dict[str, float]:
         value = {}
         for area in self.range_reservoir:
-            value[area] = float(
-                self.stored_variables_and_constraints[area][
+            value[area.area] = float(
+                self.stored_variables_and_constraints[area.area][
                     name_constraint
                 ].dual_value()
             )
@@ -637,8 +649,8 @@ class AntaresProblem:
     def get_solution_value(self, name_variable: str) -> Dict[str, float]:
         value = {}
         for area in self.range_reservoir:
-            value[area] = float(
-                self.stored_variables_and_constraints[area][
+            value[area.area] = float(
+                self.stored_variables_and_constraints[area.area][
                     name_variable
                 ].solution_value()
             )
@@ -682,19 +694,19 @@ class AntaresProblem:
                     for area in self.range_reservoir:
 
                         _, _, likely_control = solve_weekly_problem_with_approximation(
-                            level_i=level_i[area],
-                            V_fut=V[area],
+                            level_i=level_i[area.area],
+                            V_fut=V[area.area],
                             week=self.week,
                             scenario=self.scenario,
                             reservoir_management=multi_stock_management.dict_reservoirs[
                                 area
                             ],
                             param=param,
-                            reward=reward[area][
+                            reward=reward[area.area][
                                 TimeScenarioIndex(self.week, self.scenario)
                             ],
                         )
-                        dict_likely_control[area] = likely_control
+                        dict_likely_control[area.area] = likely_control
                     basis = self.find_closest_basis(dict_likely_control)
                 else:
                     basis = self.basis[0]
@@ -708,9 +720,9 @@ class AntaresProblem:
 
         optimal_controls = {}
         for area in self.range_reservoir:
-            optimal_controls[area] = -(
-                xf[area]
-                - level_i[area]
+            optimal_controls[area.area] = -(
+                xf[area.area]
+                - level_i[area.area]
                 - multi_stock_management.dict_reservoirs[area].reservoir.inflow[
                     self.week, self.scenario
                 ]
@@ -729,7 +741,7 @@ class AntaresProblem:
             cst_initial_level = self.solver.LookupConstraint(
                 f"InitialLevelReservoir::area<{area}>::week<{self.week}>"
             )
-            lamb[area] = float(cst_initial_level.dual_value())
+            lamb[area.area] = float(cst_initial_level.dual_value())
         return lamb
 
     def build_multivariate_bellman_constraints(
@@ -751,7 +763,9 @@ class AntaresProblem:
 
                 if cst:
                     cst.SetCoefficient(
-                        self.stored_variables_and_constraints[a]["final_bellman_value"],
+                        self.stored_variables_and_constraints[a.area][
+                            "final_bellman_value"
+                        ],
                         1.0 * len_reservoir,
                     )
                     cst.SetLb(
@@ -760,9 +774,9 @@ class AntaresProblem:
                             - sum(
                                 [
                                     V[f"slope_{area}"][idx]
-                                    * stock_discretization.list_discretization[area][
-                                        idx[i]
-                                    ]
+                                    * stock_discretization.list_discretization[
+                                        area.area
+                                    ][idx[i]]
                                     for i, area in enumerate(self.range_reservoir)
                                 ]
                             )
@@ -771,24 +785,28 @@ class AntaresProblem:
 
                     for i, area in enumerate(self.range_reservoir):
                         cst.SetCoefficient(
-                            self.stored_variables_and_constraints[area]["final_level"],
+                            self.stored_variables_and_constraints[area.area][
+                                "final_level"
+                            ],
                             float(-V[f"slope_{area}"][idx]),
                         )
 
                 else:
                     cst = self.solver.Add(
-                        self.stored_variables_and_constraints[a]["final_bellman_value"]
+                        self.stored_variables_and_constraints[a.area][
+                            "final_bellman_value"
+                        ]
                         * len_reservoir
                         >= sum(
                             [
                                 V[f"slope_{area}"][idx]
                                 * (
-                                    self.stored_variables_and_constraints[area][
+                                    self.stored_variables_and_constraints[area.area][
                                         "final_level"
                                     ]
-                                    - stock_discretization.list_discretization[area][
-                                        idx[i]
-                                    ]
+                                    - stock_discretization.list_discretization[
+                                        area.area
+                                    ][idx[i]]
                                 )
                                 for i, area in enumerate(self.range_reservoir)
                             ]

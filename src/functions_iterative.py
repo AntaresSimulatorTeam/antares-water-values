@@ -121,7 +121,7 @@ def compute_upper_bound(
             area,
             reservoir_management,
         ) in multi_stock_management.dict_reservoirs.items():
-            reward[area] = {}
+            reward[area.area] = {}
             for week in range(param.len_week):
                 for scenario in range(param.len_scenario):
                     r = RewardApproximation(
@@ -129,7 +129,7 @@ def compute_upper_bound(
                         ub_control=reservoir_management.reservoir.max_generating[week],
                         ub_reward=0,
                     )
-                    reward[area][TimeScenarioIndex(week, scenario)] = r
+                    reward[area.area][TimeScenarioIndex(week, scenario)] = r
     else:
         reward = reward_approximation
 
@@ -138,8 +138,10 @@ def compute_upper_bound(
     for scenario in range(param.len_scenario):
 
         level_i = {
-            area: multi_stock_management.dict_reservoirs[area].reservoir.initial_level
-            for area in multi_stock_management.dict_reservoirs.keys()
+            area.area: multi_stock_management.dict_reservoirs[
+                area
+            ].reservoir.initial_level
+            for area in multi_stock_management.areas
         }
         for week in range(param.len_week):
             print(f"{scenario} {week}", end="\r")

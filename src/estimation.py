@@ -12,7 +12,7 @@ from type_definition import Array1D, Callable, Dict, List, Optional, Union
 class Estimator:
 
     def __init__(self) -> None:
-        raise NotImplemented
+        raise NotImplementedError
 
     def update(
         self,
@@ -22,7 +22,7 @@ class Estimator:
         idx: int,
         list_areas: List[str],
     ) -> None:
-        raise NotImplemented
+        raise NotImplementedError
 
     def get_value(self, x: Dict[str, float]) -> float:
         return NotImplemented
@@ -132,7 +132,7 @@ class MultiVariateEstimator:
         duals: Union[np.ndarray, float],
         controls: Optional[np.ndarray],
     ) -> None:
-        raise NotImplemented
+        raise NotImplementedError
 
     def count_redundant(
         self, tolerance: float, remove: bool = False

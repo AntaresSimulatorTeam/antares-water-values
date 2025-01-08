@@ -210,7 +210,7 @@ def test_bellman_value_exact_calculation_multi_stock() -> None:
         param=param,
         multi_stock_management=all_reservoirs,
         output_path="test_data/two_nodes",
-        X={"area_1": x_1, "area_2": x_2},
+        X={AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2},
         univariate=False,
     )
     assert lb == pytest.approx(419088906.63159156)
@@ -342,7 +342,7 @@ def test_bellman_value_exact_calculation_univariate() -> None:
             param=param,
             multi_stock_management=all_reservoirs,
             output_path="test_data/two_nodes",
-            X={"area_1": x_1, "area_2": x_2},
+            X={AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2},
             univariate=True,
         )
         assert False

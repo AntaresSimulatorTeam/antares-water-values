@@ -14,6 +14,7 @@ from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
+from type_definition import AreaIndex
 
 expected_vb = np.array(
     [
@@ -225,9 +226,9 @@ def test_bellman_value_precalculated_reward() -> None:
         (-0.0004060626000000001, -38705645.55951345),
     ]
     for i, cut in enumerate(true_list_cut):
-        assert G[reservoir.area][TimeScenarioIndex(0, 0)].list_cut[i] == pytest.approx(
-            cut
-        )
+        assert G[AreaIndex(reservoir.area)][TimeScenarioIndex(0, 0)].list_cut[
+            i
+        ] == pytest.approx(cut)
 
     true_breaking_point = [
         -8400000.0,
@@ -253,7 +254,7 @@ def test_bellman_value_precalculated_reward() -> None:
         8400000.0,
     ]
     for i, pt in enumerate(true_breaking_point):
-        assert G[reservoir.area][TimeScenarioIndex(0, 0)].breaking_point[
+        assert G[AreaIndex(reservoir.area)][TimeScenarioIndex(0, 0)].breaking_point[
             i
         ] == pytest.approx(pt, 1e-5)
 

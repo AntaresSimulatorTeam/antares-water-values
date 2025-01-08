@@ -9,7 +9,7 @@ from simple_bellman_value_calculation import (
     calculate_bellman_value_directly,
     calculate_bellman_value_with_precalculated_reward,
 )
-from type_definition import Array1D, Array2D
+from type_definition import AreaIndex, Array1D, Array2D
 
 
 def calculate_bellman_values(
@@ -48,7 +48,7 @@ def calculate_bellman_values(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
             output_path=output_path,
-            X={reservoir_management.reservoir.area: X},
+            X={AreaIndex(reservoir_management.reservoir.area): X},
             solver=solver,
             univariate=True,
         )

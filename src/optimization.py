@@ -774,9 +774,9 @@ class AntaresProblem:
                             - sum(
                                 [
                                     V[f"slope_{area}"][idx]
-                                    * stock_discretization.list_discretization[
-                                        area.area
-                                    ][idx[i]]
+                                    * stock_discretization.list_discretization[area][
+                                        idx[i]
+                                    ]
                                     for i, area in enumerate(self.range_reservoir)
                                 ]
                             )
@@ -804,9 +804,9 @@ class AntaresProblem:
                                     self.stored_variables_and_constraints[area.area][
                                         "final_level"
                                     ]
-                                    - stock_discretization.list_discretization[
-                                        area.area
-                                    ][idx[i]]
+                                    - stock_discretization.list_discretization[area][
+                                        idx[i]
+                                    ]
                                 )
                                 for i, area in enumerate(self.range_reservoir)
                             ]

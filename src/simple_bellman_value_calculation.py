@@ -17,7 +17,7 @@ from optimization import AntaresProblem
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
-from type_definition import Array1D, Array2D, Dict, List
+from type_definition import AreaIndex, Array1D, Array2D, Dict, List
 
 
 def calculate_complete_reward(
@@ -131,7 +131,7 @@ def calculate_bellman_value_with_precalculated_reward(
     upper_bound, control_ub, current_itr = compute_upper_bound(
         multi_stock_management=multi_stock_management,
         stock_discretization=StockDiscretization(
-            {reservoir_management.reservoir.area: X}
+            {AreaIndex(reservoir_management.reservoir.area): X}
         ),
         param=param,
         list_models=list_models,
@@ -197,7 +197,7 @@ def calculate_bellman_value_directly(
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 
-    stock_discretization = StockDiscretization(X)
+    stock_discretization = StockDiscretization({AreaIndex(a): x for a, x in X.items()})
 
     V: Dict[int, Estimator] = {}
     if univariate:
@@ -240,7 +240,7 @@ def calculate_bellman_value_directly(
                 _, _, Vu, slope, _, _, _ = m.solve_problem_with_bellman_values(
                     V=V[week + 1],
                     level_i={
-                        area.area: stock_discretization.list_discretization[area.area][
+                        area.area: stock_discretization.list_discretization[area][
                             idx[i]
                         ]
                         for i, area in enumerate(m.range_reservoir)

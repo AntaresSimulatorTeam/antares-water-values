@@ -8,6 +8,7 @@ from optimization import AntaresProblem, Basis
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
+from type_definition import AreaIndex
 
 
 def test_create_and_modify_weekly_problem() -> None:
@@ -147,7 +148,7 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
     problem.set_constraints_initial_level_and_bellman_values(
         UniVariateEstimator({"area": V[1]}),
         {"area": reservoir.initial_level},
-        StockDiscretization({"area": X}),
+        StockDiscretization({AreaIndex("area"): X}),
     )
 
     lp = problem.solver.ExportModelAsLpFormat(False)
@@ -157,7 +158,7 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
 
     _, _, cout, _, optimal_controls, _, _ = problem.solve_problem_with_bellman_values(
         reservoir_management,
-        StockDiscretization({"area": X}),
+        StockDiscretization({AreaIndex("area"): X}),
         UniVariateEstimator({"area": V[1]}),
         {"area": reservoir.initial_level},
         True,

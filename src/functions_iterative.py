@@ -13,7 +13,16 @@ from optimization import AntaresProblem, Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
-from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List, Optional
+from type_definition import (
+    AreaIndex,
+    Array1D,
+    Array2D,
+    Array3D,
+    Array4D,
+    Dict,
+    List,
+    Optional,
+)
 
 
 def compute_x_multi_scenario(
@@ -330,7 +339,7 @@ def itr_control(
                 for week in range(param.len_week + 1)
             },
             stock_discretization=StockDiscretization(
-                {reservoir_management.reservoir.area: X}
+                {AreaIndex(reservoir_management.reservoir.area): X}
             ),
             reward_approximation={reservoir_management.reservoir.area: G},
         )

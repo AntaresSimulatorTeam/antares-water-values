@@ -99,7 +99,7 @@ class BellmanValueEstimation(Estimator):
                     [
                         self.V[f"slope_{area}"][idx]
                         * (
-                            x[area]
+                            x[area.area]
                             - self.discretization.list_discretization[area][idx[i]]
                         )
                         for i, area in enumerate(

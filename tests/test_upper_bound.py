@@ -13,6 +13,7 @@ from optimization import AntaresProblem
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
+from type_definition import AreaIndex
 
 bellman_values = np.array(
     [
@@ -208,7 +209,7 @@ def test_upper_bound() -> None:
     upper_bound, controls, _ = compute_upper_bound(
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
-        stock_discretization=StockDiscretization({reservoir.area: X}),
+        stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
         list_models=list_models,
         V={
             week: UniVariateEstimator({reservoir.area: V[week]})
@@ -225,7 +226,7 @@ def test_upper_bound() -> None:
     upper_bound, controls, _ = compute_upper_bound(
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
-        stock_discretization=StockDiscretization({reservoir.area: X}),
+        stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
         list_models=list_models,
         V={
             week: UniVariateEstimator({reservoir.area: V[week]})
@@ -268,7 +269,7 @@ def test_upper_bound_with_bellman_values() -> None:
     upper_bound, controls, _ = compute_upper_bound(
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
-        stock_discretization=StockDiscretization({reservoir.area: X}),
+        stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
         list_models=list_models,
         V={
             week: UniVariateEstimator({reservoir.area: V[week]})
@@ -320,7 +321,7 @@ def test_upper_bound_with_xpress() -> None:
         upper_bound, controls, _ = compute_upper_bound(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
-            stock_discretization=StockDiscretization({reservoir.area: X}),
+            stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
             list_models=list_models,
             V={
                 week: UniVariateEstimator({reservoir.area: V[week]})
@@ -339,7 +340,7 @@ def test_upper_bound_with_xpress() -> None:
         upper_bound, controls, _ = compute_upper_bound(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
-            stock_discretization=StockDiscretization({reservoir.area: X}),
+            stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
             list_models=list_models,
             V={
                 week: UniVariateEstimator({reservoir.area: V[week]})

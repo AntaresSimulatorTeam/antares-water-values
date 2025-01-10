@@ -139,12 +139,14 @@ def calculate_bellman_value_with_precalculated_reward(
     upper_bound, control_ub, current_itr = compute_upper_bound(
         multi_stock_management=multi_stock_management,
         stock_discretization=StockDiscretization(
-            {AreaIndex(reservoir_management.reservoir.area): X}
+            {reservoir_management.reservoir.area: X}
         ),
         param=param,
         list_models=list_models,
         V={
-            week: UniVariateEstimator({reservoir_management.reservoir.area: V[week]})
+            week: UniVariateEstimator(
+                {reservoir_management.reservoir.area.area: V[week]}
+            )
             for week in range(param.len_week + 1)
         },
     )

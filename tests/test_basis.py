@@ -104,10 +104,10 @@ def test_basis_with_upper_bound() -> None:
         upper_bound_1, _, _ = compute_upper_bound(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
-            stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
+            stock_discretization=StockDiscretization({reservoir.area: X}),
             list_models=list_models,
             V={
-                week: UniVariateEstimator({reservoir.area: V[week]})
+                week: UniVariateEstimator({reservoir.area.area: V[week]})
                 for week in range(param.len_week + 1)
             },
         )
@@ -119,10 +119,10 @@ def test_basis_with_upper_bound() -> None:
         upper_bound_2, _, itr_with_basis = compute_upper_bound(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
-            stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
+            stock_discretization=StockDiscretization({reservoir.area: X}),
             list_models=list_models,
             V={
-                week: UniVariateEstimator({reservoir.area: V[week]})
+                week: UniVariateEstimator({reservoir.area.area: V[week]})
                 for week in range(param.len_week + 1)
             },
         )

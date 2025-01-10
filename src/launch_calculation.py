@@ -48,7 +48,7 @@ def calculate_bellman_values(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
             output_path=output_path,
-            X={AreaIndex(reservoir_management.reservoir.area): X},
+            X={reservoir_management.reservoir.area: X},
             solver=solver,
             univariate=True,
         )
@@ -57,7 +57,7 @@ def calculate_bellman_values(
             [
                 [
                     intermediate_vb[week].get_value(
-                        {reservoir_management.reservoir.area: x}
+                        {reservoir_management.reservoir.area.area: x}
                     )
                     for x in X
                 ]

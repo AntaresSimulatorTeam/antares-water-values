@@ -20,7 +20,15 @@ from optimization import (
 )
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import MultiStockManagement
-from type_definition import Array1D, Dict, List, Optional
+from type_definition import (
+    Array2D,
+    Dict,
+    List,
+    Optional,
+    area_value_to_array,
+    array_to_area_value,
+    list_area_value_to_array,
+)
 
 jl = juliacall.Main
 
@@ -148,10 +156,10 @@ def get_bellman_values_from_costs(
     n_scenarios = param.len_scenario
 
     # Initializing controls, costs and duals
-    controls = []
-    costs = []
-    duals = []
-    all_levels = []
+    controls: List[np.ndarray] = []
+    costs: List[np.ndarray] = []
+    duals: List[np.ndarray] = []
+    all_levels: List[Array2D] = []
 
     # Starting from last week dynamically solving the optimal control problem (from every starting level)
     week_range = range(n_weeks - 1, -1, -1)
@@ -162,16 +170,18 @@ def get_bellman_values_from_costs(
         levels = multi_stock_management.get_disc(
             week=week,
             xNsteps=nSteps_bellman,
-            reference_pt=np.mean(trajectory[week], axis=1),
+            reference_pt=array_to_area_value(
+                np.mean(trajectory[week], axis=1), multi_stock_management.areas
+            ),
             correlation_matrix=correlations,
             method=method,
         )
-        all_levels.append(levels)
+        all_levels.append(list_area_value_to_array(levels))
 
         # Preparing receiving arrays
-        controls_w = np.zeros(list(levels.shape) + [n_scenarios])
-        costs_w = np.zeros(list(levels.shape)[:-1])
-        duals_w = np.zeros(list(levels.shape))
+        controls_w = np.zeros([len(levels), len(levels[0]), n_scenarios])
+        costs_w = np.zeros(len(levels))
+        duals_w = np.zeros([len(levels), len(levels[0])])
         for lvl_id, lvl_init in enumerate(levels):
 
             # Remove previous constraints / vars
@@ -181,7 +191,7 @@ def get_bellman_values_from_costs(
             # Rewrite problem
             problem.write_problem(
                 week=week,
-                level_init=lvl_init,
+                level_init=area_value_to_array(lvl_init),
                 future_costs_estimation=future_costs_approx,
             )
 
@@ -209,7 +219,9 @@ def get_bellman_values_from_costs(
         # Updating the future estimator
         # costs_w - np.min(costs_w)
         future_costs_approx = LinearInterpolator(
-            controls=levels, costs=costs_w - np.min(costs_w), duals=duals_w
+            controls=list_area_value_to_array(levels),
+            costs=costs_w - np.min(costs_w),
+            duals=duals_w,
         )
         future_costs_approx_l.insert(0, future_costs_approx)
     return (

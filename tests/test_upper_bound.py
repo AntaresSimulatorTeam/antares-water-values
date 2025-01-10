@@ -209,16 +209,18 @@ def test_upper_bound() -> None:
     upper_bound, controls, _ = compute_upper_bound(
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
-        stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
+        stock_discretization=StockDiscretization({reservoir.area: X}),
         list_models=list_models,
         V={
-            week: UniVariateEstimator({reservoir.area: V[week]})
+            week: UniVariateEstimator({reservoir.area.area: V[week]})
             for week in range(param.len_week + 1)
         },
     )
 
     assert upper_bound == pytest.approx(380492940.000565)
-    assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(4482011.0)
+    assert controls[TimeScenarioIndex(0, 0)][reservoir.area.area] == pytest.approx(
+        4482011.0
+    )
     assert len(problem.solver.constraints()) == 3555
     assert len(problem.solver.variables()) == 3533
 
@@ -226,16 +228,18 @@ def test_upper_bound() -> None:
     upper_bound, controls, _ = compute_upper_bound(
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
-        stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
+        stock_discretization=StockDiscretization({reservoir.area: X}),
         list_models=list_models,
         V={
-            week: UniVariateEstimator({reservoir.area: V[week]})
+            week: UniVariateEstimator({reservoir.area.area: V[week]})
             for week in range(param.len_week + 1)
         },
     )
 
     assert upper_bound == pytest.approx(5046992854.133574)
-    assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(1146984.0)
+    assert controls[TimeScenarioIndex(0, 0)][reservoir.area.area] == pytest.approx(
+        1146984.0
+    )
     assert len(problem.solver.constraints()) == 3555
     assert len(problem.solver.variables()) == 3533
 
@@ -269,15 +273,17 @@ def test_upper_bound_with_bellman_values() -> None:
     upper_bound, controls, _ = compute_upper_bound(
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
-        stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
+        stock_discretization=StockDiscretization({reservoir.area: X}),
         list_models=list_models,
         V={
-            week: UniVariateEstimator({reservoir.area: V[week]})
+            week: UniVariateEstimator({reservoir.area.area: V[week]})
             for week in range(param.len_week + 1)
         },
     )
 
-    assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(133776)
+    assert controls[TimeScenarioIndex(0, 0)][reservoir.area.area] == pytest.approx(
+        133776
+    )
 
     control = 123864.0
     vb = V[1](reservoir.initial_level + reservoir.inflow[0, 0] - control)
@@ -321,16 +327,16 @@ def test_upper_bound_with_xpress() -> None:
         upper_bound, controls, _ = compute_upper_bound(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
-            stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
+            stock_discretization=StockDiscretization({reservoir.area: X}),
             list_models=list_models,
             V={
-                week: UniVariateEstimator({reservoir.area: V[week]})
+                week: UniVariateEstimator({reservoir.area.area: V[week]})
                 for week in range(param.len_week + 1)
             },
         )
 
         assert upper_bound == pytest.approx(380492940.000565)
-        assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(
+        assert controls[TimeScenarioIndex(0, 0)][reservoir.area.area] == pytest.approx(
             4482011.0
         )
         assert len(problem.solver.constraints()) == 3555
@@ -340,16 +346,16 @@ def test_upper_bound_with_xpress() -> None:
         upper_bound, controls, _ = compute_upper_bound(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
-            stock_discretization=StockDiscretization({AreaIndex(reservoir.area): X}),
+            stock_discretization=StockDiscretization({reservoir.area: X}),
             list_models=list_models,
             V={
-                week: UniVariateEstimator({reservoir.area: V[week]})
+                week: UniVariateEstimator({reservoir.area.area: V[week]})
                 for week in range(param.len_week + 1)
             },
         )
 
         assert upper_bound == pytest.approx(5046992854.133574)
-        assert controls[TimeScenarioIndex(0, 0)][reservoir.area] == pytest.approx(
+        assert controls[TimeScenarioIndex(0, 0)][reservoir.area.area] == pytest.approx(
             1146984.0
         )
         assert len(problem.solver.constraints()) == 3555

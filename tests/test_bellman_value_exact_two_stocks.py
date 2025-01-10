@@ -23,7 +23,7 @@ def test_iterate_over_stock_discretization() -> None:
     x_2 = np.linspace(0, reservoir_2.capacity, num=20)
 
     stock_discretization = StockDiscretization(
-        {AreaIndex(reservoir_1.area): x_1, AreaIndex(reservoir_2.area): x_2}
+        {reservoir_1.area: x_1, reservoir_2.area: x_2}
     )
 
     assert [idx for idx in stock_discretization.get_product_stock_discretization()][

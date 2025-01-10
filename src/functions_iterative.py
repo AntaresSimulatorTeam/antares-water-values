@@ -315,7 +315,7 @@ def itr_control(
             list_models=list_models,
             G=G,
             i=i,
-            name_reservoir=reservoir_management.reservoir.area,
+            name_reservoir=reservoir_management.reservoir.area.area,
         )
         itr_tot.append(current_itr)
 
@@ -334,14 +334,14 @@ def itr_control(
             list_models=list_models,
             V={
                 week: UniVariateEstimator(
-                    {reservoir_management.reservoir.area: V[week]}
+                    {reservoir_management.reservoir.area.area: V[week]}
                 )
                 for week in range(param.len_week + 1)
             },
             stock_discretization=StockDiscretization(
-                {AreaIndex(reservoir_management.reservoir.area): X}
+                {reservoir_management.reservoir.area: X}
             ),
-            reward_approximation={reservoir_management.reservoir.area: G},
+            reward_approximation={reservoir_management.reservoir.area.area: G},
         )
         itr_tot.append(current_itr)
         controls_upper.append(ctr)

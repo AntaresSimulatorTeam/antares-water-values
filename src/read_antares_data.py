@@ -5,6 +5,8 @@ from typing import Optional
 
 import numpy as np
 
+from type_definition import AreaIndex
+
 
 @dataclass
 class TimeScenarioParameter:
@@ -60,7 +62,7 @@ class Reservoir:
         None
         """
 
-        self.area = name_area
+        self.area = AreaIndex(name_area)
 
         hydro_ini_file = self.get_hydro_ini_file(dir_study=dir_study)
 
@@ -118,12 +120,12 @@ class Reservoir:
 
     def read_capacity(self, hydro_ini_file: ConfigParser) -> None:
 
-        capacity = hydro_ini_file.getfloat("reservoir capacity", self.area)
+        capacity = hydro_ini_file.getfloat("reservoir capacity", self.area.area)
 
         self.capacity = capacity
 
     def read_efficiency(self, hydro_ini_file: ConfigParser) -> None:
-        efficiency = hydro_ini_file.getfloat("pumping efficiency", self.area)
+        efficiency = hydro_ini_file.getfloat("pumping efficiency", self.area.area)
         self.efficiency = efficiency
 
 

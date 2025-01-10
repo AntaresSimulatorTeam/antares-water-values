@@ -356,7 +356,7 @@ def test_bellman_value_exact() -> None:
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
         output_path="test_data/one_node",
-        X={AreaIndex(reservoir.area): X},
+        X={reservoir.area: X},
         univariate=True,
     )
 
@@ -366,7 +366,7 @@ def test_bellman_value_exact() -> None:
 
     assert np.transpose(
         [
-            [vb[week].get_value({reservoir.area: x}) for x in X]
+            [vb[week].get_value({reservoir.area.area: x}) for x in X]
             for week in range(param.len_week + 1)
         ]
     ) == pytest.approx(expected_vb)
@@ -400,7 +400,7 @@ def test_bellman_value_exact_with_multi_stock() -> None:
 
     computed_vb = np.transpose(
         [
-            [vb[week].get_value({reservoir.area: x}) for x in X]
+            [vb[week].get_value({reservoir.area.area: x}) for x in X]
             for week in range(param.len_week + 1)
         ]
     )

@@ -1,36 +1,9 @@
 import subprocess
 from configparser import ConfigParser
-from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 
 from type_definition import AreaIndex
-
-
-@dataclass
-class TimeScenarioParameter:
-    """Describes time and scenario related parameters"""
-
-    len_week: int = 52
-    len_scenario: int = 1
-    name_scenario: list = field(default_factory=list)
-
-    def __init__(
-        self, len_week: int, len_scenario: int, name_scenario: Optional[list] = None
-    ):
-        self.len_week = len_week
-        self.len_scenario = len_scenario
-        if name_scenario:
-            self.name_scenario = name_scenario
-        else:
-            self.name_scenario = list(np.arange(len_scenario) + 1)
-
-
-@dataclass(frozen=True)
-class TimeScenarioIndex:
-    week: int
-    scenario: int
 
 
 class Reservoir:

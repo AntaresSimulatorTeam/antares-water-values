@@ -14,10 +14,17 @@ from multi_stock_bellman_value_calculation import (
     initialize_antares_problems,
 )
 from optimization import AntaresProblem
-from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
-from type_definition import AreaIndex, Array1D, Array2D, Dict, List
+from type_definition import (
+    AreaIndex,
+    Array1D,
+    Array2D,
+    Dict,
+    List,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+)
 
 
 def calculate_complete_reward(
@@ -253,9 +260,7 @@ def calculate_bellman_value_directly(
                 _, _, Vu, slope, _, _, _ = m.solve_problem_with_bellman_values(
                     V=V[week + 1],
                     level_i={
-                        area.area: stock_discretization.list_discretization[area][
-                            idx[i]
-                        ]
+                        area: stock_discretization.list_discretization[area][idx[i]]
                         for i, area in enumerate(m.range_reservoir)
                     },
                     find_optimal_basis=False,
@@ -265,7 +270,7 @@ def calculate_bellman_value_directly(
                 )
                 V[week].update(
                     Vu,
-                    slope,
+                    {a.area: x for a, x in slope.items()},
                     param.len_scenario,
                     idx,
                     list([a.area for a in multi_stock_management.areas]),

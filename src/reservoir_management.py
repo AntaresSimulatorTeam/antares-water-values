@@ -222,3 +222,9 @@ class MultiStockManagement:
             )
             levels = np.array([level for level in levels_discretization])
         return dict_levels
+
+    def get_initial_level(self) -> Dict[AreaIndex, float]:
+        return {
+            area: self.dict_reservoirs[area].reservoir.initial_level
+            for area in self.areas
+        }

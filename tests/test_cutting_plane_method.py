@@ -5,6 +5,11 @@ from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import *
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
+from type_definition import (
+    array_to_area_value,
+    list_to_week_value,
+    timescenario_area_value_to_array,
+)
 
 param = TimeScenarioParameter(len_week=5, len_scenario=1)
 
@@ -467,7 +472,7 @@ def test_get_correlation_matrix() -> None:
 
 def test_get_bellman_values_from_costs() -> None:
     trajectory = np.array([[starting_pt] * param.len_scenario] * param.len_week)
-    trajectory = np.swapaxes(trajectory, 1, 2)
+    trajectory = np.swapaxes(trajectory, 1, 2)  # week x area x scenario
 
     (
         levels,
@@ -574,25 +579,31 @@ def test_solve_for_optimal_trajectory() -> None:
         param=param,
         multi_stock_management=multi_management,
         costs_approx=costs_approx,
-        future_costs_approx_l=expected_future_costs_approx_l,
-        starting_pt=starting_pt,
+        future_costs_approx_l=list_to_week_value(
+            expected_future_costs_approx_l, param.len_week + 1
+        ),
+        starting_pt=array_to_area_value(starting_pt, multi_management.areas),
         name_solver=name_solver,
         divisor=divisor,
     )
 
-    assert trajectory == pytest.approx(
+    assert timescenario_area_value_to_array(
+        trajectory, param, multi_management.areas
+    ) == pytest.approx(
         np.array(
             [
-                [[277853.0681], [628377.6569]],
-                [[246205.75196177], [413932.694]],
-                [[180723.695], [408715.055]],
-                [[178416.584], [403497.416]],
-                [[103611.213], [396540.564]],
-                [[30741.09338584], [634785.39300033]],
+                # [[277853.0681, 628377.6569]],
+                [[246205.75196177, 413932.694]],
+                [[180723.695, 408715.055]],
+                [[178416.584, 403497.416]],
+                [[103611.213, 396540.564]],
+                [[30741.09338584, 634785.39300033]],
             ]
         )
     )
-    assert pseudo_opt_controls == pytest.approx(expected_pseudo_opt_controls)
+    assert timescenario_area_value_to_array(
+        pseudo_opt_controls, param, multi_management.areas
+    ) == pytest.approx(expected_pseudo_opt_controls)
 
 
 def test_select_controls_to_explore() -> None:

@@ -1,9 +1,8 @@
 import numpy as np
 
 from estimation import PieceWiseLinearInterpolator, RewardApproximation
-from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import ReservoirManagement
-from type_definition import Array1D, Dict
+from type_definition import Array1D, Dict, TimeScenarioIndex, TimeScenarioParameter
 
 
 def solve_weekly_problem_with_approximation(

@@ -18,16 +18,23 @@ from optimization import (
     WeeklyBellmanProblem,
     solve_for_optimal_trajectory,
 )
-from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import MultiStockManagement
 from type_definition import (
+    AreaIndex,
     Array2D,
     Dict,
     List,
     Optional,
+    ScenarioIndex,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    WeekIndex,
     area_value_to_array,
     array_to_area_value,
     list_area_value_to_array,
+    list_to_week_value,
+    mean_scenario_value,
+    timescenario_area_value_to_array,
 )
 
 jl = juliacall.Main
@@ -191,7 +198,7 @@ def get_bellman_values_from_costs(
             # Rewrite problem
             problem.write_problem(
                 week=week,
-                level_init=area_value_to_array(lvl_init),
+                level_init=lvl_init,
                 future_costs_estimation=future_costs_approx,
             )
 
@@ -208,9 +215,17 @@ def get_bellman_values_from_costs(
                 raise ValueError
 
             # Writing down results
-            controls_w[lvl_id] = controls_wls
+            controls_w[lvl_id] = np.array(
+                [
+                    [
+                        controls_wls[area][ScenarioIndex(s)]
+                        for s in range(param.len_scenario)
+                    ]
+                    for area in multi_stock_management.areas
+                ]
+            )
             costs_w[lvl_id] = cost_wl
-            duals_w[lvl_id] = duals_wl
+            duals_w[lvl_id] = area_value_to_array(duals_wl)
 
         controls.append(controls_w)
         costs.append(costs_w)
@@ -301,7 +316,9 @@ def get_week_scenario_costs(
 
         # Solving the problem
         control_cost, control_slopes, itr, time_taken = (
-            m.solve_with_predefined_controls(control=u, prev_basis=basis)
+            m.solve_with_predefined_controls(
+                control={AreaIndex(a): x for a, x in u.items()}, prev_basis=basis
+            )
         )
         tot_iter += itr
         times.append(time_taken)
@@ -309,7 +326,7 @@ def get_week_scenario_costs(
         # Save results
         # print(f"Imposing control {control} costs {costs}, with duals {control_slopes}")
         costs.append(control_cost)
-        slopes.append(control_slopes)
+        slopes.append({a.area: x for a, x in control_slopes.items()})
 
         # Save basis
         rstatus, cstatus = m.get_basis()
@@ -997,7 +1014,9 @@ def compute_usage_values_from_costs(
                     # Rewrite problem
                     problem.write_problem(
                         week=week,
-                        level_init=levels,
+                        level_init=array_to_area_value(
+                            levels, multi_stock_management.areas
+                        ),
                         future_costs_estimation=future_costs_approx_l[week],
                     )
 
@@ -1019,8 +1038,8 @@ def compute_usage_values_from_costs(
                             when base_level was {base_levels[week,i]}   """
                     )
                     raise ValueError
-                destination_levels[week, j, i] = np.mean(level, axis=1)[i]
-                usage_values[area.area][week, j] = -dual_vals[i]
+                destination_levels[week, j, i] = mean_scenario_value(level[area])
+                usage_values[area.area][week, j] = -dual_vals[area]
     return usage_values, levels_imposed
 
 
@@ -1136,21 +1155,37 @@ def cutting_plane_method(
         future_costs_approx = future_costs_approx_l[0]
 
         # Evaluate optimal
-        trajectory, pseudo_opt_controls, _ = solve_for_optimal_trajectory(
+        dict_trajectory, pseudo_opt_controls, _ = solve_for_optimal_trajectory(
             param=param,
             multi_stock_management=multi_stock_management,
             costs_approx=costs_approx,
-            future_costs_approx_l=future_costs_approx_l,
-            starting_pt=starting_pt,
+            future_costs_approx_l=list_to_week_value(
+                future_costs_approx_l, param.len_week + 1
+            ),
+            starting_pt=array_to_area_value(starting_pt, multi_stock_management.areas),
             name_solver=name_solver,
             divisor=divisor,
+        )
+        trajectory = np.array(
+            [
+                [
+                    [
+                        dict_trajectory[TimeScenarioIndex(w, s)][a]
+                        for s in range(param.len_scenario)
+                    ]
+                    for a in multi_stock_management.areas
+                ]
+                for w in range(param.len_week)
+            ]
         )
         # Beware, some trajectories seem to be overstep the bounds with values such as -2e-12
 
         controls_list = select_controls_to_explore(
             param=param,
             multi_stock_management=multi_stock_management,
-            pseudo_opt_controls=pseudo_opt_controls,
+            pseudo_opt_controls=timescenario_area_value_to_array(
+                pseudo_opt_controls, param, multi_stock_management.areas
+            ),
             costs_approx=costs_approx,
         )
 

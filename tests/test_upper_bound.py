@@ -287,7 +287,7 @@ def test_upper_bound_with_bellman_values() -> None:
 
     control = 123864.0
     vb = V[1](reservoir.initial_level + reservoir.inflow[0, 0] - control)
-    cost, _, _, _ = problem.solve_with_predefined_controls({"area": control})
+    cost, _, _, _ = problem.solve_with_predefined_controls({AreaIndex("area"): control})
     assert cost - vb == pytest.approx(upper_bound)
 
 

@@ -157,23 +157,21 @@ def test_solve_with_bellman_multi_stock() -> None:
         multi_stock_management=multi_stock_management,
         stock_discretization=StockDiscretization(X),
         V=BellmanValueEstimation(V, StockDiscretization(X)),
-        level_i={
-            area.area: multi_stock_management.dict_reservoirs[
-                area
-            ].reservoir.initial_level
-            for i, area in enumerate(m.range_reservoir)
-        },
+        level_i=multi_stock_management.get_initial_level(),
         take_into_account_z_and_y=True,
     )
 
     assert Vu == pytest.approx(37137635.6914607)
 
     assert slope == pytest.approx(
-        {"area_1": -73.24037883117816, "area_2": -73.23892027017814}
+        {
+            AreaIndex("area_1"): -73.24037883117816,
+            AreaIndex("area_2"): -73.23892027017814,
+        }
     )
 
     assert xf == pytest.approx(
-        {"area_1": 315840.9116434012, "area_2": 668042.0658865988}
+        {AreaIndex("area_1"): 315840.9116434012, AreaIndex("area_2"): 668042.0658865988}
     )
 
 

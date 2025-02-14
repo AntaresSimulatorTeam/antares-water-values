@@ -3,10 +3,17 @@ from scipy.interpolate import interp1d
 
 from hyperplane_decomposition import decompose_hyperplanes
 from hyperplane_interpolation import get_interpolation
-from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
-from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
-from type_definition import Array1D, Callable, Dict, List, Optional, Union
+from type_definition import (
+    Array1D,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    Union,
+)
 
 
 class Estimator:

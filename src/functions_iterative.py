@@ -10,7 +10,6 @@ from calculate_reward_and_bellman_values import (
 )
 from estimation import Estimator, PieceWiseLinearInterpolator, UniVariateEstimator
 from optimization import AntaresProblem, Basis
-from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
 from type_definition import (
@@ -22,6 +21,8 @@ from type_definition import (
     Dict,
     List,
     Optional,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
 )
 
 
@@ -146,12 +147,7 @@ def compute_upper_bound(
     controls = {}
     for scenario in range(param.len_scenario):
 
-        level_i = {
-            area.area: multi_stock_management.dict_reservoirs[
-                area
-            ].reservoir.initial_level
-            for area in multi_stock_management.areas
-        }
+        level_i = multi_stock_management.get_initial_level()
         for week in range(param.len_week):
             print(f"{scenario} {week}", end="\r")
             m = list_models[TimeScenarioIndex(week, scenario)]
@@ -164,11 +160,13 @@ def compute_upper_bound(
                     multi_stock_management=multi_stock_management,
                     stock_discretization=stock_discretization,
                     param=param,
-                    reward=reward,
+                    reward={AreaIndex(a): r for a, r in reward.items()},
                 )
             )
             cout += current_cost
-            controls[TimeScenarioIndex(week, scenario)] = control
+            controls[TimeScenarioIndex(week, scenario)] = {
+                a.area: c for a, c in control.items()
+            }
             current_itr[week, scenario] = (itr, computational_time)
 
         upper_bound = cout / param.len_scenario
@@ -217,7 +215,7 @@ def calculate_reward(
             beta, lamb, itr, computation_time = list_models[
                 TimeScenarioIndex(week, scenario)
             ].solve_with_predefined_controls(
-                control={name_reservoir: float(controls[week][scenario])},
+                control={AreaIndex(name_reservoir): float(controls[week][scenario])},
                 prev_basis=basis_0 if i == 0 else Basis([], []),
             )
             if list_models[TimeScenarioIndex(week, scenario)].store_basis:
@@ -226,8 +224,9 @@ def calculate_reward(
                 basis_0 = Basis([], [])
 
             G[TimeScenarioIndex(week, scenario)].update(
-                duals=-lamb[name_reservoir],
-                costs=-beta + lamb[name_reservoir] * controls[week][scenario],
+                duals=-lamb[AreaIndex(name_reservoir)],
+                costs=-beta
+                + lamb[AreaIndex(name_reservoir)] * controls[week][scenario],
             )
 
             current_itr[week, scenario] = (itr, computation_time)

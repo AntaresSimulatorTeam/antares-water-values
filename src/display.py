@@ -2,9 +2,8 @@ import numpy as np
 import plotly.graph_objects as go
 from tqdm import tqdm
 
-from read_antares_data import TimeScenarioParameter
 from reservoir_management import MultiStockManagement
-from type_definition import Array1D, Dict
+from type_definition import Array1D, Dict, TimeScenarioParameter
 
 
 def draw_usage_values(

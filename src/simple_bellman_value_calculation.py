@@ -137,9 +137,9 @@ def calculate_bellman_value_with_precalculated_reward(
             reward=reward[area],
         )
 
-    V0 = V[0](reservoir_management.reservoir.initial_level)
+    V0 = V[WeekIndex(0)](reservoir_management.reservoir.initial_level)
 
-    upper_bound, control_ub, current_itr = compute_upper_bound(
+    upper_bound, control_ub, current_itr, times = compute_upper_bound(
         multi_stock_management=multi_stock_management,
         stock_discretization=StockDiscretization(
             {reservoir_management.reservoir.area: X}
@@ -147,8 +147,8 @@ def calculate_bellman_value_with_precalculated_reward(
         param=param,
         list_models=list_models,
         V={
-            week: UniVariateEstimator(
-                {reservoir_management.reservoir.area.area: V[week]}
+            WeekIndex(week): UniVariateEstimator(
+                {reservoir_management.reservoir.area.area: V[WeekIndex(week)]}
             )
             for week in range(param.len_week + 1)
         },
@@ -158,7 +158,7 @@ def calculate_bellman_value_with_precalculated_reward(
     print(gap, upper_bound, -V0)
 
     return (
-        np.transpose([V[week].costs for week in range(param.len_week + 1)]),
+        np.transpose([V[WeekIndex(week)].costs for week in range(param.len_week + 1)]),
         reward,
     )
 
@@ -281,12 +281,12 @@ def calculate_bellman_value_directly(
         }
     )
 
-    upper_bound, controls, current_itr = compute_upper_bound(
+    upper_bound, controls, current_itr, times = compute_upper_bound(
         multi_stock_management=multi_stock_management,
         stock_discretization=stock_discretization,
         param=param,
         list_models=list_models,
-        V={week: V[week] for week in range(param.len_week + 1)},
+        V={WeekIndex(week): V[week] for week in range(param.len_week + 1)},
     )
 
     gap = upper_bound + V0

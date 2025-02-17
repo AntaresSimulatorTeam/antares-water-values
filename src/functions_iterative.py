@@ -15,14 +15,12 @@ from stock_discretization import StockDiscretization
 from type_definition import (
     AreaIndex,
     Array1D,
-    Array2D,
-    Array3D,
-    Array4D,
     Dict,
     List,
     Optional,
     TimeScenarioIndex,
     TimeScenarioParameter,
+    WeekIndex,
 )
 
 
@@ -30,9 +28,9 @@ def compute_x_multi_scenario(
     param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
     reward: Dict[TimeScenarioIndex, RewardApproximation],
-    V: Dict[int, PieceWiseLinearInterpolator],
+    V: Dict[WeekIndex, PieceWiseLinearInterpolator],
     itr: int,
-) -> tuple[Array2D, Array2D]:
+) -> tuple[Dict[TimeScenarioIndex, float], Dict[TimeScenarioIndex, float]]:
     """
     Compute several optimal trajectories for the level of stock based on reward approximation and Bellman values. The number of trajectories is equal to the number of scenarios but trajectories doesn't depend on Monte Carlo years, ie for a given trajectory each week correspond to a random scenario.
 
@@ -40,34 +38,25 @@ def compute_x_multi_scenario(
     ----------
     bellman_value_calculation:BellmanValueCalculation:
         Parameters to use to calculate Bellman values
-    V:np.array :
+    V:Dict[WeekIndex, PieceWiseLinearInterpolator] :
         Bellman values
     itr:int :
         Iteration of iterative algorithm used to generate seed
 
     Returns
     -------
-    initial_x:np.array :
+    initial_x:Dict[TimeScenarioIndex,float] :
         Trajectories
-    controls:np.array :
+    controls:Dict[TimeScenarioIndex,float] :
         Controls associated to trajectories
     """
-    initial_x = np.zeros(
-        (
-            param.len_week + 1,
-            param.len_scenario,
-        ),
-        dtype=np.float32,
-    )
-    initial_x[0] = reservoir_management.reservoir.initial_level
+    initial_x: Dict[TimeScenarioIndex, float] = {}
+    for s in range(param.len_scenario):
+        initial_x[TimeScenarioIndex(0, s)] = (
+            reservoir_management.reservoir.initial_level
+        )
     np.random.seed(19 * itr)
-    controls = np.zeros(
-        (
-            param.len_week,
-            param.len_scenario,
-        ),
-        dtype=np.float32,
-    )
+    controls: Dict[TimeScenarioIndex, float] = {}
 
     for week in range(param.len_week):
 
@@ -78,15 +67,15 @@ def compute_x_multi_scenario(
             _, xf, u = solve_weekly_problem_with_approximation(
                 week=week,
                 scenario=scenario,
-                level_i=initial_x[week, trajectory],
-                V_fut=V[week + 1],
+                level_i=initial_x[TimeScenarioIndex(week, trajectory)],
+                V_fut=V[WeekIndex(week + 1)],
                 reservoir_management=reservoir_management,
                 param=param,
                 reward=reward[TimeScenarioIndex(week, scenario)],
             )
 
-            initial_x[week + 1, trajectory] = xf
-            controls[week, scenario] = u
+            initial_x[TimeScenarioIndex(week + 1, trajectory)] = xf
+            controls[TimeScenarioIndex(week, scenario)] = u
 
     return (initial_x, controls)
 
@@ -96,11 +85,16 @@ def compute_upper_bound(
     stock_discretization: StockDiscretization,
     param: TimeScenarioParameter,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    V: Dict[int, Estimator],
+    V: Dict[WeekIndex, Estimator],
     reward_approximation: Optional[
-        Dict[str, Dict[TimeScenarioIndex, RewardApproximation]]
+        Dict[AreaIndex, Dict[TimeScenarioIndex, RewardApproximation]]
     ] = None,
-) -> tuple[float, Dict[TimeScenarioIndex, Dict[str, float]], Array3D]:
+) -> tuple[
+    float,
+    Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
+    Dict[TimeScenarioIndex, int],
+    Dict[TimeScenarioIndex, float],
+]:
     """
     Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
 
@@ -110,28 +104,31 @@ def compute_upper_bound(
         Parameters to use to calculate Bellman values
     list_models:Dict[TimeScenarioIndex, AntaresProblem] :
         Optimization problems for every week and every scenario
-    V:Array2D :
+    V:Dict[WeekIndex, Estimator] :
         Bellman values
 
     Returns
     -------
     upper_bound:float :
         Upper bound on the overall problem
-    controls:Array2D :
+    controls:Dict[TimeScenarioIndex, Dict[AreaIndex, float]] :
         Optimal controls for every week and every scenario
-    current_itr:Array2D :
-        Time and simplex iterations used to solve the problem
+    current_itr:Dict[TimeScenarioIndex, int] :
+        Simplex iterations used to solve the problem
+    time:Dict[TimeScenarioIndex, float] :
+        Time to solve the problem
     """
 
-    current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
+    current_itr = {}
+    times = {}
 
     if reward_approximation is None:
-        reward: Dict[str, Dict[TimeScenarioIndex, RewardApproximation]] = {}
+        reward: Dict[AreaIndex, Dict[TimeScenarioIndex, RewardApproximation]] = {}
         for (
             area,
             reservoir_management,
         ) in multi_stock_management.dict_reservoirs.items():
-            reward[area.area] = {}
+            reward[area] = {}
             for week in range(param.len_week):
                 for scenario in range(param.len_scenario):
                     r = RewardApproximation(
@@ -139,7 +136,7 @@ def compute_upper_bound(
                         ub_control=reservoir_management.reservoir.max_generating[week],
                         ub_reward=0,
                     )
-                    reward[area.area][TimeScenarioIndex(week, scenario)] = r
+                    reward[area][TimeScenarioIndex(week, scenario)] = r
     else:
         reward = reward_approximation
 
@@ -154,33 +151,36 @@ def compute_upper_bound(
 
             computational_time, itr, current_cost, _, control, level_i, _ = (
                 m.solve_problem_with_bellman_values(
-                    V=V[week + 1],
+                    V=V[WeekIndex(week + 1)],
                     level_i=level_i,
                     take_into_account_z_and_y=(week == param.len_week - 1),
                     multi_stock_management=multi_stock_management,
                     stock_discretization=stock_discretization,
                     param=param,
-                    reward={AreaIndex(a): r for a, r in reward.items()},
+                    reward=reward,
                 )
             )
             cout += current_cost
-            controls[TimeScenarioIndex(week, scenario)] = {
-                a.area: c for a, c in control.items()
-            }
-            current_itr[week, scenario] = (itr, computational_time)
+            controls[TimeScenarioIndex(week, scenario)] = control
+            current_itr[TimeScenarioIndex(week, scenario)] = itr
+            times[TimeScenarioIndex(week, scenario)] = computational_time
 
         upper_bound = cout / param.len_scenario
-    return (upper_bound, controls, current_itr)
+    return (upper_bound, controls, current_itr, times)
 
 
 def calculate_reward(
     param: TimeScenarioParameter,
-    controls: Array2D,
+    controls: Dict[TimeScenarioIndex, float],
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     G: Dict[TimeScenarioIndex, RewardApproximation],
     i: int,
-    name_reservoir: str,
-) -> tuple[Array3D, Dict[TimeScenarioIndex, RewardApproximation]]:
+    name_reservoir: AreaIndex,
+) -> tuple[
+    Dict[TimeScenarioIndex, int],
+    Dict[TimeScenarioIndex, float],
+    Dict[TimeScenarioIndex, RewardApproximation],
+]:
     """
     Evaluate reward for a set of given controls for each week and each scenario to update reward approximation.
 
@@ -188,7 +188,7 @@ def calculate_reward(
     ----------
     param:AntaresParameter :
         Time-related parameters
-    controls:Array2D :
+    controls:Dict[TimeScenarioIndex, Dict[AreaIndex, float]] :
         Set of controls to evaluate
     list_models:Dict[TimeScenarioIndex, AntaresProblem] :
         Optimization problems for every week and every scenario
@@ -199,13 +199,16 @@ def calculate_reward(
 
     Returns
     -------
-    current_itr:Array3D :
-        Time and simplex iterations used to solve the problem
+    current_itr:Dict[TimeScenarioIndex, int] :
+        Simplex iterations used to solve the problem
+    time:Dict[TimeScenarioIndex, float] :
+        Time to solve the problem
     G:Dict[TimeScenarioIndex, RewardApproximation] :
         Updated reward approximation
     """
 
-    current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
+    current_itr = {}
+    times = {}
 
     for scenario in range(param.len_scenario):
         basis_0 = Basis([], [])
@@ -215,7 +218,7 @@ def calculate_reward(
             beta, lamb, itr, computation_time = list_models[
                 TimeScenarioIndex(week, scenario)
             ].solve_with_predefined_controls(
-                control={AreaIndex(name_reservoir): float(controls[week][scenario])},
+                control={name_reservoir: controls[TimeScenarioIndex(week, scenario)]},
                 prev_basis=basis_0 if i == 0 else Basis([], []),
             )
             if list_models[TimeScenarioIndex(week, scenario)].store_basis:
@@ -224,14 +227,15 @@ def calculate_reward(
                 basis_0 = Basis([], [])
 
             G[TimeScenarioIndex(week, scenario)].update(
-                duals=-lamb[AreaIndex(name_reservoir)],
+                duals=-lamb[name_reservoir],
                 costs=-beta
-                + lamb[AreaIndex(name_reservoir)] * controls[week][scenario],
+                + lamb[name_reservoir] * controls[TimeScenarioIndex(week, scenario)],
             )
 
-            current_itr[week, scenario] = (itr, computation_time)
+            current_itr[TimeScenarioIndex(week, scenario)] = itr
+            times[TimeScenarioIndex(week, scenario)] = computation_time
 
-    return (current_itr, G)
+    return (current_itr, times, G)
 
 
 def itr_control(
@@ -243,12 +247,12 @@ def itr_control(
     tol_gap: float,
     solver: str = "GLOP",
 ) -> tuple[
-    Array2D,
+    Dict[WeekIndex, List[float]],
     Dict[TimeScenarioIndex, RewardApproximation],
-    Array4D,
-    list[float],
-    list[Dict[TimeScenarioIndex, Dict[str, float]]],
-    list[Array2D],
+    List[Dict[TimeScenarioIndex, int]],
+    List[float],
+    List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
+    List[Dict[TimeScenarioIndex, float]],
     float,
     float,
 ]:
@@ -274,17 +278,17 @@ def itr_control(
 
     Returns
     -------
-    V:np.array :
+    V:Dict[WeekIndex,List[float]] :
         Bellman values
     G:Dict[TimeScenarioIndex, RewardApproximation] :
         Reward approximation
-    itr:np.array :
+    itr:Dict[TimeScenarioIndex, int] :
         Time and simplex iterations used to solve optimization problems at each iteration
     tot_t:list[float] :
         Time spent at each iteration
-    controls_upper:list[np.array] :
+    controls_upper:List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]] :
         Optimal controls found at each iteration during the evaluation of the upper bound
-    traj:list[np.array] :
+    traj:List[Dict[TimeScenarioIndex, float]] :
         Trajectories computed at each iteration
     """
 
@@ -306,15 +310,15 @@ def itr_control(
         initial_x, controls = compute_x_multi_scenario(
             V=V, itr=i, param=param, reservoir_management=reservoir_management, reward=G
         )
-        traj.append(np.array(initial_x))
+        traj.append(initial_x)
 
-        current_itr, G = calculate_reward(
+        current_itr, times, G = calculate_reward(
             param=param,
             controls=controls,
             list_models=list_models,
             G=G,
             i=i,
-            name_reservoir=reservoir_management.reservoir.area.area,
+            name_reservoir=reservoir_management.reservoir.area,
         )
         itr_tot.append(current_itr)
 
@@ -325,22 +329,22 @@ def itr_control(
             reward=G,
         )
 
-        V0 = V[0](reservoir_management.reservoir.initial_level)
+        V0 = V[WeekIndex(0)](reservoir_management.reservoir.initial_level)
 
-        upper_bound, ctr, current_itr = compute_upper_bound(
+        upper_bound, ctr, current_itr, times = compute_upper_bound(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
             list_models=list_models,
             V={
-                week: UniVariateEstimator(
-                    {reservoir_management.reservoir.area.area: V[week]}
+                WeekIndex(week): UniVariateEstimator(
+                    {reservoir_management.reservoir.area.area: V[WeekIndex(week)]}
                 )
                 for week in range(param.len_week + 1)
             },
             stock_discretization=StockDiscretization(
                 {reservoir_management.reservoir.area: X}
             ),
-            reward_approximation={reservoir_management.reservoir.area.area: G},
+            reward_approximation={reservoir_management.reservoir.area: G},
         )
         itr_tot.append(current_itr)
         controls_upper.append(ctr)
@@ -352,9 +356,12 @@ def itr_control(
         fin = time()
         tot_t.append(fin - debut)
     return (
-        np.transpose([V[week].costs for week in range(param.len_week + 1)]),
+        {
+            WeekIndex(week): list(V[WeekIndex(week)].costs)
+            for week in range(param.len_week + 1)
+        },
         G,
-        np.array(itr_tot),
+        itr_tot,
         tot_t,
         controls_upper,
         traj,
@@ -370,12 +377,12 @@ def init_iterative_calculation(
     X: Array1D,
     solver: str,
 ) -> tuple[
-    List,
+    List[float],
     Dict[TimeScenarioIndex, AntaresProblem],
-    Dict[int, PieceWiseLinearInterpolator],
-    List,
-    List,
-    List,
+    Dict[WeekIndex, PieceWiseLinearInterpolator],
+    List[Dict[TimeScenarioIndex, int]],
+    List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
+    List[Dict[TimeScenarioIndex, float]],
     float,
     Dict[TimeScenarioIndex, RewardApproximation],
 ]:
@@ -407,7 +414,9 @@ def init_iterative_calculation(
             list_models[TimeScenarioIndex(week, scenario)] = m
 
     V = {
-        week: PieceWiseLinearInterpolator(X, np.zeros((len(X)), dtype=np.float32))
+        WeekIndex(week): PieceWiseLinearInterpolator(
+            X, np.zeros((len(X)), dtype=np.float32)
+        )
         for week in range(len_week + 1)
     }
 

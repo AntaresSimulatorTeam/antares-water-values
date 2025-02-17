@@ -5,6 +5,7 @@ from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import generate_fast_uvs_v2
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
+from type_definition import AreaIndex, WeekIndex, area_list_value_to_array
 
 
 def test_fast_usage_values_multi_stock() -> None:
@@ -34,15 +35,17 @@ def test_fast_usage_values_multi_stock() -> None:
     )
 
     mrg_prices = {
-        "area_1": dict(mean=42.77, std=31.80),
-        "area_2": dict(mean=41.71, std=3.53),
+        AreaIndex("area_1"): dict(mean=42.77, std=31.80),
+        AreaIndex("area_2"): dict(mean=41.71, std=3.53),
     }
 
     uvs = generate_fast_uvs_v2(
         param=param, multi_stock_management=multi_management, mrg_prices=mrg_prices
     )
 
-    assert uvs[0] == pytest.approx(
+    assert np.transpose(
+        area_list_value_to_array({a: x[WeekIndex(0)] for a, x in uvs.items()})
+    ) == pytest.approx(
         np.array(
             [
                 [100.0, 100.0],

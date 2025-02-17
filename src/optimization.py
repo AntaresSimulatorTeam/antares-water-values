@@ -27,6 +27,7 @@ from type_definition import (
     TimeScenarioParameter,
     Union,
     WeekIndex,
+    timescenario_area_value_to_weekly_mean_area_values,
 )
 
 
@@ -118,7 +119,8 @@ class AntaresProblem:
 
         solver = pywraplp.Solver.CreateSolver(name_solver)
         assert solver, "Couldn't find any supported solver"
-        solver.EnableOutput()
+        # solver.EnableOutput()
+        solver.SuppressOutput()
 
         parameters = pywraplp.MPSolverParameters()
         if name_solver == "XPRESS_LP":
@@ -1386,16 +1388,9 @@ def solve_for_optimal_trajectory(
             problem.reset_solver()
             problem.write_problem(
                 week=week,
-                level_init={
-                    a: sum(
-                        [
-                            trajectory[TimeScenarioIndex(week - 1, s)][a]
-                            for s in range(param.len_scenario)
-                        ]
-                    )
-                    / param.len_scenario
-                    for a in multi_stock_management.areas
-                },
+                level_init=timescenario_area_value_to_weekly_mean_area_values(
+                    trajectory, week - 1, param, multi_stock_management.areas
+                ),
                 future_costs_estimation=future_est,
             )
 

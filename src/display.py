@@ -55,7 +55,7 @@ def draw_usage_values(
         + [
             go.Scatter(
                 x=np.arange(n_weeks + 1),
-                y=np.mean(trajectory, axis=2)[:, i],
+                y=np.mean(trajectory, axis=1)[:, i],
                 visible=(i == 0),
                 name=f"Trajectory",
                 mode="markers",

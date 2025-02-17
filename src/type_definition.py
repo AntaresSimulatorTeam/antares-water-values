@@ -63,12 +63,33 @@ class TimeScenarioParameter:
             self.name_scenario = list(np.arange(len_scenario) + 1)
 
 
+def timescenario_area_value_to_weekly_mean_area_values(
+    values: Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
+    week: int,
+    param: TimeScenarioParameter,
+    list_areas: List[AreaIndex],
+) -> Dict[AreaIndex, float]:
+    return {
+        a: mean_scenario_value(
+            {
+                ScenarioIndex(s): values[TimeScenarioIndex(week, s)][a]
+                for s in range(param.len_scenario)
+            }
+        )
+        for a in list_areas
+    }
+
+
 def area_value_to_array(x: Dict[AreaIndex, float]) -> Array1D:
     return np.array([y for y in x.values()])
 
 
 def list_area_value_to_array(x: List[Dict[AreaIndex, float]]) -> Array2D:
     return np.array([[z for z in y.values()] for y in x])
+
+
+def area_list_value_to_array(x: Dict[AreaIndex, List[float]]) -> Array2D:
+    return np.array([[z for z in y] for y in x.values()])
 
 
 def array_to_area_value(
@@ -107,5 +128,75 @@ def timescenario_area_value_to_array(
     )
 
 
+def timescenario_list_area_value_to_array(
+    x: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
+    param: TimeScenarioParameter,
+    list_areas: List[AreaIndex],
+) -> Array4D:
+    return np.array(
+        [
+            [
+                [[y[a] for a in list_areas] for y in x[TimeScenarioIndex(w, s)]]
+                for s in range(param.len_scenario)
+            ]
+            for w in range(param.len_week)
+        ]
+    )
+
+
+def time_list_area_value_to_array(
+    x: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    param: TimeScenarioParameter,
+    list_areas: List[AreaIndex],
+) -> Array3D:
+    return np.array(
+        [
+            [[y[a] for a in list_areas] for y in x[WeekIndex(w)]]
+            for w in range(param.len_week)
+        ]
+    )
+
+
+def time_list_to_array(
+    x: Dict[WeekIndex, List[float]],
+) -> Array3D:
+    return np.array([[y] for y in x.values()])
+
+
+def timescenario_list_value_to_array(
+    x: Dict[TimeScenarioIndex, List[float]],
+    param: TimeScenarioParameter,
+) -> Array3D:
+    return np.array(
+        [
+            [[y for y in x[TimeScenarioIndex(w, s)]] for s in range(param.len_scenario)]
+            for w in range(param.len_week)
+        ]
+    )
+
+
 def list_to_week_value(x: List[Any], len_week: int) -> Dict[WeekIndex, Any]:
     return {WeekIndex(w): x[w] for w in range(len_week)}
+
+
+def array_to_timescenario_list_area_value(
+    x: Array4D, param: TimeScenarioParameter, list_areas: List[AreaIndex]
+) -> Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]]:
+    return {
+        TimeScenarioIndex(w, s): [
+            {a: x[w, s, j, i] for i, a in enumerate(list_areas)}
+            for j in range(x.shape[2])
+        ]
+        for w in range(param.len_week)
+        for s in range(param.len_scenario)
+    }
+
+
+def array_to_timescenario_area_value(
+    x: Array3D, param: TimeScenarioParameter, list_areas: List[AreaIndex]
+) -> Dict[TimeScenarioIndex, Dict[AreaIndex, float]]:
+    return {
+        TimeScenarioIndex(w, s): {a: x[w, s, i] for i, a in enumerate(list_areas)}
+        for w in range(param.len_week)
+        for s in range(param.len_scenario)
+    }

@@ -15,11 +15,7 @@ class Reservoir:
     days_in_week = hours_in_week // hours_in_day
     days_in_year = weeks_in_year * days_in_week
 
-    def __init__(
-        self,
-        dir_study: str,
-        name_area: str,
-    ) -> None:
+    def __init__(self, dir_study: str, name_area: str, len_scenario: int = 1) -> None:
         """
         Create a new reservoir.
 
@@ -42,7 +38,7 @@ class Reservoir:
         self.read_capacity(hydro_ini_file=hydro_ini_file)
         self.read_efficiency(hydro_ini_file=hydro_ini_file)
         self.read_rule_curves(dir_study)
-        self.read_inflow(dir_study)
+        self.read_inflow(dir_study, len_scenario)
         self.read_max_power(dir_study)
 
     def read_max_power(self, dir_study: str) -> None:
@@ -56,14 +52,20 @@ class Reservoir:
         self.max_generating = weekly_energy[:, 0]
         self.max_pumping = weekly_energy[:, 2]
 
-    def read_inflow(self, dir_study: str) -> None:
+    def read_inflow(self, dir_study: str, len_scenario: int) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
         daily_inflow = daily_inflow[: self.days_in_year]
-        nb_scenarios = daily_inflow.shape[1]
+        if len(daily_inflow.shape) >= 2:
+            nb_scenarios = daily_inflow.shape[1]
+        else:
+            nb_scenarios = 1
         weekly_inflow = daily_inflow.reshape(
             (self.weeks_in_year, self.days_in_week, nb_scenarios)
         ).sum(axis=1)
-        self.inflow = weekly_inflow
+        if nb_scenarios < len_scenario:
+            self.inflow = np.repeat(weekly_inflow, len_scenario, axis=1)
+        else:
+            self.inflow = weekly_inflow
 
     def read_rule_curves(self, dir_study: str) -> None:
         rule_curves = (

@@ -24,6 +24,7 @@ from type_definition import (
     List,
     TimeScenarioIndex,
     TimeScenarioParameter,
+    WeekIndex,
 )
 
 
@@ -116,19 +117,14 @@ def calculate_bellman_value_with_precalculated_reward(
 
     reward = calculate_complete_reward(
         controls={
-            TimeScenarioIndex(w, s): [
-                {AreaIndex(a): u for a, u in ctrl.items()} for ctrl in controls[w]
-            ]
+            TimeScenarioIndex(w, s): [ctrl for ctrl in controls[WeekIndex(w)]]
             for w in range(param.len_week)
             for s in range(param.len_scenario)
         },
         param=param,
         multi_stock_management=multi_stock_management,
         costs=costs,
-        slopes={
-            idx: [{AreaIndex(a): u for a, u in sl.items()} for sl in s]
-            for idx, s in slopes.items()
-        },
+        slopes=slopes,
     )
 
     for area, reservoir_management in multi_stock_management.dict_reservoirs.items():

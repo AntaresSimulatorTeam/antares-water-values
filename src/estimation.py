@@ -3,10 +3,17 @@ from scipy.interpolate import interp1d
 
 from hyperplane_decomposition import decompose_hyperplanes
 from hyperplane_interpolation import get_interpolation
-from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
-from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
-from type_definition import Array1D, Callable, Dict, List, Optional, Union
+from type_definition import (
+    Array1D,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    Union,
+)
 
 
 class Estimator:
@@ -99,7 +106,7 @@ class BellmanValueEstimation(Estimator):
                     [
                         self.V[f"slope_{area}"][idx]
                         * (
-                            x[area]
+                            x[area.area]
                             - self.discretization.list_discretization[area][idx[i]]
                         )
                         for i, area in enumerate(

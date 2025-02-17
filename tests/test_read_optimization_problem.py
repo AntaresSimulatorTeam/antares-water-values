@@ -8,6 +8,7 @@ from optimization import AntaresProblem, Basis
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
+from type_definition import AreaIndex
 
 
 def test_create_and_modify_weekly_problem() -> None:
@@ -30,30 +31,30 @@ def test_create_and_modify_weekly_problem() -> None:
     )
 
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
-        control={"area": 0}, prev_basis=Basis([], [])
+        control={AreaIndex("area"): 0}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(943484691.8759749)
-    assert lamb["area"] == pytest.approx(-200.08020911704824)
+    assert lamb[AreaIndex("area")] == pytest.approx(-200.08020911704824)
 
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
         param=param, multi_stock_management=reservoir_management
     )
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
-        control={"area": 8400000}, prev_basis=Basis([], [])
+        control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(38709056.48535345)
-    assert lamb["area"] == pytest.approx(0.0004060626000000001)
+    assert lamb[AreaIndex("area")] == pytest.approx(0.0004060626000000001)
 
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
         param=param, multi_stock_management=reservoir_management
     )
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
-        control={"area": -8400000}, prev_basis=Basis([], [])
+        control={AreaIndex("area"): -8400000}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(20073124196.898315)
-    assert lamb["area"] == pytest.approx(-3000.0013996873)
+    assert lamb[AreaIndex("area")] == pytest.approx(-3000.0013996873)
 
 
 def test_create_and_modify_weekly_problem_with_xpress() -> None:
@@ -86,10 +87,10 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
         )
 
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 0}, prev_basis=Basis([], [])
+            control={AreaIndex("area"): 0}, prev_basis=Basis([], [])
         )
         assert beta == pytest.approx(943484691.8759749)
-        assert lamb["area"] == pytest.approx(-200.08020911704824)
+        assert lamb[AreaIndex("area")] == pytest.approx(-200.08020911704824)
 
         problem = AntaresProblem(
             scenario=0,
@@ -102,20 +103,20 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
             param=param, multi_stock_management=reservoir_management
         )
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 8400000}, prev_basis=Basis([], [])
+            control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
         )
         assert beta == pytest.approx(38709056.48535345)
-        assert lamb["area"] == pytest.approx(0.0004060626000000001)
+        assert lamb[AreaIndex("area")] == pytest.approx(0.0004060626000000001)
 
         problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
         problem.create_weekly_problem_itr(
             param=param, multi_stock_management=reservoir_management
         )
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={"area": -8400000}, prev_basis=Basis([], [])
+            control={AreaIndex("area"): -8400000}, prev_basis=Basis([], [])
         )
         assert beta == pytest.approx(20073124196.898315)
-        assert lamb["area"] == pytest.approx(-3000.0013996873)
+        assert lamb[AreaIndex("area")] == pytest.approx(-3000.0013996873)
     else:
         print("Ignore test, xpress not available")
 
@@ -146,8 +147,8 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
 
     problem.set_constraints_initial_level_and_bellman_values(
         UniVariateEstimator({"area": V[1]}),
-        {"area": reservoir.initial_level},
-        StockDiscretization({"area": X}),
+        {AreaIndex("area"): reservoir.initial_level},
+        StockDiscretization({AreaIndex("area"): X}),
     )
 
     lp = problem.solver.ExportModelAsLpFormat(False)
@@ -157,12 +158,12 @@ def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
 
     _, _, cout, _, optimal_controls, _, _ = problem.solve_problem_with_bellman_values(
         reservoir_management,
-        StockDiscretization({"area": X}),
+        StockDiscretization({AreaIndex("area"): X}),
         UniVariateEstimator({"area": V[1]}),
-        {"area": reservoir.initial_level},
+        {AreaIndex("area"): reservoir.initial_level},
         True,
         False,
     )
 
     assert cout == pytest.approx(5046990806.783945)
-    assert optimal_controls["area"] == pytest.approx(1146984.0000000005)
+    assert optimal_controls[AreaIndex("area")] == pytest.approx(1146984.0000000005)

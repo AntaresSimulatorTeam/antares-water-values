@@ -10,6 +10,7 @@ from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from simple_bellman_value_calculation import calculate_bellman_value_directly
 from stock_discretization import StockDiscretization
+from type_definition import AreaIndex
 
 
 def test_iterate_over_stock_discretization() -> None:
@@ -61,7 +62,7 @@ def test_solve_with_bellman_multi_stock() -> None:
 
     x_1 = np.linspace(0, reservoir_1.capacity, num=5)
     x_2 = np.linspace(0, reservoir_2.capacity, num=5)
-    X = {"area_1": x_1, "area_2": x_2}
+    X = {AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2}
 
     m = AntaresProblem(
         scenario=0,
@@ -154,25 +155,23 @@ def test_solve_with_bellman_multi_stock() -> None:
 
     _, _, Vu, slope, _, xf, _ = m.solve_problem_with_bellman_values(
         multi_stock_management=multi_stock_management,
-        stock_discretization=StockDiscretization(
-            {area: X[area] for area in m.range_reservoir}
-        ),
+        stock_discretization=StockDiscretization(X),
         V=BellmanValueEstimation(V, StockDiscretization(X)),
-        level_i={
-            area: multi_stock_management.dict_reservoirs[area].reservoir.initial_level
-            for i, area in enumerate(m.range_reservoir)
-        },
+        level_i=multi_stock_management.get_initial_level(),
         take_into_account_z_and_y=True,
     )
 
     assert Vu == pytest.approx(37137635.6914607)
 
     assert slope == pytest.approx(
-        {"area_1": -73.24037883117816, "area_2": -73.23892027017814}
+        {
+            AreaIndex("area_1"): -73.24037883117816,
+            AreaIndex("area_2"): -73.23892027017814,
+        }
     )
 
     assert xf == pytest.approx(
-        {"area_1": 315840.9116434012, "area_2": 668042.0658865988}
+        {AreaIndex("area_1"): 315840.9116434012, AreaIndex("area_2"): 668042.0658865988}
     )
 
 
@@ -209,7 +208,7 @@ def test_bellman_value_exact_calculation_multi_stock() -> None:
         param=param,
         multi_stock_management=all_reservoirs,
         output_path="test_data/two_nodes",
-        X={"area_1": x_1, "area_2": x_2},
+        X={AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2},
         univariate=False,
     )
     assert lb == pytest.approx(419088906.63159156)
@@ -341,7 +340,7 @@ def test_bellman_value_exact_calculation_univariate() -> None:
             param=param,
             multi_stock_management=all_reservoirs,
             output_path="test_data/two_nodes",
-            X={"area_1": x_1, "area_2": x_2},
+            X={AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2},
             univariate=True,
         )
         assert False

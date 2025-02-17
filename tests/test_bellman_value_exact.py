@@ -1,11 +1,11 @@
 import numpy as np
 import pytest
 
-from estimation import BellmanValueEstimation
 from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import MultiStockManagement
 from read_antares_data import Reservoir
 from simple_bellman_value_calculation import calculate_bellman_value_directly
+from type_definition import AreaIndex
 
 expected_vb = -np.array(
     [
@@ -366,7 +366,7 @@ def test_bellman_value_exact() -> None:
 
     assert np.transpose(
         [
-            [vb[week].get_value({reservoir.area: x}) for x in X]
+            [vb[week].get_value({reservoir.area.area: x}) for x in X]
             for week in range(param.len_week + 1)
         ]
     ) == pytest.approx(expected_vb)
@@ -390,7 +390,7 @@ def test_bellman_value_exact_with_multi_stock() -> None:
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
         output_path="test_data/one_node",
-        X={"area": X},
+        X={AreaIndex("area"): X},
         univariate=False,
     )
 
@@ -400,7 +400,7 @@ def test_bellman_value_exact_with_multi_stock() -> None:
 
     computed_vb = np.transpose(
         [
-            [vb[week].get_value({reservoir.area: x}) for x in X]
+            [vb[week].get_value({reservoir.area.area: x}) for x in X]
             for week in range(param.len_week + 1)
         ]
     )

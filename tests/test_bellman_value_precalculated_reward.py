@@ -14,6 +14,7 @@ from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
+from type_definition import AreaIndex
 
 expected_vb = np.array(
     [

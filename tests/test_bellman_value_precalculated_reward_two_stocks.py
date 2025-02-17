@@ -5,6 +5,7 @@ from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import *
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
+from type_definition import time_list_area_value_to_array
 
 
 def test_bellman_value_precalculated_multi_stock() -> None:
@@ -44,7 +45,9 @@ def test_bellman_value_precalculated_multi_stock() -> None:
         verbose=True,
     )
 
-    assert levels == pytest.approx(
+    assert time_list_area_value_to_array(levels, param, multi_management.areas)[
+        ::-1
+    ] == pytest.approx(
         np.array(
             [
                 [
@@ -111,7 +114,18 @@ def test_bellman_value_precalculated_multi_stock() -> None:
         )
     )
 
-    assert bellman_controls == pytest.approx(
+    assert np.array(
+        [
+            [
+                [
+                    [u[a][ScenarioIndex(s)] for s in range(param.len_scenario)]
+                    for a in multi_management.areas
+                ]
+                for u in bellman_controls[WeekIndex(w)]
+            ]
+            for w in range(param.len_week)
+        ]
+    )[::-1] == pytest.approx(
         np.array(
             [
                 [
@@ -178,7 +192,9 @@ def test_bellman_value_precalculated_multi_stock() -> None:
         )
     )
 
-    assert bellman_costs == pytest.approx(
+    assert np.array(
+        [[c for c in bellman_costs[WeekIndex(w)]] for w in range(param.len_week)]
+    )[::-1] == pytest.approx(
         np.array(
             [
                 [
@@ -245,7 +261,12 @@ def test_bellman_value_precalculated_multi_stock() -> None:
         )
     )
 
-    assert slopes == pytest.approx(
+    assert np.array(
+        [
+            [[u[a] for a in multi_management.areas] for u in slopes[WeekIndex(w)]]
+            for w in range(param.len_week)
+        ]
+    )[::-1] == pytest.approx(
         np.array(
             [
                 [

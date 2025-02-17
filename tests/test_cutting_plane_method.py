@@ -5,6 +5,14 @@ from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import *
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
+from type_definition import (
+    array_to_area_value,
+    array_to_timescenario_area_value,
+    array_to_timescenario_list_area_value,
+    list_to_week_value,
+    time_list_area_value_to_array,
+    timescenario_area_value_to_array,
+)
 
 param = TimeScenarioParameter(len_week=5, len_scenario=1)
 
@@ -419,7 +427,9 @@ def test_initialize_controls() -> None:
         n_controls_init=n_controls_init,
     )
 
-    assert controls_list == pytest.approx(expected_controls_list)
+    assert timescenario_list_area_value_to_array(
+        controls_list, param, multi_management.areas
+    ) == pytest.approx(expected_controls_list)
 
 
 def test_Lget_costs() -> None:
@@ -429,20 +439,28 @@ def test_Lget_costs() -> None:
         output_path=output_path,
         saving_directory=saving_dir,
         name_solver=name_solver,
-        controls_list=expected_controls_list,
+        controls_list=array_to_timescenario_list_area_value(
+            expected_controls_list, param, multi_management.areas
+        ),
         load_from_protos=True,
         verbose=False,
     )
-    assert controls == pytest.approx(expected_controls)
-    assert costs == pytest.approx(expected_costs)
-    assert duals == pytest.approx(expected_duals)
+    assert timescenario_list_area_value_to_array(
+        controls, param, multi_management.areas
+    ) == pytest.approx(expected_controls)
+    assert timescenario_list_value_to_array(costs, param) == pytest.approx(
+        expected_costs
+    )
+    assert timescenario_list_area_value_to_array(
+        duals, param, multi_management.areas
+    ) == pytest.approx(expected_duals)
 
 
 def test_initialize_future_costs() -> None:
 
     # Initialize our approximation on future costs
     future_costs_approx = initialize_future_costs(
-        starting_pt=starting_pt,
+        starting_pt=array_to_area_value(starting_pt, multi_management.areas),
         multi_stock_management=multi_management,
     )
 
@@ -466,8 +484,13 @@ def test_get_correlation_matrix() -> None:
 
 
 def test_get_bellman_values_from_costs() -> None:
-    trajectory = np.array([[starting_pt] * param.len_scenario] * param.len_week)
-    trajectory = np.swapaxes(trajectory, 1, 2)
+    trajectory = {
+        TimeScenarioIndex(w, s): array_to_area_value(
+            starting_pt, multi_management.areas
+        )
+        for w in range(param.len_week)
+        for s in range(param.len_scenario)
+    }
 
     (
         levels,
@@ -489,8 +512,12 @@ def test_get_bellman_values_from_costs() -> None:
         verbose=False,
     )
 
-    assert levels == pytest.approx(expected_levels)
-    assert bellman_costs == pytest.approx(
+    assert time_list_area_value_to_array(levels, param, multi_management.areas)[
+        ::-1
+    ] == pytest.approx(expected_levels)
+    assert np.array(
+        [[c for c in bellman_costs[WeekIndex(w)]] for w in range(param.len_week)]
+    )[::-1] == pytest.approx(
         np.array(
             [
                 [
@@ -574,35 +601,45 @@ def test_solve_for_optimal_trajectory() -> None:
         param=param,
         multi_stock_management=multi_management,
         costs_approx=costs_approx,
-        future_costs_approx_l=expected_future_costs_approx_l,
-        starting_pt=starting_pt,
+        future_costs_approx_l=list_to_week_value(
+            expected_future_costs_approx_l, param.len_week + 1
+        ),
+        starting_pt=array_to_area_value(starting_pt, multi_management.areas),
         name_solver=name_solver,
         divisor=divisor,
     )
 
-    assert trajectory == pytest.approx(
+    assert timescenario_area_value_to_array(
+        trajectory, param, multi_management.areas
+    ) == pytest.approx(
         np.array(
             [
-                [[277853.0681], [628377.6569]],
-                [[246205.75196177], [413932.694]],
-                [[180723.695], [408715.055]],
-                [[178416.584], [403497.416]],
-                [[103611.213], [396540.564]],
-                [[30741.09338584], [634785.39300033]],
+                # [[277853.0681, 628377.6569]],
+                [[246205.75196177, 413932.694]],
+                [[180723.695, 408715.055]],
+                [[178416.584, 403497.416]],
+                [[103611.213, 396540.564]],
+                [[30741.09338584, 634785.39300033]],
             ]
         )
     )
-    assert pseudo_opt_controls == pytest.approx(expected_pseudo_opt_controls)
+    assert timescenario_area_value_to_array(
+        pseudo_opt_controls, param, multi_management.areas
+    ) == pytest.approx(expected_pseudo_opt_controls)
 
 
 def test_select_controls_to_explore() -> None:
     controls_list = select_controls_to_explore(
         param=param,
         multi_stock_management=multi_management,
-        pseudo_opt_controls=expected_pseudo_opt_controls,
+        pseudo_opt_controls=array_to_timescenario_area_value(
+            expected_pseudo_opt_controls, param, multi_management.areas
+        ),
         costs_approx=costs_approx,
     )
-    assert controls_list == pytest.approx(expected_controls_to_explore)
+    assert timescenario_list_area_value_to_array(
+        controls_list, param, multi_management.areas
+    ) == pytest.approx(expected_controls_to_explore)
 
 
 def test_get_opt_gap() -> None:
@@ -610,7 +647,9 @@ def test_get_opt_gap() -> None:
     controls, costs, _ = Lget_costs(
         param=param,
         multi_stock_management=multi_management,
-        controls_list=expected_controls_to_explore,
+        controls_list=array_to_timescenario_list_area_value(
+            expected_controls_to_explore, param, multi_management.areas
+        ),
         saving_directory=saving_dir,
         output_path=output_path,
         name_solver=name_solver,
@@ -619,7 +658,9 @@ def test_get_opt_gap() -> None:
         prefix=f"test_get_opt_gap",
     )
 
-    assert controls == pytest.approx(
+    assert timescenario_list_area_value_to_array(
+        controls, param, multi_management.areas
+    ) == pytest.approx(
         np.array(
             [
                 [[[-0.0, 419664.0]]],
@@ -631,7 +672,7 @@ def test_get_opt_gap() -> None:
         )
     )
 
-    assert costs == pytest.approx(
+    assert timescenario_list_value_to_array(costs, param) == pytest.approx(
         np.array(
             [
                 [[8.71941839e06]],
@@ -659,7 +700,7 @@ def test_get_opt_gap() -> None:
         costs_approx=costs_approx,
         controls_list=controls,
         opt_gap=1,
-        max_gap=max_gap,
+        max_gap={WeekIndex(w): max_gap[w] for w in range(param.len_week)},
     )
 
     assert opt_gap == pytest.approx(3.1317827969145355e-10)

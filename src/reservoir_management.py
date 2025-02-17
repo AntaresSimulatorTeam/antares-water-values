@@ -4,7 +4,15 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from read_antares_data import Reservoir
-from type_definition import Array1D, Callable, List, Optional
+from type_definition import (
+    AreaIndex,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    area_value_to_array,
+    array_to_list_area_value,
+)
 
 
 class ReservoirManagement:
@@ -102,23 +110,22 @@ class MultiStockManagement:
         Args:
             list_reservoirs (List[ReservoirManagement]): List of reservoir management
         """
-        self.dict_reservoirs = {}
+        self.dict_reservoirs: Dict[AreaIndex, ReservoirManagement] = {}
         for res in list_reservoirs:
             self.dict_reservoirs[res.reservoir.area] = res
+        self.areas: List[AreaIndex] = [a for a in self.dict_reservoirs.keys()]
 
     def get_disc(
         self,
         method: str,
         week: int,
         xNsteps: int,
-        reference_pt: np.ndarray,
+        reference_pt: Dict[AreaIndex, float],
         correlation_matrix: np.ndarray,
         alpha: float = 1.0,
         in_out_ratio: float = 3.0,
-    ) -> Array1D:
+    ) -> List[Dict[AreaIndex, float]]:
         n_reservoirs = len(self.dict_reservoirs)
-        if len(reference_pt.shape) > 1:
-            reference_pt = np.mean(reference_pt, axis=1)
         lbs = np.array(
             [
                 mng.reservoir.bottom_rule_curve[week] * alpha
@@ -182,12 +189,13 @@ class MultiStockManagement:
                     for r in range(n_reservoirs)
                 ]
             ).T
-            diffs_to_ref = all_pts[:, None] - reference_pt[None, :]  # Disc * R
+            array_ref_pt = area_value_to_array(reference_pt)
+            diffs_to_ref = all_pts[:, None] - array_ref_pt[None, :]  # Disc * R
             diffs_to_ref = (
                 diffs_to_ref[:, :, None] * np.eye(n_reservoirs)[None, :, :]
             )  # Disc * R * R
             diffs_to_ref = np.dot(diffs_to_ref, correlation_matrix)  # Disc * R * R
-            new_levels = reference_pt[None, None, :] + diffs_to_ref  # Disc * R * R
+            new_levels = array_ref_pt[None, None, :] + diffs_to_ref  # Disc * R * R
             new_levels = np.maximum(
                 new_levels, empty[None, None, :]
             )  # Do or do not make other points leave guiding curves ?
@@ -197,6 +205,7 @@ class MultiStockManagement:
             levels = np.reshape(
                 new_levels, (xNsteps * n_reservoirs, n_reservoirs)
             )  # (Disc * R) * R
+            dict_levels = array_to_list_area_value(levels, self.areas)
         else:
             # Listing all levels
             levels_discretization = product(
@@ -212,4 +221,10 @@ class MultiStockManagement:
                 ]
             )
             levels = np.array([level for level in levels_discretization])
-        return levels
+        return dict_levels
+
+    def get_initial_level(self) -> Dict[AreaIndex, float]:
+        return {
+            area: self.dict_reservoirs[area].reservoir.initial_level
+            for area in self.areas
+        }

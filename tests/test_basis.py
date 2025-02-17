@@ -13,6 +13,7 @@ from optimization import AntaresProblem, Basis
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
+from type_definition import AreaIndex, WeekIndex
 
 
 def test_basis_with_xpress() -> None:
@@ -44,7 +45,7 @@ def test_basis_with_xpress() -> None:
         )
 
         beta_1, _, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 8400000}, prev_basis=Basis([], [])
+            control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
         )
 
         problem_2 = AntaresProblem(
@@ -58,7 +59,7 @@ def test_basis_with_xpress() -> None:
             param=param, multi_stock_management=reservoir_management
         )
         beta_2, _, itr_with_basis, _ = problem_2.solve_with_predefined_controls(
-            control={"area": 8400000}, prev_basis=problem.basis[-1]
+            control={AreaIndex("area"): 8400000}, prev_basis=problem.basis[-1]
         )
 
         assert itr_with_basis == 0
@@ -97,33 +98,33 @@ def test_basis_with_upper_bound() -> None:
         }
 
         _, _, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 0}, prev_basis=Basis([], [])
+            control={AreaIndex("area"): 0}, prev_basis=Basis([], [])
         )
 
-        upper_bound_1, _, _ = compute_upper_bound(
+        upper_bound_1, _, _, _ = compute_upper_bound(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
             stock_discretization=StockDiscretization({reservoir.area: X}),
             list_models=list_models,
             V={
-                week: UniVariateEstimator({reservoir.area: V[week]})
+                WeekIndex(week): UniVariateEstimator({reservoir.area.area: V[week]})
                 for week in range(param.len_week + 1)
             },
         )
 
         _, _, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 8400000}, prev_basis=Basis([], [])
+            control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
         )
 
-        upper_bound_2, _, itr_with_basis = compute_upper_bound(
+        upper_bound_2, _, itr_with_basis, _ = compute_upper_bound(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
             stock_discretization=StockDiscretization({reservoir.area: X}),
             list_models=list_models,
             V={
-                week: UniVariateEstimator({reservoir.area: V[week]})
+                WeekIndex(week): UniVariateEstimator({reservoir.area.area: V[week]})
                 for week in range(param.len_week + 1)
             },
         )
         assert upper_bound_2 == pytest.approx(upper_bound_1)
-        assert itr_with_basis[0, 0, 0] == 0
+        assert itr_with_basis[TimeScenarioIndex(0, 0)] == 0

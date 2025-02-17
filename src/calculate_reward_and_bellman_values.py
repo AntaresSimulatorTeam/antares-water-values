@@ -1,9 +1,14 @@
 import numpy as np
 
 from estimation import PieceWiseLinearInterpolator, RewardApproximation
-from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from reservoir_management import ReservoirManagement
-from type_definition import Array1D, Dict
+from type_definition import (
+    Array1D,
+    Dict,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    WeekIndex,
+)
 
 
 def solve_weekly_problem_with_approximation(
@@ -103,7 +108,7 @@ def calculate_VU(
     reservoir_management: ReservoirManagement,
     reward: Dict[TimeScenarioIndex, RewardApproximation],
     final_values: Array1D = np.zeros(1, dtype=np.float32),
-) -> Dict[int, PieceWiseLinearInterpolator]:
+) -> Dict[WeekIndex, PieceWiseLinearInterpolator]:
     """
     Calculate Bellman values for every week based on reward approximation
 
@@ -147,6 +152,6 @@ def calculate_VU(
             axis=1,
         )
     return {
-        week: PieceWiseLinearInterpolator(X, np.mean(v, axis=1))
+        WeekIndex(week): PieceWiseLinearInterpolator(X, np.mean(v, axis=1))
         for (week, v) in V.items()
     }

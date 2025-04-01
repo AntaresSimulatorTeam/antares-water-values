@@ -12,17 +12,34 @@ from tqdm import tqdm
 
 from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
 from estimation import LinearCostEstimator, LinearInterpolator
-from optimization import (AntaresProblem, Basis, WeeklyBellmanProblem,
-                          solve_for_optimal_trajectory)
+from optimization import (
+    AntaresProblem,
+    Basis,
+    WeeklyBellmanProblem,
+    solve_for_optimal_trajectory,
+)
 from reservoir_management import MultiStockManagement
 from type_definition import (
-    AreaIndex, Dict, List, Optional, ScenarioIndex, TimeScenarioIndex,
-    TimeScenarioParameter, WeekIndex, area_value_to_array, array_to_area_value,
-    list_area_value_to_array, list_to_week_value, mean_scenario_value,
-    time_list_area_value_to_array, time_list_to_array,
+    AreaIndex,
+    Dict,
+    List,
+    Optional,
+    ScenarioIndex,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    WeekIndex,
+    area_value_to_array,
+    array_to_area_value,
+    list_area_value_to_array,
+    list_to_week_value,
+    mean_scenario_value,
+    time_list_area_value_to_array,
+    time_list_to_array,
     timescenario_area_value_to_array,
     timescenario_area_value_to_weekly_mean_area_values,
-    timescenario_list_area_value_to_array, timescenario_list_value_to_array)
+    timescenario_list_area_value_to_array,
+    timescenario_list_value_to_array,
+)
 
 jl = juliacall.Main
 
@@ -115,7 +132,7 @@ def get_bellman_values_from_costs(
     Dict[WeekIndex, List[float]],
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     Dict[WeekIndex, List[Dict[AreaIndex, Dict[ScenarioIndex, float]]]],
-    Dict[WeekIndex,LinearInterpolator],
+    Dict[WeekIndex, LinearInterpolator],
 ]:
     """
     Dynamically solves the problem of minimizing the optimal control problem for every discretized level,
@@ -149,7 +166,7 @@ def get_bellman_values_from_costs(
     )
 
     # Keeping in memory all future costs approximations
-    future_costs_approx_l = {WeekIndex(param.len_week):future_costs_approx}
+    future_costs_approx_l = {WeekIndex(param.len_week): future_costs_approx}
 
     # Parameters
     n_weeks = param.len_week
@@ -919,7 +936,7 @@ def compute_usage_values_from_costs(
     multi_stock_management: MultiStockManagement,
     name_solver: str,
     costs_approx: LinearCostEstimator,
-    future_costs_approx_l: Dict[WeekIndex,LinearInterpolator],
+    future_costs_approx_l: Dict[WeekIndex, LinearInterpolator],
     optimal_trajectory: Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
     nSteps_bellman: int,
     correlations: np.ndarray,
@@ -1040,7 +1057,9 @@ def compute_usage_values_from_costs(
                         level_init=array_to_area_value(
                             levels, multi_stock_management.areas
                         ),
-                        future_costs_estimation=future_costs_approx_l[WeekIndex(week + 1)],
+                        future_costs_estimation=future_costs_approx_l[
+                            WeekIndex(week + 1)
+                        ],
                     )
 
                     # Solve
@@ -1128,7 +1147,7 @@ def cutting_plane_method(
 ) -> tuple[
     Dict[WeekIndex, List[float]],
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
-    Dict[WeekIndex,LinearInterpolator],
+    Dict[WeekIndex, LinearInterpolator],
     LinearCostEstimator,
     Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
 ]:
@@ -1307,7 +1326,7 @@ def iter_bell_vals(
 ) -> tuple[
     Dict[WeekIndex, List[float]],
     LinearCostEstimator,
-    Dict[WeekIndex,LinearInterpolator],
+    Dict[WeekIndex, LinearInterpolator],
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
     Dict[AreaIndex, Dict[WeekIndex, List[float]]],

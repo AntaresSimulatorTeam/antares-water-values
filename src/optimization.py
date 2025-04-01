@@ -7,17 +7,28 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
 
-from calculate_reward_and_bellman_values import \
-    solve_weekly_problem_with_approximation
-from estimation import (BellmanValueEstimation, Estimator, LinearCostEstimator,
-                        LinearInterpolator, RewardApproximation,
-                        UniVariateEstimator)
+from calculate_reward_and_bellman_values import solve_weekly_problem_with_approximation
+from estimation import (
+    BellmanValueEstimation,
+    Estimator,
+    LinearCostEstimator,
+    LinearInterpolator,
+    RewardApproximation,
+    UniVariateEstimator,
+)
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
 from type_definition import (
-    AreaIndex, Dict, List, ScenarioIndex, TimeScenarioIndex,
-    TimeScenarioParameter, Union, WeekIndex,
-    timescenario_area_value_to_weekly_mean_area_values)
+    AreaIndex,
+    Dict,
+    List,
+    ScenarioIndex,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    Union,
+    WeekIndex,
+    timescenario_area_value_to_weekly_mean_area_values,
+)
 
 
 class Basis:
@@ -1390,7 +1401,7 @@ def solve_for_optimal_trajectory(
                 level_init=timescenario_area_value_to_weekly_mean_area_values(
                     trajectory, week - 1, param, multi_stock_management.areas
                 ),
-                future_costs_estimation=future_costs_approx_l[WeekIndex(week+1)],
+                future_costs_estimation=future_costs_approx_l[WeekIndex(week + 1)],
             )
 
             # Solve, might be cool to reuse bases

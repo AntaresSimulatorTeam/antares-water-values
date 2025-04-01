@@ -4,8 +4,15 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from read_antares_data import Reservoir
-from type_definition import (AreaIndex, Callable, Dict, List, Optional,
-                             area_value_to_array, array_to_list_area_value)
+from type_definition import (
+    AreaIndex,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    area_value_to_array,
+    array_to_list_area_value,
+)
 
 
 class ReservoirManagement:

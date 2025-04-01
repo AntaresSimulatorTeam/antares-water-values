@@ -1,34 +1,9 @@
 import subprocess
 from configparser import ConfigParser
-from dataclasses import dataclass, field
-from typing import Optional
 
 import numpy as np
 
-
-@dataclass
-class TimeScenarioParameter:
-    """Describes time and scenario related parameters"""
-
-    len_week: int = 52
-    len_scenario: int = 1
-    name_scenario: list = field(default_factory=list)
-
-    def __init__(
-        self, len_week: int, len_scenario: int, name_scenario: Optional[list] = None
-    ):
-        self.len_week = len_week
-        self.len_scenario = len_scenario
-        if name_scenario:
-            self.name_scenario = name_scenario
-        else:
-            self.name_scenario = list(np.arange(len_scenario) + 1)
-
-
-@dataclass(frozen=True)
-class TimeScenarioIndex:
-    week: int
-    scenario: int
+from type_definition import AreaIndex
 
 
 class Reservoir:
@@ -40,11 +15,7 @@ class Reservoir:
     days_in_week = hours_in_week // hours_in_day
     days_in_year = weeks_in_year * days_in_week
 
-    def __init__(
-        self,
-        dir_study: str,
-        name_area: str,
-    ) -> None:
+    def __init__(self, dir_study: str, name_area: str, len_scenario: int = 1) -> None:
         """
         Create a new reservoir.
 
@@ -60,14 +31,14 @@ class Reservoir:
         None
         """
 
-        self.area = name_area
+        self.area = AreaIndex(name_area)
 
         hydro_ini_file = self.get_hydro_ini_file(dir_study=dir_study)
 
         self.read_capacity(hydro_ini_file=hydro_ini_file)
         self.read_efficiency(hydro_ini_file=hydro_ini_file)
         self.read_rule_curves(dir_study)
-        self.read_inflow(dir_study)
+        self.read_inflow(dir_study, len_scenario)
         self.read_max_power(dir_study)
 
     def read_max_power(self, dir_study: str) -> None:
@@ -81,14 +52,20 @@ class Reservoir:
         self.max_generating = weekly_energy[:, 0]
         self.max_pumping = weekly_energy[:, 2]
 
-    def read_inflow(self, dir_study: str) -> None:
+    def read_inflow(self, dir_study: str, len_scenario: int) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
         daily_inflow = daily_inflow[: self.days_in_year]
-        nb_scenarios = daily_inflow.shape[1]
+        if len(daily_inflow.shape) >= 2:
+            nb_scenarios = daily_inflow.shape[1]
+        else:
+            nb_scenarios = 1
         weekly_inflow = daily_inflow.reshape(
             (self.weeks_in_year, self.days_in_week, nb_scenarios)
         ).sum(axis=1)
-        self.inflow = weekly_inflow
+        if nb_scenarios < len_scenario:
+            self.inflow = np.repeat(weekly_inflow, len_scenario, axis=1)
+        else:
+            self.inflow = weekly_inflow
 
     def read_rule_curves(self, dir_study: str) -> None:
         rule_curves = (
@@ -118,12 +95,12 @@ class Reservoir:
 
     def read_capacity(self, hydro_ini_file: ConfigParser) -> None:
 
-        capacity = hydro_ini_file.getfloat("reservoir capacity", self.area)
+        capacity = hydro_ini_file.getfloat("reservoir capacity", self.area.area)
 
         self.capacity = capacity
 
     def read_efficiency(self, hydro_ini_file: ConfigParser) -> None:
-        efficiency = hydro_ini_file.getfloat("pumping efficiency", self.area)
+        efficiency = hydro_ini_file.getfloat("pumping efficiency", self.area.area)
         self.efficiency = efficiency
 
 

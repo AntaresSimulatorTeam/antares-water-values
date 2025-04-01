@@ -2,17 +2,18 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
-from calculate_reward_and_bellman_values import MultiStockManagement
+from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
 from functions_iterative import (
-    BellmanValueCalculation,
     ReservoirManagement,
-    RewardApproximation,
     TimeScenarioIndex,
     TimeScenarioParameter,
     compute_upper_bound,
 )
 from optimization import AntaresProblem, Basis
 from read_antares_data import Reservoir
+from reservoir_management import MultiStockManagement
+from stock_discretization import StockDiscretization
+from type_definition import AreaIndex, WeekIndex
 
 
 def test_basis_with_xpress() -> None:
@@ -44,7 +45,7 @@ def test_basis_with_xpress() -> None:
         )
 
         beta_1, _, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 8400000}, prev_basis=Basis([], [])
+            control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
         )
 
         problem_2 = AntaresProblem(
@@ -58,7 +59,7 @@ def test_basis_with_xpress() -> None:
             param=param, multi_stock_management=reservoir_management
         )
         beta_2, _, itr_with_basis, _ = problem_2.solve_with_predefined_controls(
-            control={"area": 8400000}, prev_basis=problem.basis[-1]
+            control={AreaIndex("area"): 8400000}, prev_basis=problem.basis[-1]
         )
 
         assert itr_with_basis == 0
@@ -90,39 +91,40 @@ def test_basis_with_upper_bound() -> None:
         )
 
         list_models = {TimeScenarioIndex(0, 0): problem}
-        V = np.zeros((20, 2), dtype=np.float32)
+        X = np.linspace(0, reservoir.capacity, num=20)
+        V = {
+            week: PieceWiseLinearInterpolator(X, np.zeros(20, dtype=np.float32))
+            for week in range(2)
+        }
 
-        bellman_value_calculation = BellmanValueCalculation(
+        _, _, _, _ = problem.solve_with_predefined_controls(
+            control={AreaIndex("area"): 0}, prev_basis=Basis([], [])
+        )
+
+        upper_bound_1, _, _, _ = compute_upper_bound(
             param=param,
-            reward={
-                TimeScenarioIndex(0, 0): RewardApproximation(
-                    lb_control=-reservoir.max_pumping[0],
-                    ub_control=reservoir.max_generating[0],
-                    ub_reward=0,
-                )
+            multi_stock_management=MultiStockManagement([reservoir_management]),
+            stock_discretization=StockDiscretization({reservoir.area: X}),
+            list_models=list_models,
+            V={
+                WeekIndex(week): UniVariateEstimator({reservoir.area.area: V[week]})
+                for week in range(param.len_week + 1)
             },
-            reservoir_management=reservoir_management,
-            stock_discretization=np.linspace(0, reservoir.capacity, num=20),
         )
 
         _, _, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 0}, prev_basis=Basis([], [])
+            control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
         )
 
-        upper_bound_1, _, _ = compute_upper_bound(
-            bellman_value_calculation=bellman_value_calculation,
+        upper_bound_2, _, itr_with_basis, _ = compute_upper_bound(
+            param=param,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
+            stock_discretization=StockDiscretization({reservoir.area: X}),
             list_models=list_models,
-            V=V,
-        )
-
-        _, _, _, _ = problem.solve_with_predefined_controls(
-            control={"area": 8400000}, prev_basis=Basis([], [])
-        )
-
-        upper_bound_2, _, itr_with_basis = compute_upper_bound(
-            bellman_value_calculation=bellman_value_calculation,
-            list_models=list_models,
-            V=V,
+            V={
+                WeekIndex(week): UniVariateEstimator({reservoir.area.area: V[week]})
+                for week in range(param.len_week + 1)
+            },
         )
         assert upper_bound_2 == pytest.approx(upper_bound_1)
-        assert itr_with_basis[0, 0, 0] == 0
+        assert itr_with_basis[TimeScenarioIndex(0, 0)] == 0

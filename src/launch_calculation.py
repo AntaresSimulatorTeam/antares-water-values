@@ -1,11 +1,13 @@
+import numpy as np
+
 from calculate_reward_and_bellman_values import ReservoirManagement
 from functions_iterative import itr_control
-from read_antares_data import TimeScenarioParameter
+from multi_stock_bellman_value_calculation import MultiStockManagement
 from simple_bellman_value_calculation import (
     calculate_bellman_value_directly,
     calculate_bellman_value_with_precalculated_reward,
 )
-from type_definition import Array1D, Array2D
+from type_definition import Array1D, Array2D, TimeScenarioParameter
 
 
 def calculate_bellman_values(
@@ -40,12 +42,25 @@ def calculate_bellman_values(
 
     if method == "direct":
         # Compute Bellman values directly
-        vb = calculate_bellman_value_directly(
+        intermediate_vb, _, _ = calculate_bellman_value_directly(
             param=param,
-            reservoir_management=reservoir_management,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
             output_path=output_path,
-            X=X,
+            X={reservoir_management.reservoir.area: X},
             solver=solver,
+            univariate=True,
+        )
+
+        vb = np.transpose(
+            [
+                [
+                    intermediate_vb[week].get_value(
+                        {reservoir_management.reservoir.area.area: x}
+                    )
+                    for x in X
+                ]
+                for week in range(param.len_week + 1)
+            ]
         )
 
     elif method == "precalculated":
@@ -53,15 +68,15 @@ def calculate_bellman_values(
         vb, _ = calculate_bellman_value_with_precalculated_reward(
             len_controls=len_controls,
             param=param,
-            reservoir_management=reservoir_management,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
             output_path=output_path,
-            X=X,
-            solver=solver,
+            len_bellman=len(X),
+            name_solver=solver,
         )
 
     elif method == "iterative":
         # or with iterative algorithm
-        vb, _, _, _, _, _ = itr_control(
+        dict_vb, _, _, _, _, _, _, _ = itr_control(
             param=param,
             reservoir_management=reservoir_management,
             output_path=output_path,
@@ -70,5 +85,6 @@ def calculate_bellman_values(
             tol_gap=tol_gap,
             solver=solver,
         )
+        vb = np.array([x for x in dict_vb])
 
     return vb

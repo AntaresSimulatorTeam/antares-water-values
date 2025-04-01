@@ -25,7 +25,7 @@ def test_itr_control() -> None:
     xNsteps = 20
     X = np.linspace(0, reservoir.capacity, num=xNsteps)
 
-    vb, G, _, _, controls_upper, traj = itr_control(
+    vb, G, _, _, controls_upper, traj, lb, ub = itr_control(
         param=param,
         reservoir_management=reservoir_management,
         output_path="test_data/one_node",
@@ -57,11 +57,15 @@ def test_itr_control() -> None:
         )
     )
 
-    assert controls_upper[-1] == pytest.approx(
-        np.array([[123864.0], [255912.0], [34924.0], [1139897.0], [773918.0]])
-    )
+    assert -lb == pytest.approx(4410020694.484235)
+    assert ub == pytest.approx(4410021160.928989)
 
-    assert traj[1] == pytest.approx(
+    assert np.array(
+        [
+            [traj[1][TimeScenarioIndex(w, s)] for s in range(param.len_scenario)]
+            for w in range(param.len_week + 1)
+        ]
+    ) == pytest.approx(
         np.array(
             [
                 [4450000.0],
@@ -74,7 +78,7 @@ def test_itr_control() -> None:
         )
     )
 
-    assert vb == pytest.approx(
+    assert np.transpose([x for x in vb.values()]) == pytest.approx(
         np.array(
             [
                 [
@@ -259,7 +263,7 @@ def test_itr_control_with_xpress() -> None:
         xNsteps = 20
         X = np.linspace(0, reservoir.capacity, num=xNsteps)
 
-        vb, G, _, _, controls_upper, traj = itr_control(
+        vb, G, _, _, controls_upper, traj, lb, ub = itr_control(
             param=param,
             reservoir_management=reservoir_management,
             output_path="test_data/one_node",
@@ -292,11 +296,15 @@ def test_itr_control_with_xpress() -> None:
             )
         )
 
-        assert controls_upper[-1] == pytest.approx(
-            np.array([[123864.0], [255912.0], [34924.0], [1139897.0], [773918.0]])
-        )
+        assert -lb == pytest.approx(4410020694.484235)
+        assert ub == pytest.approx(4410021160.928989)
 
-        assert traj[1] == pytest.approx(
+        assert np.array(
+            [
+                [traj[1][TimeScenarioIndex(w, s)] for s in range(param.len_scenario)]
+                for w in range(param.len_week + 1)
+            ]
+        ) == pytest.approx(
             np.array(
                 [
                     [4450000.0],
@@ -309,7 +317,7 @@ def test_itr_control_with_xpress() -> None:
             )
         )
 
-        assert vb == pytest.approx(
+        assert np.transpose([x for x in vb.values()]) == pytest.approx(
             np.array(
                 [
                     [

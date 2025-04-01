@@ -1,7 +1,9 @@
 import numpy as np
+import pytest
 from scipy.interpolate import interp1d
 
 from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from multi_stock_bellman_value_calculation import MultiStockManagement
 from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
@@ -27,15 +29,15 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
     vb, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
-        reservoir_management=reservoir_management,
+        multi_stock_management=MultiStockManagement([reservoir_management]),
         output_path="test_data/one_node",
-        X=X,
+        len_bellman=len(X),
     )
 
     V_fut = interp1d(X, vb[:, 0])
     V0 = V_fut(reservoir_management.reservoir.initial_level)
 
-    assert float(V0) == -3546553410.818109
+    assert float(V0) == pytest.approx(-3546553410.818109)
 
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
@@ -49,12 +51,12 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
     vb, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
-        reservoir_management=reservoir_management,
+        multi_stock_management=MultiStockManagement([reservoir_management]),
         output_path="test_data/one_node",
-        X=X,
+        len_bellman=len(X),
     )
 
     V_fut = interp1d(X, vb[:, 0])
     V0 = V_fut(reservoir_management.reservoir.initial_level)
 
-    assert V0 == -3546553410.818109
+    assert V0 == pytest.approx(-3546553410.818109)

@@ -7,28 +7,17 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
 
-from calculate_reward_and_bellman_values import solve_weekly_problem_with_approximation
-from estimation import (
-    BellmanValueEstimation,
-    Estimator,
-    LinearCostEstimator,
-    LinearInterpolator,
-    RewardApproximation,
-    UniVariateEstimator,
-)
+from calculate_reward_and_bellman_values import \
+    solve_weekly_problem_with_approximation
+from estimation import (BellmanValueEstimation, Estimator, LinearCostEstimator,
+                        LinearInterpolator, RewardApproximation,
+                        UniVariateEstimator)
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
 from type_definition import (
-    AreaIndex,
-    Dict,
-    List,
-    ScenarioIndex,
-    TimeScenarioIndex,
-    TimeScenarioParameter,
-    Union,
-    WeekIndex,
-    timescenario_area_value_to_weekly_mean_area_values,
-)
+    AreaIndex, Dict, List, ScenarioIndex, TimeScenarioIndex,
+    TimeScenarioParameter, Union, WeekIndex,
+    timescenario_area_value_to_weekly_mean_area_values)
 
 
 class Basis:
@@ -242,7 +231,7 @@ class AntaresProblem:
                 hours_in_week=hours_in_week,
                 name_variable=f"^HydroLevel::area<{area}>::hour<.",  # variable niv stock
             )
-            self.delete_variable(
+            self.fix_variable(
                 hours_in_week=hours_in_week,
                 name_variable=f"^Overflow::area<{area}>::hour<.",  # variable overflow
             )
@@ -398,6 +387,18 @@ class AntaresProblem:
                 var[i].SetLb(-model.Infinity())
                 var[i].SetUb(model.Infinity())
                 model.Objective().SetCoefficient(var[i], 0)
+
+    def fix_variable(
+        self, hours_in_week: int, name_variable: str, value: float = 0
+    ) -> None:
+        model = self.solver
+        var = model.variables()
+        var_id = [i for i in range(len(var)) if re.search(name_variable, var[i].name())]
+        assert len(var_id) in [0, hours_in_week]
+        if len(var_id) == hours_in_week:
+            for i in var_id:
+                var[i].SetLb(0)
+                var[i].SetUb(0)
 
     def delete_constraint(self, hours_in_week: int, name_constraint: str) -> None:
         model = self.solver
@@ -1021,7 +1022,7 @@ class WeeklyBellmanProblem:
             [
                 self.solver.Add(
                     control_cost_per_scenario[s]
-                    >= self.div_euros
+                    >= cost / self.div_euros
                     + sum(
                         [
                             (controls[area][s] - control[r] / self.div_energy)
@@ -1184,7 +1185,9 @@ class WeeklyBellmanProblem:
             area: {
                 s: self.solver.Add(
                     overflow_penalties[area][s]
-                    >= overflows[area][s] * (2 * mng.penalty_upper_rule_curve),
+                    >= overflows[area][s]
+                    * (2 * mng.penalty_upper_rule_curve)
+                    / self.div_price,
                     name=f"overflow_cst_{area}_{s}",
                 )
                 for s in self.scenarios
@@ -1195,12 +1198,10 @@ class WeeklyBellmanProblem:
         # Total penalty per scenario
         # total_penalty >= Σ Σ curve_pen + overflow_pen
         total_penalty_cost_constraint = self.solver.Add(
-            penalty_cost
+            len(self.scenarios) * penalty_cost
             >= sum(
                 [
-                    curve_penalties[area][s]
-                    + late_curve_penalties[area][s]
-                    + overflow_penalties[area][s]
+                    late_curve_penalties[area][s] + overflow_penalties[area][s]
                     for s in self.scenarios
                     for area in self.managements
                 ]
@@ -1324,7 +1325,6 @@ class WeeklyBellmanProblem:
                     for s in self.scenarios
                 ]
             )
-            / len(self.scenarios)
             for area in self.managements
         }
         duals = {
@@ -1381,8 +1381,7 @@ def solve_for_optimal_trajectory(
         trajectory[TimeScenarioIndex(-1, scenario)] = starting_pt
     controls = {}
     costs = {}
-    for week_id, future_est in future_costs_approx_l.items():
-        week = week_id.week - 1
+    for week in range(param.len_week):
         if week >= 0:
             # Write problem
             problem.reset_solver()
@@ -1391,7 +1390,7 @@ def solve_for_optimal_trajectory(
                 level_init=timescenario_area_value_to_weekly_mean_area_values(
                     trajectory, week - 1, param, multi_stock_management.areas
                 ),
-                future_costs_estimation=future_est,
+                future_costs_estimation=future_costs_approx_l[WeekIndex(week+1)],
             )
 
             # Solve, might be cool to reuse bases

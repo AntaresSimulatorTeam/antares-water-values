@@ -4,15 +4,8 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 from read_antares_data import Reservoir
-from type_definition import (
-    AreaIndex,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    area_value_to_array,
-    array_to_list_area_value,
-)
+from type_definition import (AreaIndex, Callable, Dict, List, Optional,
+                             area_value_to_array, array_to_list_area_value)
 
 
 class ReservoirManagement:
@@ -190,7 +183,7 @@ class MultiStockManagement:
                 ]
             ).T
             array_ref_pt = area_value_to_array(reference_pt)
-            diffs_to_ref = all_pts[:, None] - array_ref_pt[None, :]  # Disc * R
+            diffs_to_ref = all_pts - array_ref_pt[None, :]  # Disc * R
             diffs_to_ref = (
                 diffs_to_ref[:, :, None] * np.eye(n_reservoirs)[None, :, :]
             )  # Disc * R * R

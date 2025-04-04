@@ -1,36 +1,16 @@
 import numpy as np
 import pytest
 
-from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from functions_iterative import TimeScenarioParameter
 from multi_stock_bellman_value_calculation import generate_fast_uvs_v2
-from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from type_definition import AreaIndex, WeekIndex, area_list_value_to_array
 
 
-def test_fast_usage_values_multi_stock(param: TimeScenarioParameter) -> None:
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    multi_management = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
+def test_fast_usage_values_multi_stock(
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
 
     mrg_prices = {
         AreaIndex("area_1"): dict(mean=42.77, std=31.80),
@@ -38,7 +18,9 @@ def test_fast_usage_values_multi_stock(param: TimeScenarioParameter) -> None:
     }
 
     uvs = generate_fast_uvs_v2(
-        param=param, multi_stock_management=multi_management, mrg_prices=mrg_prices
+        param=param,
+        multi_stock_management=multi_stock_management_two_nodes,
+        mrg_prices=mrg_prices,
     )
 
     assert np.transpose(

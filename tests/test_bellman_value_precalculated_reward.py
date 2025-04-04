@@ -1,12 +1,11 @@
 import numpy as np
 import pytest
 
-from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from functions_iterative import TimeScenarioParameter
 from multi_stock_bellman_value_calculation import (
     MultiStockManagement,
     precalculated_method,
 )
-from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
@@ -178,22 +177,17 @@ expected_vb = np.array(
 )
 
 
-def test_bellman_value_precalculated_reward(param: TimeScenarioParameter) -> None:
+def test_bellman_value_precalculated_reward(
+    param: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
+) -> None:
 
-    reservoir = Reservoir("test_data/one_node", "area")
-    reservoir_management = ReservoirManagement(
-        reservoir=reservoir,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=False,
-    )
     xNsteps = 20
 
     vb, G = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
-        multi_stock_management=MultiStockManagement([reservoir_management]),
+        multi_stock_management=multi_stock_management_one_node,
         output_path="test_data/one_node",
         len_bellman=xNsteps,
     )
@@ -221,9 +215,8 @@ def test_bellman_value_precalculated_reward(param: TimeScenarioParameter) -> Non
         (-0.0004060626000000001, -38705645.55951345),
     ]
     for i, cut in enumerate(true_list_cut):
-        assert G[reservoir.area][TimeScenarioIndex(0, 0)].list_cut[i] == pytest.approx(
-            cut
-        )
+        for area in multi_stock_management_one_node.areas:
+            assert G[area][TimeScenarioIndex(0, 0)].list_cut[i] == pytest.approx(cut)
 
     true_breaking_point = [
         -8400000.0,
@@ -249,31 +242,25 @@ def test_bellman_value_precalculated_reward(param: TimeScenarioParameter) -> Non
         8400000.0,
     ]
     for i, pt in enumerate(true_breaking_point):
-        assert G[reservoir.area][TimeScenarioIndex(0, 0)].breaking_point[
-            i
-        ] == pytest.approx(pt, 1e-5)
+        for area in multi_stock_management_one_node.areas:
+            assert G[area][TimeScenarioIndex(0, 0)].breaking_point[i] == pytest.approx(
+                pt, 1e-5
+            )
 
     assert vb == pytest.approx(expected_vb)
 
 
 def test_bellman_value_precalculated_reward_with_multi_stock(
     param: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
 ) -> None:
 
-    reservoir = Reservoir("test_data/one_node", "area")
-    reservoir_management = ReservoirManagement(
-        reservoir=reservoir,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=False,
-    )
     xNsteps = 20
 
     _, _, bellman_costs, _, _, _ = precalculated_method(
         len_controls=20,
         param=param,
-        multi_stock_management=MultiStockManagement([reservoir_management]),
+        multi_stock_management=multi_stock_management_one_node,
         output_path="test_data/one_node",
         len_bellman=xNsteps,
     )

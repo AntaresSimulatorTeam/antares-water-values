@@ -3,30 +3,21 @@ import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
 from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
-from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from functions_iterative import TimeScenarioParameter
 from optimization import AntaresProblem, Basis
-from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
-from type_definition import AreaIndex
+from type_definition import AreaIndex, Array1D, Dict
 
 
-def test_create_and_modify_weekly_problem(param: TimeScenarioParameter) -> None:
+def test_create_and_modify_weekly_problem(
+    param: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
+) -> None:
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
-    reservoir = Reservoir("test_data/one_node", "area")
-    reservoir_management = MultiStockManagement(
-        [
-            ReservoirManagement(
-                reservoir=reservoir,
-                penalty_bottom_rule_curve=0,
-                penalty_upper_rule_curve=0,
-                penalty_final_level=0,
-                force_final_level=True,
-            )
-        ]
-    )
+
     problem.create_weekly_problem_itr(
-        param=param, multi_stock_management=reservoir_management
+        param=param, multi_stock_management=multi_stock_management_one_node
     )
 
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
@@ -37,7 +28,7 @@ def test_create_and_modify_weekly_problem(param: TimeScenarioParameter) -> None:
 
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
-        param=param, multi_stock_management=reservoir_management
+        param=param, multi_stock_management=multi_stock_management_one_node
     )
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
         control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
@@ -47,7 +38,7 @@ def test_create_and_modify_weekly_problem(param: TimeScenarioParameter) -> None:
 
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     problem.create_weekly_problem_itr(
-        param=param, multi_stock_management=reservoir_management
+        param=param, multi_stock_management=multi_stock_management_one_node
     )
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
         control={AreaIndex("area"): -8400000}, prev_basis=Basis([], [])
@@ -58,6 +49,7 @@ def test_create_and_modify_weekly_problem(param: TimeScenarioParameter) -> None:
 
 def test_create_and_modify_weekly_problem_with_xpress(
     param: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
 ) -> None:
 
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
@@ -70,20 +62,9 @@ def test_create_and_modify_weekly_problem_with_xpress(
             itr=1,
             name_solver="XPRESS_LP",
         )
-        reservoir = Reservoir("test_data/one_node", "area")
-        reservoir_management = MultiStockManagement(
-            [
-                ReservoirManagement(
-                    reservoir=reservoir,
-                    penalty_bottom_rule_curve=0,
-                    penalty_upper_rule_curve=0,
-                    penalty_final_level=0,
-                    force_final_level=True,
-                )
-            ]
-        )
+
         problem.create_weekly_problem_itr(
-            param=param, multi_stock_management=reservoir_management
+            param=param, multi_stock_management=multi_stock_management_one_node
         )
 
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
@@ -100,7 +81,7 @@ def test_create_and_modify_weekly_problem_with_xpress(
             name_solver="XPRESS_LP",
         )
         problem.create_weekly_problem_itr(
-            param=param, multi_stock_management=reservoir_management
+            param=param, multi_stock_management=multi_stock_management_one_node
         )
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
             control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
@@ -110,7 +91,7 @@ def test_create_and_modify_weekly_problem_with_xpress(
 
         problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
         problem.create_weekly_problem_itr(
-            param=param, multi_stock_management=reservoir_management
+            param=param, multi_stock_management=multi_stock_management_one_node
         )
         beta, lamb, _, _ = problem.solve_with_predefined_controls(
             control={AreaIndex("area"): -8400000}, prev_basis=Basis([], [])
@@ -123,33 +104,32 @@ def test_create_and_modify_weekly_problem_with_xpress(
 
 def test_create_and_modify_weekly_problem_with_bellman_values(
     param: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
+    discretization_one_node: Dict[AreaIndex, Array1D],
 ) -> None:
+    multi_stock_management_one_node.dict_reservoirs[
+        AreaIndex("area")
+    ].penalty_bottom_rule_curve = 1000
+    multi_stock_management_one_node.dict_reservoirs[
+        AreaIndex("area")
+    ].penalty_upper_rule_curve = 1000
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
-    reservoir = Reservoir("test_data/one_node", "area")
-    res_management = ReservoirManagement(
-        reservoir=reservoir,
-        penalty_bottom_rule_curve=1000,
-        penalty_upper_rule_curve=1000,
-        penalty_final_level=0,
-        force_final_level=False,
-    )
 
-    reservoir_management = MultiStockManagement([res_management])
     problem.create_weekly_problem_itr(
-        param=param, multi_stock_management=reservoir_management
+        param=param, multi_stock_management=multi_stock_management_one_node
     )
-
-    X = np.linspace(0, reservoir.capacity, num=20)
-
     V = {
-        week: PieceWiseLinearInterpolator(X, np.linspace(-5e9, -3e9, num=20))
+        week: PieceWiseLinearInterpolator(
+            discretization_one_node[area], np.linspace(-5e9, -3e9, num=20)
+        )
         for week in range(2)
+        for area in multi_stock_management_one_node.areas
     }
 
     problem.set_constraints_initial_level_and_bellman_values(
         UniVariateEstimator({"area": V[1]}),
-        {AreaIndex("area"): reservoir.initial_level},
-        StockDiscretization({AreaIndex("area"): X}),
+        multi_stock_management_one_node.get_initial_level(),
+        StockDiscretization(discretization_one_node),
     )
 
     lp = problem.solver.ExportModelAsLpFormat(False)
@@ -158,10 +138,10 @@ def test_create_and_modify_weekly_problem_with_bellman_values(
         assert lp == file.read()
 
     _, _, cout, _, optimal_controls, _, _ = problem.solve_problem_with_bellman_values(
-        reservoir_management,
-        StockDiscretization({AreaIndex("area"): X}),
+        multi_stock_management_one_node,
+        StockDiscretization(discretization_one_node),
         UniVariateEstimator({"area": V[1]}),
-        {AreaIndex("area"): reservoir.initial_level},
+        multi_stock_management_one_node.get_initial_level(),
         True,
         False,
     )

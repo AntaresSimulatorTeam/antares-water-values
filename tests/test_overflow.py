@@ -12,11 +12,11 @@ from simple_bellman_value_calculation import (
 
 def test_bellman_value_precalculated_reward_overflow(
     param: TimeScenarioParameter,
+    reservoir_one_node: Reservoir,
 ) -> None:
-    reservoir = Reservoir("test_data/one_node", "area")
-    reservoir.initial_level = reservoir.capacity
+    reservoir_one_node.initial_level = reservoir_one_node.capacity
     reservoir_management = ReservoirManagement(
-        reservoir=reservoir,
+        reservoir=reservoir_one_node,
         penalty_bottom_rule_curve=3000,
         penalty_upper_rule_curve=3000,
         penalty_final_level=3000,
@@ -24,7 +24,7 @@ def test_bellman_value_precalculated_reward_overflow(
         overflow=True,
     )
     xNsteps = 20
-    X = np.linspace(0, reservoir.capacity, num=xNsteps)
+    X = np.linspace(0, reservoir_one_node.capacity, num=xNsteps)
 
     vb, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
@@ -35,12 +35,12 @@ def test_bellman_value_precalculated_reward_overflow(
     )
 
     V_fut = interp1d(X, vb[:, 0])
-    V0 = V_fut(reservoir_management.reservoir.initial_level)
+    V0 = V_fut(reservoir_one_node.initial_level)
 
     assert float(V0) == pytest.approx(-3546553410.818109)
 
     reservoir_management = ReservoirManagement(
-        reservoir=reservoir,
+        reservoir=reservoir_one_node,
         penalty_bottom_rule_curve=3000,
         penalty_upper_rule_curve=3000,
         penalty_final_level=3000,
@@ -57,6 +57,6 @@ def test_bellman_value_precalculated_reward_overflow(
     )
 
     V_fut = interp1d(X, vb[:, 0])
-    V0 = V_fut(reservoir_management.reservoir.initial_level)
+    V0 = V_fut(reservoir_one_node.initial_level)
 
     assert V0 == pytest.approx(-3546553410.818109)

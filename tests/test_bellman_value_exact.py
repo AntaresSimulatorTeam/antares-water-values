@@ -5,7 +5,7 @@ from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import MultiStockManagement
 from read_antares_data import Reservoir
 from simple_bellman_value_calculation import calculate_bellman_value_directly
-from type_definition import AreaIndex
+from type_definition import AreaIndex, Array1D, Dict
 
 expected_vb = -np.array(
     [
@@ -338,23 +338,16 @@ expected_vb_lower_approximation = np.array(
 )
 
 
-def test_bellman_value_exact(param: TimeScenarioParameter) -> None:
-    reservoir = Reservoir("test_data/one_node", "area")
-    reservoir_management = ReservoirManagement(
-        reservoir=reservoir,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=False,
-    )
-    xNsteps = 20
-    X = np.linspace(0, reservoir.capacity, num=xNsteps)
-
+def test_bellman_value_exact(
+    param: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
+    discretization_one_node: Dict[AreaIndex, Array1D],
+) -> None:
     vb, lb, ub = calculate_bellman_value_directly(
         param=param,
-        multi_stock_management=MultiStockManagement([reservoir_management]),
+        multi_stock_management=multi_stock_management_one_node,
         output_path="test_data/one_node",
-        X={reservoir.area: X},
+        X=discretization_one_node,
         univariate=True,
     )
 
@@ -364,29 +357,27 @@ def test_bellman_value_exact(param: TimeScenarioParameter) -> None:
 
     assert np.transpose(
         [
-            [vb[week].get_value({reservoir.area.area: x}) for x in X]
+            [
+                vb[week].get_value({area.area: x})
+                for area in multi_stock_management_one_node.areas
+                for x in discretization_one_node[area]
+            ]
             for week in range(param.len_week + 1)
         ]
     ) == pytest.approx(expected_vb)
 
 
-def test_bellman_value_exact_with_multi_stock(param: TimeScenarioParameter) -> None:
-    reservoir = Reservoir("test_data/one_node", "area")
-    reservoir_management = ReservoirManagement(
-        reservoir=reservoir,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=False,
-    )
-    xNsteps = 20
-    X = np.linspace(0, reservoir.capacity, num=xNsteps)
+def test_bellman_value_exact_with_multi_stock(
+    param: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
+    discretization_one_node: Dict[AreaIndex, Array1D],
+) -> None:
 
     vb, lb, ub = calculate_bellman_value_directly(
         param=param,
-        multi_stock_management=MultiStockManagement([reservoir_management]),
+        multi_stock_management=multi_stock_management_one_node,
         output_path="test_data/one_node",
-        X={AreaIndex("area"): X},
+        X=discretization_one_node,
         univariate=False,
     )
 
@@ -396,7 +387,11 @@ def test_bellman_value_exact_with_multi_stock(param: TimeScenarioParameter) -> N
 
     computed_vb = np.transpose(
         [
-            [vb[week].get_value({reservoir.area.area: x}) for x in X]
+            [
+                vb[week].get_value({area.area: x})
+                for area in multi_stock_management_one_node.areas
+                for x in discretization_one_node[area]
+            ]
             for week in range(param.len_week + 1)
         ]
     )

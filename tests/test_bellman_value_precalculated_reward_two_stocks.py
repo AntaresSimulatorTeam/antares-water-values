@@ -1,40 +1,20 @@
 import numpy as np
 import pytest
 
-from functions_iterative import ReservoirManagement, TimeScenarioParameter
-from multi_stock_bellman_value_calculation import *
-from read_antares_data import Reservoir
+from functions_iterative import TimeScenarioParameter
+from multi_stock_bellman_value_calculation import precalculated_method
 from reservoir_management import MultiStockManagement
-from type_definition import time_list_area_value_to_array
+from type_definition import ScenarioIndex, WeekIndex, time_list_area_value_to_array
 
 
-def test_bellman_value_precalculated_multi_stock(param: TimeScenarioParameter) -> None:
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    multi_management = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
+def test_bellman_value_precalculated_multi_stock(
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
 
     levels, _, bellman_costs, bellman_controls, slopes, _ = precalculated_method(
         param=param,
-        multi_stock_management=multi_management,
+        multi_stock_management=multi_stock_management_two_nodes,
         output_path="test_data/two_nodes",
         len_controls=5,
         len_bellman=5,
@@ -43,9 +23,9 @@ def test_bellman_value_precalculated_multi_stock(param: TimeScenarioParameter) -
         verbose=True,
     )
 
-    assert time_list_area_value_to_array(levels, param, multi_management.areas)[
-        ::-1
-    ] == pytest.approx(
+    assert time_list_area_value_to_array(
+        levels, param, multi_stock_management_two_nodes.areas
+    )[::-1] == pytest.approx(
         np.array(
             [
                 [
@@ -117,7 +97,7 @@ def test_bellman_value_precalculated_multi_stock(param: TimeScenarioParameter) -
             [
                 [
                     [u[a][ScenarioIndex(s)] for s in range(param.len_scenario)]
-                    for a in multi_management.areas
+                    for a in multi_stock_management_two_nodes.areas
                 ]
                 for u in bellman_controls[WeekIndex(w)]
             ]
@@ -261,7 +241,10 @@ def test_bellman_value_precalculated_multi_stock(param: TimeScenarioParameter) -
 
     assert np.array(
         [
-            [[u[a] for a in multi_management.areas] for u in slopes[WeekIndex(w)]]
+            [
+                [u[a] for a in multi_stock_management_two_nodes.areas]
+                for u in slopes[WeekIndex(w)]
+            ]
             for w in range(param.len_week)
         ]
     )[::-1] == pytest.approx(

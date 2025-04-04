@@ -10,7 +10,7 @@ from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from simple_bellman_value_calculation import calculate_bellman_value_directly
 from stock_discretization import StockDiscretization
-from type_definition import AreaIndex
+from type_definition import AreaIndex, Array1D, Dict
 
 
 def test_iterate_over_stock_discretization() -> None:
@@ -34,33 +34,11 @@ def test_iterate_over_stock_discretization() -> None:
     ]
 
 
-def test_solve_with_bellman_multi_stock(param: TimeScenarioParameter) -> None:
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    multi_stock_management = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
-
-    x_1 = np.linspace(0, reservoir_1.capacity, num=5)
-    x_2 = np.linspace(0, reservoir_2.capacity, num=5)
-    X = {AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2}
+def test_solve_with_bellman_multi_stock(
+    param: TimeScenarioParameter,
+    discretization_two_nodes: Dict[AreaIndex, Array1D],
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
 
     m = AntaresProblem(
         scenario=0,
@@ -70,7 +48,7 @@ def test_solve_with_bellman_multi_stock(param: TimeScenarioParameter) -> None:
     )
     m.create_weekly_problem_itr(
         param=param,
-        multi_stock_management=multi_stock_management,
+        multi_stock_management=multi_stock_management_two_nodes,
     )
 
     V = {
@@ -152,10 +130,10 @@ def test_solve_with_bellman_multi_stock(param: TimeScenarioParameter) -> None:
     }
 
     _, _, Vu, slope, _, xf, _ = m.solve_problem_with_bellman_values(
-        multi_stock_management=multi_stock_management,
-        stock_discretization=StockDiscretization(X),
-        V=BellmanValueEstimation(V, StockDiscretization(X)),
-        level_i=multi_stock_management.get_initial_level(),
+        multi_stock_management=multi_stock_management_two_nodes,
+        stock_discretization=StockDiscretization(discretization_two_nodes),
+        V=BellmanValueEstimation(V, StockDiscretization(discretization_two_nodes)),
+        level_i=multi_stock_management_two_nodes.get_initial_level(),
         take_into_account_z_and_y=True,
     )
 
@@ -175,38 +153,15 @@ def test_solve_with_bellman_multi_stock(param: TimeScenarioParameter) -> None:
 
 def test_bellman_value_exact_calculation_multi_stock(
     param: TimeScenarioParameter,
+    discretization_two_nodes: Dict[AreaIndex, Array1D],
+    multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    all_reservoirs = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
-
-    x_1 = np.linspace(0, reservoir_1.capacity, num=5)
-    x_2 = np.linspace(0, reservoir_2.capacity, num=5)
 
     vb, lb, ub = calculate_bellman_value_directly(
         param=param,
-        multi_stock_management=all_reservoirs,
+        multi_stock_management=multi_stock_management_two_nodes,
         output_path="test_data/two_nodes",
-        X={AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2},
+        X=discretization_two_nodes,
         univariate=False,
     )
     assert lb == pytest.approx(419088906.63159156)
@@ -305,40 +260,17 @@ def test_bellman_value_exact_calculation_multi_stock(
 
 def test_bellman_value_exact_calculation_univariate(
     param: TimeScenarioParameter,
+    discretization_two_nodes: Dict[AreaIndex, Array1D],
+    multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    all_reservoirs = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
-
-    x_1 = np.linspace(0, reservoir_1.capacity, num=5)
-    x_2 = np.linspace(0, reservoir_2.capacity, num=5)
 
     try:
 
         vb, lb, ub = calculate_bellman_value_directly(
             param=param,
-            multi_stock_management=all_reservoirs,
+            multi_stock_management=multi_stock_management_two_nodes,
             output_path="test_data/two_nodes",
-            X={AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2},
+            X=discretization_two_nodes,
             univariate=True,
         )
         assert False

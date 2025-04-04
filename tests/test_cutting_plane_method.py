@@ -1,9 +1,8 @@
 import numpy as np
 import pytest
 
-from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from functions_iterative import TimeScenarioParameter
 from multi_stock_bellman_value_calculation import *
-from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from type_definition import (
     array_to_area_value,
@@ -14,40 +13,11 @@ from type_definition import (
     timescenario_area_value_to_array,
 )
 
-reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-reservoir_management_1 = ReservoirManagement(
-    reservoir=reservoir_1,
-    penalty_bottom_rule_curve=3000,
-    penalty_upper_rule_curve=3000,
-    penalty_final_level=3000,
-    force_final_level=True,
-)
-
-reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-reservoir_management_2 = ReservoirManagement(
-    reservoir=reservoir_2,
-    penalty_bottom_rule_curve=3000,
-    penalty_upper_rule_curve=3000,
-    penalty_final_level=3000,
-    force_final_level=True,
-)
-
-multi_management = MultiStockManagement(
-    [reservoir_management_1, reservoir_management_2]
-)
-
 n_controls_init = 2
 output_path = "test_data/two_nodes"
 saving_dir = "dev/test"
 name_solver = "CLP"
 nSteps_bellman = 5
-starting_pt = np.array(
-    [
-        mng.reservoir.bottom_rule_curve[0] * 0.7
-        + mng.reservoir.upper_rule_curve[0] * 0.3
-        for mng in multi_management.dict_reservoirs.values()
-    ]
-)
 precision = 1e-3
 method = "lines"
 divisor = {"euro": 1e8, "energy": 1e4}
@@ -409,48 +379,57 @@ def costs_approx(param: TimeScenarioParameter) -> LinearCostEstimator:
     )
 
 
-def test_initialize_controls(param: TimeScenarioParameter) -> None:
+def test_initialize_controls(
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
     controls_list = initialize_controls(
         param=param,
-        multi_stock_management=multi_management,
+        multi_stock_management=multi_stock_management_two_nodes,
         n_controls_init=n_controls_init,
     )
 
     assert timescenario_list_area_value_to_array(
-        controls_list, param, multi_management.areas
+        controls_list, param, multi_stock_management_two_nodes.areas
     ) == pytest.approx(expected_controls_list)
 
 
-def test_Lget_costs(param: TimeScenarioParameter) -> None:
+def test_Lget_costs(
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
     controls, costs, duals = Lget_costs(
         param=param,
-        multi_stock_management=multi_management,
+        multi_stock_management=multi_stock_management_two_nodes,
         output_path=output_path,
         saving_directory=saving_dir,
         name_solver=name_solver,
         controls_list=array_to_timescenario_list_area_value(
-            expected_controls_list, param, multi_management.areas
+            expected_controls_list, param, multi_stock_management_two_nodes.areas
         ),
         load_from_protos=True,
         verbose=False,
     )
     assert timescenario_list_area_value_to_array(
-        controls, param, multi_management.areas
+        controls, param, multi_stock_management_two_nodes.areas
     ) == pytest.approx(expected_controls)
     assert timescenario_list_value_to_array(costs, param) == pytest.approx(
         expected_costs
     )
     assert timescenario_list_area_value_to_array(
-        duals, param, multi_management.areas
+        duals, param, multi_stock_management_two_nodes.areas
     ) == pytest.approx(expected_duals)
 
 
-def test_initialize_future_costs(param: TimeScenarioParameter) -> None:
+def test_initialize_future_costs(
+    multi_stock_management_two_nodes: MultiStockManagement,
+    starting_pt: Dict[AreaIndex, float],
+) -> None:
 
     # Initialize our approximation on future costs
     future_costs_approx = initialize_future_costs(
-        starting_pt=array_to_area_value(starting_pt, multi_management.areas),
-        multi_stock_management=multi_management,
+        starting_pt=starting_pt,
+        multi_stock_management=multi_stock_management_two_nodes,
     )
 
     assert future_costs_approx.inputs == pytest.approx(
@@ -464,21 +443,24 @@ def test_initialize_future_costs(param: TimeScenarioParameter) -> None:
     )
 
 
-def test_get_correlation_matrix() -> None:
+def test_get_correlation_matrix(
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
     correlation_matrix = get_correlation_matrix(
-        multi_stock_management=multi_management,
+        multi_stock_management=multi_stock_management_two_nodes,
         corr_type="no_corrs",
     )
     assert correlation_matrix == pytest.approx(expected_correlations)
 
 
 def test_get_bellman_values_from_costs(
-    param: TimeScenarioParameter, costs_approx: LinearCostEstimator
+    param: TimeScenarioParameter,
+    costs_approx: LinearCostEstimator,
+    multi_stock_management_two_nodes: MultiStockManagement,
+    starting_pt: Dict[AreaIndex, float],
 ) -> None:
     trajectory = {
-        TimeScenarioIndex(w, s): array_to_area_value(
-            starting_pt, multi_management.areas
-        )
+        TimeScenarioIndex(w, s): starting_pt
         for w in range(param.len_week)
         for s in range(param.len_scenario)
     }
@@ -491,7 +473,7 @@ def test_get_bellman_values_from_costs(
         future_costs_approx_l,
     ) = get_bellman_values_from_costs(
         param=param,
-        multi_stock_management=multi_management,
+        multi_stock_management=multi_stock_management_two_nodes,
         costs_approx=costs_approx,
         future_costs_approx=expected_future_costs_approx,
         nSteps_bellman=nSteps_bellman,
@@ -503,9 +485,9 @@ def test_get_bellman_values_from_costs(
         verbose=False,
     )
 
-    assert time_list_area_value_to_array(levels, param, multi_management.areas)[
-        ::-1
-    ] == pytest.approx(expected_levels)
+    assert time_list_area_value_to_array(
+        levels, param, multi_stock_management_two_nodes.areas
+    )[::-1] == pytest.approx(expected_levels)
     assert np.array(
         [[c for c in bellman_costs[WeekIndex(w)]] for w in range(param.len_week)]
     )[::-1] == pytest.approx(
@@ -588,22 +570,25 @@ def test_get_bellman_values_from_costs(
 
 
 def test_solve_for_optimal_trajectory(
-    param: TimeScenarioParameter, costs_approx: LinearCostEstimator
+    param: TimeScenarioParameter,
+    costs_approx: LinearCostEstimator,
+    multi_stock_management_two_nodes: MultiStockManagement,
+    starting_pt: Dict[AreaIndex, float],
 ) -> None:
     trajectory, pseudo_opt_controls, _ = solve_for_optimal_trajectory(
         param=param,
-        multi_stock_management=multi_management,
+        multi_stock_management=multi_stock_management_two_nodes,
         costs_approx=costs_approx,
         future_costs_approx_l=list_to_week_value(
             expected_future_costs_approx_l, param.len_week + 1
         ),
-        starting_pt=array_to_area_value(starting_pt, multi_management.areas),
+        starting_pt=starting_pt,
         name_solver=name_solver,
         divisor=divisor,
     )
 
     assert timescenario_area_value_to_array(
-        trajectory, param, multi_management.areas
+        trajectory, param, multi_stock_management_two_nodes.areas
     ) == pytest.approx(
         np.array(
             [
@@ -617,35 +602,39 @@ def test_solve_for_optimal_trajectory(
         )
     )
     assert timescenario_area_value_to_array(
-        pseudo_opt_controls, param, multi_management.areas
+        pseudo_opt_controls, param, multi_stock_management_two_nodes.areas
     ) == pytest.approx(expected_pseudo_opt_controls)
 
 
 def test_select_controls_to_explore(
-    param: TimeScenarioParameter, costs_approx: LinearCostEstimator
+    param: TimeScenarioParameter,
+    costs_approx: LinearCostEstimator,
+    multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
     controls_list = select_controls_to_explore(
         param=param,
-        multi_stock_management=multi_management,
+        multi_stock_management=multi_stock_management_two_nodes,
         pseudo_opt_controls=array_to_timescenario_area_value(
-            expected_pseudo_opt_controls, param, multi_management.areas
+            expected_pseudo_opt_controls, param, multi_stock_management_two_nodes.areas
         ),
         costs_approx=costs_approx,
     )
     assert timescenario_list_area_value_to_array(
-        controls_list, param, multi_management.areas
+        controls_list, param, multi_stock_management_two_nodes.areas
     ) == pytest.approx(expected_controls_to_explore)
 
 
 def test_get_opt_gap(
-    param: TimeScenarioParameter, costs_approx: LinearCostEstimator
+    param: TimeScenarioParameter,
+    costs_approx: LinearCostEstimator,
+    multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
 
     controls, costs, _ = Lget_costs(
         param=param,
-        multi_stock_management=multi_management,
+        multi_stock_management=multi_stock_management_two_nodes,
         controls_list=array_to_timescenario_list_area_value(
-            expected_controls_to_explore, param, multi_management.areas
+            expected_controls_to_explore, param, multi_stock_management_two_nodes.areas
         ),
         saving_directory=saving_dir,
         output_path=output_path,
@@ -656,7 +645,7 @@ def test_get_opt_gap(
     )
 
     assert timescenario_list_area_value_to_array(
-        controls, param, multi_management.areas
+        controls, param, multi_stock_management_two_nodes.areas
     ) == pytest.approx(
         np.array(
             [

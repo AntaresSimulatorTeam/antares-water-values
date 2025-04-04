@@ -1,11 +1,7 @@
 import numpy as np
 import pytest
 
-from functions_iterative import (
-    ReservoirManagement,
-    TimeScenarioIndex,
-    TimeScenarioParameter,
-)
+from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import (
     MultiStockManagement,
     precalculated_method,
@@ -14,7 +10,7 @@ from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
-from type_definition import AreaIndex
+from type_definition import AreaIndex, Dict, List, TimeScenarioIndex, WeekIndex
 
 expected_vb = np.array(
     [
@@ -182,9 +178,8 @@ expected_vb = np.array(
 )
 
 
-def test_bellman_value_precalculated_reward() -> None:
+def test_bellman_value_precalculated_reward(param: TimeScenarioParameter) -> None:
 
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
@@ -261,9 +256,10 @@ def test_bellman_value_precalculated_reward() -> None:
     assert vb == pytest.approx(expected_vb)
 
 
-def test_bellman_value_precalculated_reward_with_multi_stock() -> None:
+def test_bellman_value_precalculated_reward_with_multi_stock(
+    param: TimeScenarioParameter,
+) -> None:
 
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,

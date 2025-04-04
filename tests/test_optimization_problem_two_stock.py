@@ -8,9 +8,8 @@ from reservoir_management import MultiStockManagement
 from type_definition import AreaIndex
 
 
-def test_create_weekly_problem_with_two_stocks() -> None:
+def test_create_weekly_problem_with_two_stocks(param: TimeScenarioParameter) -> None:
     problem = AntaresProblem(scenario=0, week=0, path="test_data/two_nodes", itr=1)
-    param = TimeScenarioParameter(len_week=52, len_scenario=1)
 
     reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
     reservoir_management_1 = ReservoirManagement(
@@ -47,7 +46,9 @@ def test_create_weekly_problem_with_two_stocks() -> None:
     assert lamb[AreaIndex("area_2")] == pytest.approx(-138.85108188019998)
 
 
-def test_create_weekly_problem_with_two_stocks_with_xpress() -> None:
+def test_create_weekly_problem_with_two_stocks_with_xpress(
+    param: TimeScenarioParameter,
+) -> None:
 
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
     if solver:
@@ -59,7 +60,6 @@ def test_create_weekly_problem_with_two_stocks_with_xpress() -> None:
             itr=1,
             name_solver="XPRESS_LP",
         )
-        param = TimeScenarioParameter(len_week=52, len_scenario=1)
 
         reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
         reservoir_management_1 = ReservoirManagement(

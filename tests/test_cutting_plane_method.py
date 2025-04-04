@@ -14,8 +14,6 @@ from type_definition import (
     timescenario_area_value_to_array,
 )
 
-param = TimeScenarioParameter(len_week=5, len_scenario=1)
-
 reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
 reservoir_management_1 = ReservoirManagement(
     reservoir=reservoir_1,
@@ -400,12 +398,18 @@ expected_controls_to_explore = np.array(
     ]
 )
 
-costs_approx = LinearCostEstimator(
-    param=param, controls=expected_controls, costs=expected_costs, duals=expected_duals
-)
+
+@pytest.fixture
+def costs_approx(param: TimeScenarioParameter) -> LinearCostEstimator:
+    return LinearCostEstimator(
+        param=param,
+        controls=expected_controls,
+        costs=expected_costs,
+        duals=expected_duals,
+    )
 
 
-def test_initialize_controls() -> None:
+def test_initialize_controls(param: TimeScenarioParameter) -> None:
     controls_list = initialize_controls(
         param=param,
         multi_stock_management=multi_management,
@@ -417,7 +421,7 @@ def test_initialize_controls() -> None:
     ) == pytest.approx(expected_controls_list)
 
 
-def test_Lget_costs() -> None:
+def test_Lget_costs(param: TimeScenarioParameter) -> None:
     controls, costs, duals = Lget_costs(
         param=param,
         multi_stock_management=multi_management,
@@ -441,7 +445,7 @@ def test_Lget_costs() -> None:
     ) == pytest.approx(expected_duals)
 
 
-def test_initialize_future_costs() -> None:
+def test_initialize_future_costs(param: TimeScenarioParameter) -> None:
 
     # Initialize our approximation on future costs
     future_costs_approx = initialize_future_costs(
@@ -468,7 +472,9 @@ def test_get_correlation_matrix() -> None:
     assert correlation_matrix == pytest.approx(expected_correlations)
 
 
-def test_get_bellman_values_from_costs() -> None:
+def test_get_bellman_values_from_costs(
+    param: TimeScenarioParameter, costs_approx: LinearCostEstimator
+) -> None:
     trajectory = {
         TimeScenarioIndex(w, s): array_to_area_value(
             starting_pt, multi_management.areas
@@ -581,7 +587,9 @@ def test_get_bellman_values_from_costs() -> None:
         )
 
 
-def test_solve_for_optimal_trajectory() -> None:
+def test_solve_for_optimal_trajectory(
+    param: TimeScenarioParameter, costs_approx: LinearCostEstimator
+) -> None:
     trajectory, pseudo_opt_controls, _ = solve_for_optimal_trajectory(
         param=param,
         multi_stock_management=multi_management,
@@ -613,7 +621,9 @@ def test_solve_for_optimal_trajectory() -> None:
     ) == pytest.approx(expected_pseudo_opt_controls)
 
 
-def test_select_controls_to_explore() -> None:
+def test_select_controls_to_explore(
+    param: TimeScenarioParameter, costs_approx: LinearCostEstimator
+) -> None:
     controls_list = select_controls_to_explore(
         param=param,
         multi_stock_management=multi_management,
@@ -627,7 +637,9 @@ def test_select_controls_to_explore() -> None:
     ) == pytest.approx(expected_controls_to_explore)
 
 
-def test_get_opt_gap() -> None:
+def test_get_opt_gap(
+    param: TimeScenarioParameter, costs_approx: LinearCostEstimator
+) -> None:
 
     controls, costs, _ = Lget_costs(
         param=param,

@@ -8,9 +8,7 @@ from reservoir_management import MultiStockManagement
 from type_definition import time_list_area_value_to_array
 
 
-def test_bellman_value_precalculated_multi_stock() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_bellman_value_precalculated_multi_stock(param: TimeScenarioParameter) -> None:
 
     reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
     reservoir_management_1 = ReservoirManagement(

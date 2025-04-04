@@ -11,9 +11,8 @@ from stock_discretization import StockDiscretization
 from type_definition import AreaIndex
 
 
-def test_create_and_modify_weekly_problem() -> None:
+def test_create_and_modify_weekly_problem(param: TimeScenarioParameter) -> None:
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
-    param = TimeScenarioParameter(len_week=52, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = MultiStockManagement(
         [
@@ -57,7 +56,9 @@ def test_create_and_modify_weekly_problem() -> None:
     assert lamb[AreaIndex("area")] == pytest.approx(-3000.0013996873)
 
 
-def test_create_and_modify_weekly_problem_with_xpress() -> None:
+def test_create_and_modify_weekly_problem_with_xpress(
+    param: TimeScenarioParameter,
+) -> None:
 
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
     if solver:
@@ -69,7 +70,6 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
             itr=1,
             name_solver="XPRESS_LP",
         )
-        param = TimeScenarioParameter(len_week=52, len_scenario=1)
         reservoir = Reservoir("test_data/one_node", "area")
         reservoir_management = MultiStockManagement(
             [
@@ -121,9 +121,10 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
         print("Ignore test, xpress not available")
 
 
-def test_create_and_modify_weekly_problem_with_bellman_values() -> None:
+def test_create_and_modify_weekly_problem_with_bellman_values(
+    param: TimeScenarioParameter,
+) -> None:
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
-    param = TimeScenarioParameter(len_week=1, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")
     res_management = ReservoirManagement(
         reservoir=reservoir,

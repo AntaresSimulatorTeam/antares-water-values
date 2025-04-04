@@ -8,9 +8,7 @@ from reservoir_management import MultiStockManagement
 from type_definition import time_list_area_value_to_array
 
 
-def test_bellman_value_iterative_method() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_bellman_value_iterative_method(param: TimeScenarioParameter) -> None:
 
     reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
     reservoir_management_1 = ReservoirManagement(
@@ -226,9 +224,7 @@ def test_bellman_value_iterative_method() -> None:
     )
 
 
-def test_bellman_value_iterative_method_with_sddp() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_bellman_value_iterative_method_with_sddp(param: TimeScenarioParameter) -> None:
 
     reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
     reservoir_management_1 = ReservoirManagement(

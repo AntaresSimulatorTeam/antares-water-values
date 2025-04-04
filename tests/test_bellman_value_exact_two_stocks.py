@@ -34,9 +34,7 @@ def test_iterate_over_stock_discretization() -> None:
     ]
 
 
-def test_solve_with_bellman_multi_stock() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_solve_with_bellman_multi_stock(param: TimeScenarioParameter) -> None:
 
     reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
     reservoir_management_1 = ReservoirManagement(
@@ -175,9 +173,9 @@ def test_solve_with_bellman_multi_stock() -> None:
     )
 
 
-def test_bellman_value_exact_calculation_multi_stock() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_bellman_value_exact_calculation_multi_stock(
+    param: TimeScenarioParameter,
+) -> None:
 
     reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
     reservoir_management_1 = ReservoirManagement(
@@ -305,9 +303,9 @@ def test_bellman_value_exact_calculation_multi_stock() -> None:
     )
 
 
-def test_bellman_value_exact_calculation_univariate() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_bellman_value_exact_calculation_univariate(
+    param: TimeScenarioParameter,
+) -> None:
 
     reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
     reservoir_management_1 = ReservoirManagement(

@@ -181,9 +181,8 @@ bellman_values = np.array(
 )
 
 
-def test_upper_bound() -> None:
+def test_upper_bound(param_one_week: TimeScenarioParameter) -> None:
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
-    param = TimeScenarioParameter(len_week=1, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
@@ -193,7 +192,7 @@ def test_upper_bound() -> None:
         force_final_level=True,
     )
     problem.create_weekly_problem_itr(
-        param=param,
+        param=param_one_week,
         multi_stock_management=MultiStockManagement([reservoir_management]),
     )
 
@@ -201,19 +200,19 @@ def test_upper_bound() -> None:
     X = np.linspace(0, reservoir.capacity, num=20)
     V = {
         week: PieceWiseLinearInterpolator(X, np.zeros(20, dtype=np.float32))
-        for week in range(2)
+        for week in range(param_one_week.len_week + 1)
     }
     assert len(problem.solver.constraints()) == 3535
     assert len(problem.solver.variables()) == 3533
 
     upper_bound, controls, _, _ = compute_upper_bound(
-        param=param,
+        param=param_one_week,
         multi_stock_management=MultiStockManagement([reservoir_management]),
         stock_discretization=StockDiscretization({reservoir.area: X}),
         list_models=list_models,
         V={
             WeekIndex(week): UniVariateEstimator({reservoir.area.area: V[week]})
-            for week in range(param.len_week + 1)
+            for week in range(param_one_week.len_week + 1)
         },
     )
 
@@ -224,13 +223,13 @@ def test_upper_bound() -> None:
 
     V[1].costs = np.linspace(-5e9, -3e9, num=20)
     upper_bound, controls, _, _ = compute_upper_bound(
-        param=param,
+        param=param_one_week,
         multi_stock_management=MultiStockManagement([reservoir_management]),
         stock_discretization=StockDiscretization({reservoir.area: X}),
         list_models=list_models,
         V={
             WeekIndex(week): UniVariateEstimator({reservoir.area.area: V[week]})
-            for week in range(param.len_week + 1)
+            for week in range(param_one_week.len_week + 1)
         },
     )
 
@@ -240,10 +239,9 @@ def test_upper_bound() -> None:
     assert len(problem.solver.variables()) == 3533
 
 
-def test_upper_bound_with_bellman_values() -> None:
+def test_upper_bound_with_bellman_values(param_one_week: TimeScenarioParameter) -> None:
 
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
-    param = TimeScenarioParameter(len_week=1, len_scenario=1)
     reservoir = Reservoir("test_data/one_node", "area")
 
     reservoir_management = ReservoirManagement(
@@ -254,7 +252,7 @@ def test_upper_bound_with_bellman_values() -> None:
         force_final_level=False,
     )
     problem.create_weekly_problem_itr(
-        param=param,
+        param=param_one_week,
         multi_stock_management=MultiStockManagement([reservoir_management]),
     )
 
@@ -262,18 +260,18 @@ def test_upper_bound_with_bellman_values() -> None:
     X = np.linspace(0, reservoir.capacity, num=20)
     V = {
         week: PieceWiseLinearInterpolator(X, np.zeros(20, dtype=np.float32))
-        for week in range(2)
+        for week in range(param_one_week.len_week + 1)
     }
 
     V[1].costs = bellman_values[:, 1]
     upper_bound, controls, _, _ = compute_upper_bound(
-        param=param,
+        param=param_one_week,
         multi_stock_management=MultiStockManagement([reservoir_management]),
         stock_discretization=StockDiscretization({reservoir.area: X}),
         list_models=list_models,
         V={
             WeekIndex(week): UniVariateEstimator({reservoir.area.area: V[week]})
-            for week in range(param.len_week + 1)
+            for week in range(param_one_week.len_week + 1)
         },
     )
 
@@ -285,7 +283,7 @@ def test_upper_bound_with_bellman_values() -> None:
     assert cost - vb == pytest.approx(upper_bound)
 
 
-def test_upper_bound_with_xpress() -> None:
+def test_upper_bound_with_xpress(param_one_week: TimeScenarioParameter) -> None:
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
     if solver:
         problem = AntaresProblem(
@@ -295,7 +293,6 @@ def test_upper_bound_with_xpress() -> None:
             itr=1,
             name_solver="XPRESS_LP",
         )
-        param = TimeScenarioParameter(len_week=1, len_scenario=1)
         reservoir = Reservoir("test_data/one_node", "area")
         reservoir_management = ReservoirManagement(
             reservoir=reservoir,
@@ -305,7 +302,7 @@ def test_upper_bound_with_xpress() -> None:
             force_final_level=True,
         )
         problem.create_weekly_problem_itr(
-            param=param,
+            param=param_one_week,
             multi_stock_management=MultiStockManagement([reservoir_management]),
         )
 
@@ -313,19 +310,19 @@ def test_upper_bound_with_xpress() -> None:
         X = np.linspace(0, reservoir.capacity, num=20)
         V = {
             week: PieceWiseLinearInterpolator(X, np.zeros(20, dtype=np.float32))
-            for week in range(2)
+            for week in range(param_one_week.len_week + 1)
         }
         assert len(problem.solver.constraints()) == 3535
         assert len(problem.solver.variables()) == 3533
 
         upper_bound, controls, _, _ = compute_upper_bound(
-            param=param,
+            param=param_one_week,
             multi_stock_management=MultiStockManagement([reservoir_management]),
             stock_discretization=StockDiscretization({reservoir.area: X}),
             list_models=list_models,
             V={
                 WeekIndex(week): UniVariateEstimator({reservoir.area.area: V[week]})
-                for week in range(param.len_week + 1)
+                for week in range(param_one_week.len_week + 1)
             },
         )
 
@@ -338,13 +335,13 @@ def test_upper_bound_with_xpress() -> None:
 
         V[1].costs = np.linspace(-5e9, -3e9, num=20)
         upper_bound, controls, _, _ = compute_upper_bound(
-            param=param,
+            param=param_one_week,
             multi_stock_management=MultiStockManagement([reservoir_management]),
             stock_discretization=StockDiscretization({reservoir.area: X}),
             list_models=list_models,
             V={
                 WeekIndex(week): UniVariateEstimator({reservoir.area.area: V[week]})
-                for week in range(param.len_week + 1)
+                for week in range(param_one_week.len_week + 1)
             },
         )
 

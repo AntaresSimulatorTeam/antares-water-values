@@ -338,9 +338,7 @@ expected_vb_lower_approximation = np.array(
 )
 
 
-def test_bellman_value_exact() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_bellman_value_exact(param: TimeScenarioParameter) -> None:
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
@@ -372,9 +370,7 @@ def test_bellman_value_exact() -> None:
     ) == pytest.approx(expected_vb)
 
 
-def test_bellman_value_exact_with_multi_stock() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_bellman_value_exact_with_multi_stock(param: TimeScenarioParameter) -> None:
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,

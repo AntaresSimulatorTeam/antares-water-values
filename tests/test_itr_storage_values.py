@@ -11,9 +11,7 @@ from functions_iterative import (
 from read_antares_data import Reservoir
 
 
-def test_itr_control() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_itr_control(param: TimeScenarioParameter) -> None:
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
@@ -246,12 +244,10 @@ def test_itr_control() -> None:
     )
 
 
-def test_itr_control_with_xpress() -> None:
+def test_itr_control_with_xpress(param: TimeScenarioParameter) -> None:
 
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
     if solver:
-
-        param = TimeScenarioParameter(len_week=5, len_scenario=1)
         reservoir = Reservoir("test_data/one_node", "area")
         reservoir_management = ReservoirManagement(
             reservoir=reservoir,

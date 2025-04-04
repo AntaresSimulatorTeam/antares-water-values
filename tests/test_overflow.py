@@ -10,9 +10,9 @@ from simple_bellman_value_calculation import (
 )
 
 
-def test_bellman_value_precalculated_reward_overflow() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+def test_bellman_value_precalculated_reward_overflow(
+    param: TimeScenarioParameter,
+) -> None:
     reservoir = Reservoir("test_data/one_node", "area")
     reservoir.initial_level = reservoir.capacity
     reservoir_management = ReservoirManagement(

@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 
 from calculate_reward_and_bellman_values import calculate_VU
-from estimation import LinearInterpolator, PieceWiseLinearInterpolator
+from estimation import LinearInterpolator
 from functions_iterative import (
     MultiStockManagement,
     TimeScenarioParameter,
@@ -100,7 +100,7 @@ def test_call_sddp(
     )
     jl_sddp.reinit_cuts(*formatted_data)
 
-    sim_res, _, lb = jl_sddp.manage_reservoirs(*formatted_data)
+    sim_res, model, lb = jl_sddp.manage_reservoirs(*formatted_data)
 
     controls = np.array([x["control"][0] for x in sim_res[0]])
     trajectory = np.array(
@@ -109,12 +109,24 @@ def test_call_sddp(
     )
     ub = sum([x["cost"] for x in sim_res[0]])
 
-    assert lb == pytest.approx(opt_cost, rel=2e-5)
-    assert ub == pytest.approx(opt_cost, rel=2e-5)
+    assert lb == pytest.approx(opt_cost)
+    assert ub == pytest.approx(opt_cost)
     assert sum(controls) == pytest.approx(sum(opt_controls))
     # Trajectories and controls are not equals due to equivalent solutions
     assert trajectory[0] == pytest.approx(opt_trajectory[0])
     assert trajectory[-1] == pytest.approx(opt_trajectory[-1])
+
+    usage_values, bellman_costs = jl_sddp.get_usage_values(
+        param.len_week,
+        param.len_scenario,
+        formatted_data[2],
+        model,
+        formatted_data[4],
+        100,
+    )
+    assert bellman_costs[0, 49] == pytest.approx(3362896896.0)
+    assert bellman_costs[0, 50] == pytest.approx(3342888929.2799997)
+    assert usage_values[0, 49, 0] == pytest.approx(200.07966720000266, rel=2e-6)
 
 
 def test_compare_sddp_to_precalculated(
@@ -184,3 +196,13 @@ def test_compare_sddp_to_precalculated(
         assert np.array([v for v in initial_x.values()]) == pytest.approx(
             np.array(opt_trajectory)
         )
+        assert -V[WeekIndex(1)](mng.reservoir.capacity / 100 * 50) == pytest.approx(
+            3362896896.0
+        )
+        assert -V[WeekIndex(1)](mng.reservoir.capacity / 100 * 51) == pytest.approx(
+            3342888929.2799997
+        )
+        assert (
+            V[WeekIndex(1)](mng.reservoir.capacity / 100 * 51)
+            - V[WeekIndex(1)](mng.reservoir.capacity / 100 * 50)
+        ) / mng.reservoir.capacity * 100 == pytest.approx(200.07966720000266)

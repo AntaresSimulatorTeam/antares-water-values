@@ -4,12 +4,24 @@ import pytest
 from functions_iterative import TimeScenarioParameter
 from multi_stock_bellman_value_calculation import (
     MultiStockManagement,
+    generate_controls,
+    get_all_costs,
+    initialize_antares_problems,
     precalculated_method,
 )
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
-from type_definition import AreaIndex, Dict, List, TimeScenarioIndex, WeekIndex
+from type_definition import (
+    AreaIndex,
+    Dict,
+    List,
+    TimeScenarioIndex,
+    WeekIndex,
+    time_list_area_value_to_array,
+    timescenario_list_area_value_to_array,
+    timescenario_list_value_to_array,
+)
 
 expected_vb = np.array(
     [
@@ -268,3 +280,57 @@ def test_bellman_value_precalculated_reward_with_multi_stock(
     # assert np.transpose(bellman_costs) == pytest.approx(
     #     expected_vb[:, : param.len_week]
     # )
+
+
+def test_get_all_cost(
+    controls_precalculated_one_node_10: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    costs_precalculated_one_node_10: Dict[TimeScenarioIndex, List[float]],
+    slopes_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
+    multi_stock_management_one_node: MultiStockManagement,
+    param: TimeScenarioParameter,
+) -> None:
+    controls = generate_controls(
+        param=param,
+        multi_stock_management=multi_stock_management_one_node,
+        controls_looked_up="grid",
+        xNsteps=10,
+    )
+
+    list_models = initialize_antares_problems(
+        param=param,
+        multi_stock_management=multi_stock_management_one_node,
+        output_path="test_data/one_node",
+        name_solver="CLP",
+        direct_bellman_calc=False,
+        verbose=False,
+    )
+
+    costs, slopes, _ = get_all_costs(
+        param=param, list_models=list_models, controls_list=controls
+    )
+    assert time_list_area_value_to_array(
+        controls, param, multi_stock_management_one_node.areas
+    ) == pytest.approx(
+        time_list_area_value_to_array(
+            controls_precalculated_one_node_10,
+            param,
+            multi_stock_management_one_node.areas,
+        )
+    )
+    assert timescenario_list_value_to_array(costs, param) == pytest.approx(
+        timescenario_list_value_to_array(
+            costs_precalculated_one_node_10,
+            param,
+        )
+    )
+    assert timescenario_list_area_value_to_array(
+        slopes, param, multi_stock_management_one_node.areas
+    ) == pytest.approx(
+        timescenario_list_area_value_to_array(
+            slopes_precalculated_one_node_10,
+            param,
+            multi_stock_management_one_node.areas,
+        )
+    )

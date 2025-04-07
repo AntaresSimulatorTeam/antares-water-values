@@ -71,7 +71,7 @@ end
 function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, costs_approx::Vector{Vector{Main.Jl_SDDP.LinInterp}}, norms::Normalizer)
     n_reservoirs = size(reservoirs)[1]
     model = SDDP.LinearPolicyGraph(
-        stages = 3*n_weeks,
+        stages = n_weeks,
         sense = :Min,
         lower_bound = 0.0,
         optimizer = Clp.Optimizer
@@ -80,9 +80,9 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
         # Declaring the state variable 
         @variable(
             subproblem,
-            0<=level[r=1:n_reservoirs]<=maximum([reservoirs[r].capacity for r in 1:n_reservoirs]),
+            0<=level[r=1:n_reservoirs]<=reservoirs[r].capacity,
             SDDP.State,
-            initial_value = 0
+            initial_value = reservoirs[r].level_init
         )
         
         @variables(subproblem, begin
@@ -97,33 +97,22 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
         
         # Add constraints for control bounds
         modulo_stage = (stage-1)%n_weeks + 1
-        modulo_prev_stage = (stage-2+n_weeks)%n_weeks + 1
         for r in 1:n_reservoirs
             @constraint(subproblem, control[r] >= -reservoirs[r].max_pumping[modulo_stage] * reservoirs[r].efficiency)
             @constraint(subproblem, control[r] <= reservoirs[r].max_generating[modulo_stage])
         end
         
-        if stage==1
-            stage_1 = 1
-        else
-            stage_1 = 0
-        end
-        
         @constraints(subproblem, begin
-            demand_constraint[r=1:n_reservoirs],  level[r].out == (level[r].in + stage_1*reservoirs[r].level_init) - control[r] + ξ[r] - spillage[r] 
-            [r=1:n_reservoirs], level[r].in <= reservoirs[r].upper_level[modulo_prev_stage] + over_upper[r]
-            [r=1:n_reservoirs], level[r].in >= reservoirs[r].lower_level[modulo_prev_stage] - below_lower[r]
-            [r=1:n_reservoirs], level[r].out <= reservoirs[r].capacity
-            [r=1:n_reservoirs], level[r].in >= 0
-            [r=1:n_reservoirs], level[r].in <= reservoirs[r].capacity
+            demand_constraint[r=1:n_reservoirs],  level[r].out == level[r].in - control[r] + ξ[r] - spillage[r] 
+            [r=1:n_reservoirs], level[r].out <= reservoirs[r].upper_level[modulo_stage] + over_upper[r]
+            [r=1:n_reservoirs], level[r].out >= reservoirs[r].lower_level[modulo_stage] - below_lower[r]
         end)
         
         # Define scenarios for inflows
         Ω = [
             (
                 inflows = [reservoirs[r].inflows[modulo_stage, scenario] for r in 1:n_reservoirs],
-                next_scenario_state = scenario,
-                hyperps_selec = [s != scenario + 0 for s in 1:n_scenarios],
+                hyperps_selec = scenario,
             )
             for scenario in 1:n_scenarios
         ]
@@ -135,11 +124,11 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
                 JuMP.fix(ξ[r], ω.inflows[r])
             end
             for s in 1:n_scenarios
-                JuMP.fix(Ξ[s], s != ω.hyperps_selec[s])
+                JuMP.fix(Ξ[s], s != ω.hyperps_selec)
             end
         end
         
-        @stageobjective(subproblem, cost + sum((over_upper[r]) * reservoirs[r].upper_curve_penalty + (below_lower[r]) * reservoirs[r].lower_curve_penalty + spillage[r] * reservoirs[r].spillage_penalty 
+        @stageobjective(subproblem, cost + sum(over_upper[r] * reservoirs[r].upper_curve_penalty + below_lower[r] * reservoirs[r].lower_curve_penalty + spillage[r] * reservoirs[r].spillage_penalty 
         for r in 1:n_reservoirs))
             
         COST_UB = 1e10/norms.euro #Beware as too high a value WILL create numerical stability and generate problems labelled as INFEASIBLE
@@ -171,7 +160,8 @@ function manage_reservoirs(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Ma
     
     #Simulating
     simulation_results = get_trajectory(n_weeks, n_scenarios, reservoirs, model, norms)
-    return simulation_results, model
+    lb = SDDP.calculate_bound(model) * norms.euro
+    return simulation_results, model, lb
 end
 
 function get_trajectory(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, model, norms::Normalizer)
@@ -186,7 +176,7 @@ function get_trajectory(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
                 modulo_stage = (stage-1)%n_weeks + 1
                 return [SDDP.Noise((
                     inflows=[reservoirs[r].inflows[modulo_stage, scenario] for r in 1:n_reservoirs],
-                    hyperps_selec = [s != scenario + 0 for s in 1:n_scenarios]
+                    hyperps_selec = scenario
                     ), 1.0)]
             end
         simulation_result = SDDP.simulate(model, 1, sampling_scheme=sampling_scheme, custom_recorders= Dict{Symbol, Function}(
@@ -206,10 +196,11 @@ function get_usage_values(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Mai
     n_reservoirs = size(reservoirs)[1]
     VU = zeros(n_weeks, n_disc, n_reservoirs)
     costs = zeros(n_weeks, n_disc)
+    all_traj = get_trajectory(n_weeks, n_scenarios, reservoirs, model, norms)
     for scen = 1:n_scenarios
-        traj = get_trajectory(n_weeks, n_scenarios, reservoirs, model, norms)[scen]
+        traj = all_traj[scen]
         for week = 1:n_weeks
-            V = SDDP.ValueFunction(model; node=week+n_weeks) #Added n_weeks, because of effect of fixing initial_level
+            V = SDDP.ValueFunction(model; node=week)
             level_outs = traj[week][:level_out]
             for d = 1:n_disc
                 tot_cost=0

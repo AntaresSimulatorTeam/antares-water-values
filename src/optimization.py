@@ -694,18 +694,20 @@ class AntaresProblem:
                     assert param is not None
                     for area in self.range_reservoir:
 
-                        _, _, likely_control = solve_weekly_problem_with_approximation(
-                            level_i=level_i[area],
-                            V_fut=V[area.area],
-                            week=self.week,
-                            scenario=self.scenario,
-                            reservoir_management=multi_stock_management.dict_reservoirs[
-                                area
-                            ],
-                            param=param,
-                            reward=reward[area][
-                                TimeScenarioIndex(self.week, self.scenario)
-                            ],
+                        _, _, likely_control, _ = (
+                            solve_weekly_problem_with_approximation(
+                                level_i=level_i[area],
+                                V_fut=V[area.area],
+                                week=self.week,
+                                scenario=self.scenario,
+                                reservoir_management=multi_stock_management.dict_reservoirs[
+                                    area
+                                ],
+                                param=param,
+                                reward=reward[area][
+                                    TimeScenarioIndex(self.week, self.scenario)
+                                ],
+                            )
                         )
                         dict_likely_control[area] = likely_control
                     basis = self.find_closest_basis(dict_likely_control)

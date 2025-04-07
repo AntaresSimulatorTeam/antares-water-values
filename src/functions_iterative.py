@@ -64,7 +64,7 @@ def compute_x_multi_scenario(
             np.random.permutation(range(param.len_scenario))
         ):
 
-            _, xf, u = solve_weekly_problem_with_approximation(
+            _, xf, u, _ = solve_weekly_problem_with_approximation(
                 week=week,
                 scenario=scenario,
                 level_i=initial_x[TimeScenarioIndex(week, trajectory)],

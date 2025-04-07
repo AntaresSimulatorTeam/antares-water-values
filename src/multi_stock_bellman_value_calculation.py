@@ -1539,7 +1539,7 @@ def sddp_cutting_planes(
         )
         jl_reservoirs, norms = formatted_data[2], formatted_data[4]
         # SDDP to train on our cost approx
-        sim_res, model = jl_sddp.manage_reservoirs(*formatted_data)
+        sim_res, model, _ = jl_sddp.manage_reservoirs(*formatted_data)
 
         # Resulting controls per scenario
         array_controls = np.array(

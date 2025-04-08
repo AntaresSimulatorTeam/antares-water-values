@@ -57,6 +57,7 @@ def test_call_sddp(
                 spillage_penalty=2 * mng.penalty_upper_rule_curve + 10,
                 level_init=mng.reservoir.initial_level,
                 inflows=mng.reservoir.inflow,
+                final_level=mng.final_level,
             )
             for mng in multi_stock_management_one_node.dict_reservoirs.values()
         ]

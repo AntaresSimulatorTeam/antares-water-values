@@ -19,6 +19,7 @@ struct Reservoir
     spillage_penalty::Float64
     level_init::Float64
     inflows::Matrix{Float64}
+    final_level::Union{Float64,Bool}
 end
 
 struct LinInterp
@@ -54,6 +55,7 @@ function formater(n_weeks, n_scenarios, reservoirs_data, costs_approx_data, savi
                     round(pyconvert(Float64, r["spillage_penalty"])     /norm_price, digits=round_price), # €/MWh
                     round(pyconvert(Float64, r["level_init"])           /norm_enrgy, digits=round_energy), # MWh
                     round.(pyconvert(Matrix, r["inflows"])              /norm_enrgy, digits=round_energy), # MWh
+                    if isa(pyconvert(Union{Bool,Float64}, r["final_level"]),Bool) pyconvert(Bool, r["final_level"]) else round(pyconvert(Float64, r["final_level"]) /norm_enrgy, digits=round_energy) end
                 ) for r in reservoirs_data]
                 
     size_ca_data = size(costs_approx_data)
@@ -104,9 +106,17 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
         
         @constraints(subproblem, begin
             demand_constraint[r=1:n_reservoirs],  level[r].out == level[r].in - control[r] + ξ[r] - spillage[r] 
-            [r=1:n_reservoirs], level[r].out <= reservoirs[r].upper_level[modulo_stage] + over_upper[r]
-            [r=1:n_reservoirs], level[r].out >= reservoirs[r].lower_level[modulo_stage] - below_lower[r]
         end)
+
+        for r=1:n_reservoirs
+            if modulo_stage == n_weeks && reservoirs[r].final_level != false
+                @constraint(subproblem, level[r].out <= reservoirs[r].final_level + over_upper[r])
+                @constraint(subproblem, level[r].out >= reservoirs[r].final_level - below_lower[r])
+            else 
+                @constraint(subproblem, level[r].out <= reservoirs[r].upper_level[modulo_stage] + over_upper[r])
+                @constraint(subproblem, level[r].out >= reservoirs[r].lower_level[modulo_stage] - below_lower[r])
+            end
+        end
         
         # Define scenarios for inflows
         Ω = [

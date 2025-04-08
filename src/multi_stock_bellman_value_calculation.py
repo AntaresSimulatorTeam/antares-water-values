@@ -1494,6 +1494,7 @@ def sddp_cutting_planes(
                 spillage_penalty=2 * mng.penalty_upper_rule_curve + 10,
                 level_init=level_init[area],
                 inflows=mng.reservoir.inflow,
+                final_level=mng.final_level,
             )
             for area, mng in multi_stock_management.dict_reservoirs.items()
         ]

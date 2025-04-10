@@ -11,7 +11,7 @@ class GainFunction:
         self.nb_scenarios=residual_load.nb_scenarios
         self.daily_residual_load=residual_load.residual_load.reshape(365,24,self.nb_scenarios).sum(axis=1)
 
-    def gain_for_week_scenario_and_control(self, week_index: int, u : int, stock : int, scenario : int) -> float:
+    def gain_for_week_scenario_and_control(self, week_index: int, u : int, scenario : int) -> float:
 
         week_start=week_index*7
         week_end=week_start+5

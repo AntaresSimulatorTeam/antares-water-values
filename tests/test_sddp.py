@@ -117,7 +117,7 @@ def test_call_sddp(
     assert trajectory[0] == pytest.approx(opt_trajectory[0])
     assert trajectory[-1] == pytest.approx(opt_trajectory[-1])
 
-    usage_values, bellman_costs = jl_sddp.get_usage_values(
+    usage_values, bellman_costs, _ = jl_sddp.get_usage_values(
         param.len_week,
         param.len_scenario,
         formatted_data[2],

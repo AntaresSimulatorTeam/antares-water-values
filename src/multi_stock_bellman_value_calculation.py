@@ -3,9 +3,9 @@ import pickle as pkl
 from itertools import product
 from pathlib import Path
 
-import juliacall
 import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
+from juliacall import Main as jl
 from ortools.linear_solver.python import model_builder
 from scipy.stats import random_correlation
 from tqdm import tqdm
@@ -31,7 +31,6 @@ from type_definition import (
     area_value_to_array,
     array_to_area_value,
     list_area_value_to_array,
-    list_to_week_value,
     mean_scenario_value,
     time_list_area_value_to_array,
     time_list_to_array,
@@ -40,8 +39,6 @@ from type_definition import (
     timescenario_list_area_value_to_array,
     timescenario_list_value_to_array,
 )
-
-jl = juliacall.Main
 
 
 def initialize_antares_problems(
@@ -1318,6 +1315,7 @@ def iter_bell_vals(
     nSteps_bellman: int,
     method: str,
     saving_dir: str,
+    n_states: int,
     name_solver: str = "CLP",
     precision: float = 1e-2,
     correlations: Optional[np.ndarray] = None,
@@ -1441,7 +1439,7 @@ def iter_bell_vals(
         costs_approx=costs_approx,
         future_costs_approx_l=future_costs_approx_l,
         optimal_trajectory=optimal_trajectory,
-        nSteps_bellman=101,
+        nSteps_bellman=n_states,
         correlations=correlations,
         divisor=divisor,
     )
@@ -1465,15 +1463,17 @@ def sddp_cutting_planes(
     costs: Dict[TimeScenarioIndex, List[float]],
     level_init: Dict[AreaIndex, float],
     saving_dir: str,
+    n_states: int,
     normalization: Dict[str, float],
     maxiter: Optional[int] = None,
     precision: float = 1e-2,
     verbose: bool = False,
 ) -> tuple[
     np.ndarray,
-    Dict[TimeScenarioIndex, float],
+    np.ndarray,
     LinearCostEstimator,
-    List[Dict[WeekIndex, Dict[AreaIndex, List[float]]]],
+    List[np.ndarray],
+    np.ndarray,
 ]:
 
     # Initialize julia
@@ -1590,8 +1590,13 @@ def sddp_cutting_planes(
 
         if verbose:
             pbar.describe("Drawing")
-            usage_values, bellman_costs = jl_sddp.get_usage_values(
-                param.len_week, param.len_scenario, jl_reservoirs, model, norms, 101
+            usage_values, bellman_costs, levels_uv = jl_sddp.get_usage_values(
+                param.len_week,
+                param.len_scenario,
+                jl_reservoirs,
+                model,
+                norms,
+                n_states,
             )
             all_uvs.append(usage_values)
             draw_uvs_sddp(
@@ -1613,10 +1618,10 @@ def sddp_cutting_planes(
             ),
         )
         costs_approx.remove_redundants(tolerance=1e-2)
-    usage_values, bellman_costs = jl_sddp.get_usage_values(
-        param.len_week, param.len_scenario, jl_reservoirs, model, norms, 101
+    usage_values, bellman_costs, levels_uv = jl_sddp.get_usage_values(
+        param.len_week, param.len_scenario, jl_reservoirs, model, norms, n_states
     )
-    return usage_values, bellman_costs, costs_approx, all_uvs
+    return usage_values, bellman_costs, costs_approx, all_uvs, levels_uv
 
 
 def iter_bell_vals_v2(
@@ -1627,15 +1632,17 @@ def iter_bell_vals_v2(
     starting_pt: Dict[AreaIndex, float],
     saving_dir: str,
     normalization: Dict[str, float],
+    n_states: int,
     name_solver: str = "CLP",
     precision: float = 1e-2,
     maxiter: int = 2,
     verbose: bool = False,
 ) -> tuple[
     np.ndarray,
-    Dict[TimeScenarioIndex, float],
+    np.ndarray,
     LinearCostEstimator,
-    List[Dict[WeekIndex, Dict[AreaIndex, List[float]]]],
+    List[np.ndarray],
+    np.ndarray,
 ]:
 
     # Choose first controls to test
@@ -1667,7 +1674,7 @@ def iter_bell_vals_v2(
         ),
     )
     # Iterative part
-    usage_values, bellman_costs, costs_approx, all_uvs = sddp_cutting_planes(
+    usage_values, bellman_costs, costs_approx, all_uvs, levels_uv = sddp_cutting_planes(
         param=param,
         multi_stock_management=multi_stock_management,
         output_path=output_path,
@@ -1680,9 +1687,10 @@ def iter_bell_vals_v2(
         normalization=normalization,
         maxiter=maxiter,
         verbose=verbose,
+        n_states=n_states,
     )
 
-    return usage_values, bellman_costs, costs_approx, all_uvs
+    return usage_values, bellman_costs, costs_approx, all_uvs, levels_uv
 
 
 def generate_fast_uvs_v2(

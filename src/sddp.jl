@@ -204,8 +204,9 @@ end
 function get_usage_values(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.Jl_SDDP.Reservoir}, model, norms::Normalizer, discretization::Int=101)
     n_disc=discretization
     n_reservoirs = size(reservoirs)[1]
-    VU = zeros(n_weeks, n_disc, n_reservoirs)
-    costs = zeros(n_weeks, n_disc)
+    VU = zeros(n_weeks, n_disc* n_reservoirs, n_reservoirs)
+    costs = zeros(n_weeks, n_disc* n_reservoirs)
+    levels = zeros(n_weeks, n_disc* n_reservoirs, n_reservoirs)
     all_traj = get_trajectory(n_weeks, n_scenarios, reservoirs, model, norms)
     for scen = 1:n_scenarios
         traj = all_traj[scen]
@@ -218,13 +219,16 @@ function get_usage_values(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Mai
                     cost, water_vals = SDDP.evaluate(V, Dict("level[$r]" => ((r==res) * reservoirs[r].capacity*d/n_disc + (r!=res)*level_outs[r]/norms.energy) for r in 1:n_reservoirs))
                     tot_cost += cost
                     # Store the results
-                    VU[week, d, res] += -water_vals[Symbol("level[$res]")]/n_scenarios * norms.price  # Store the dual values (water values)
-                end
-                costs[week, d] += tot_cost / (n_reservoirs*n_scenarios) * norms.euro  # Store the cost
+                    for r in 1:n_reservoirs
+                        VU[week, d+n_disc*(res-1), r] = -water_vals[Symbol("level[$r]")]/n_scenarios * norms.price  # Store the dual values (water values)
+                        levels[week, d+n_disc*(res-1), r] = ((r==res) * reservoirs[r].capacity*d/n_disc*norms.energy + (r!=res)*level_outs[r])
+                    end
+                    costs[week, d+n_disc*(res-1)] = tot_cost / n_scenarios * norms.euro  # Store the cost
+                end 
             end
         end
     end
-    return VU, costs
+    return VU, costs, levels
 end
 
 export manage_reservoirs, get_usage_values, stability_report, reinit_cuts

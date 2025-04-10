@@ -11,7 +11,6 @@ from calculate_reward_and_bellman_values import (
 from estimation import Estimator, PieceWiseLinearInterpolator, UniVariateEstimator
 from optimization import AntaresProblem, Basis
 from reservoir_management import MultiStockManagement
-from stock_discretization import StockDiscretization
 from type_definition import (
     AreaIndex,
     Array1D,
@@ -82,7 +81,6 @@ def compute_x_multi_scenario(
 
 def compute_upper_bound(
     multi_stock_management: MultiStockManagement,
-    stock_discretization: StockDiscretization,
     param: TimeScenarioParameter,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     V: Dict[WeekIndex, Estimator],
@@ -155,7 +153,6 @@ def compute_upper_bound(
                     level_i=level_i,
                     take_into_account_z_and_y=(week == param.len_week - 1),
                     multi_stock_management=multi_stock_management,
-                    stock_discretization=stock_discretization,
                     param=param,
                     reward=reward,
                 )
@@ -341,9 +338,6 @@ def itr_control(
                 )
                 for week in range(param.len_week + 1)
             },
-            stock_discretization=StockDiscretization(
-                {reservoir_management.reservoir.area: X}
-            ),
             reward_approximation={reservoir_management.reservoir.area: G},
         )
         itr_tot.append(current_itr)

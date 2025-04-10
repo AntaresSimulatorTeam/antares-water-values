@@ -1,7 +1,8 @@
 import numpy as np
 import pytest
 
-from functions_iterative import TimeScenarioParameter
+from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
+from functions_iterative import TimeScenarioParameter, compute_upper_bound
 from multi_stock_bellman_value_calculation import *
 from reservoir_management import MultiStockManagement
 from type_definition import time_list_area_value_to_array
@@ -344,7 +345,7 @@ def test_bellman_value_iterative_method_with_sddp(
     starting_pt: Dict[AreaIndex, float],
 ) -> None:
 
-    usage_values, bellman_costs, _, _, levels_uv = iter_bell_vals_v2(
+    usage_values, bellman_costs, _, _, levels_uv, lb = iter_bell_vals_v2(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         n_controls_init=2,
@@ -358,6 +359,43 @@ def test_bellman_value_iterative_method_with_sddp(
         verbose=False,
         n_states=10,
     )
+
+    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
+    for week in range(param.len_week):
+        for scenario in range(param.len_scenario):
+            m = AntaresProblem(
+                scenario=scenario,
+                week=week,
+                path="test_data/two_nodes",
+                itr=1,
+                name_solver="CLP",
+            )
+            m.create_weekly_problem_itr(
+                param=param,
+                multi_stock_management=multi_stock_management_two_nodes,
+            )
+            list_models[TimeScenarioIndex(week, scenario)] = m
+
+    ub, _, _, _ = compute_upper_bound(
+        multi_stock_management=multi_stock_management_two_nodes,
+        param=param,
+        list_models=list_models,
+        V={
+            WeekIndex(week): UniVariateEstimator(
+                {
+                    a.area: PieceWiseLinearInterpolator(
+                        np.array(levels_uv)[week - 1, 10 * i : 10 * (i + 1), i],
+                        np.array(bellman_costs)[week - 1, 10 * i : 10 * (i + 1)],
+                    )
+                    for i, a in enumerate(multi_stock_management_two_nodes.areas)
+                }
+            )
+            for week in range(1, param.len_week + 1)
+        },
+    )
+
+    assert lb == pytest.approx(5722596330)
+    assert ub == pytest.approx(8328933665)
 
     assert np.array(bellman_costs)[:-1] == pytest.approx(
         np.array(

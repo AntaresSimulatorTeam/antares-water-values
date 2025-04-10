@@ -6,7 +6,6 @@ from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
 from functions_iterative import TimeScenarioParameter
 from optimization import AntaresProblem, Basis
 from reservoir_management import MultiStockManagement
-from stock_discretization import StockDiscretization
 from type_definition import AreaIndex, Array1D, Dict
 
 
@@ -129,7 +128,6 @@ def test_create_and_modify_weekly_problem_with_bellman_values(
     problem.set_constraints_initial_level_and_bellman_values(
         UniVariateEstimator({"area": V[1]}),
         multi_stock_management_one_node.get_initial_level(),
-        StockDiscretization(discretization_one_node),
     )
 
     lp = problem.solver.ExportModelAsLpFormat(False)
@@ -139,7 +137,6 @@ def test_create_and_modify_weekly_problem_with_bellman_values(
 
     _, _, cout, _, optimal_controls, _, _ = problem.solve_problem_with_bellman_values(
         multi_stock_management_one_node,
-        StockDiscretization(discretization_one_node),
         UniVariateEstimator({"area": V[1]}),
         multi_stock_management_one_node.get_initial_level(),
         True,

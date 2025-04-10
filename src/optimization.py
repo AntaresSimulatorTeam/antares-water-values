@@ -17,7 +17,6 @@ from estimation import (
     UniVariateEstimator,
 )
 from reservoir_management import MultiStockManagement
-from stock_discretization import StockDiscretization
 from type_definition import (
     AreaIndex,
     Dict,
@@ -479,7 +478,6 @@ class AntaresProblem:
         self,
         V: Estimator,
         all_level_i: Dict[AreaIndex, float],
-        stock_discretization: StockDiscretization,
     ) -> List[pywraplp.Constraint]:
 
         for area in self.range_reservoir:
@@ -503,9 +501,7 @@ class AntaresProblem:
         if type(V) is UniVariateEstimator:
             additional_constraint = self.build_univariate_bellman_constraints(V)
         elif type(V) is BellmanValueEstimation:
-            additional_constraint = self.build_multivariate_bellman_constraints(
-                stock_discretization, V
-            )
+            additional_constraint = self.build_multivariate_bellman_constraints(V)
         for area in self.range_reservoir:
             level_i = all_level_i[area]
             cst_initial_level = self.solver.LookupConstraint(
@@ -661,7 +657,6 @@ class AntaresProblem:
     def solve_problem_with_bellman_values(
         self,
         multi_stock_management: MultiStockManagement,
-        stock_discretization: StockDiscretization,
         V: Estimator,
         level_i: Dict[AreaIndex, float],
         take_into_account_z_and_y: bool,
@@ -683,7 +678,7 @@ class AntaresProblem:
         cout = 0.0
 
         additional_constraint = self.set_constraints_initial_level_and_bellman_values(
-            V, level_i, stock_discretization
+            V, level_i
         )
 
         if find_optimal_basis and type(V) is UniVariateEstimator:
@@ -749,13 +744,12 @@ class AntaresProblem:
 
     def build_multivariate_bellman_constraints(
         self,
-        stock_discretization: StockDiscretization,
         V: BellmanValueEstimation,
     ) -> List[pywraplp.Constraint]:
         additional_constraint: List = []
         len_reservoir = len(self.range_reservoir)
         iterate_stock_discretization = (
-            stock_discretization.get_product_stock_discretization()
+            V.discretization.get_product_stock_discretization()
         )
 
         for idx in iterate_stock_discretization:
@@ -775,9 +769,7 @@ class AntaresProblem:
                             - sum(
                                 [
                                     V[f"slope_{area}"][idx]
-                                    * stock_discretization.list_discretization[area][
-                                        idx[i]
-                                    ]
+                                    * V.discretization.list_discretization[area][idx[i]]
                                     for i, area in enumerate(self.range_reservoir)
                                 ]
                             )
@@ -801,9 +793,7 @@ class AntaresProblem:
                                     self.stored_variables_and_constraints[area][
                                         "final_level"
                                     ]
-                                    - stock_discretization.list_discretization[area][
-                                        idx[i]
-                                    ]
+                                    - V.discretization.list_discretization[area][idx[i]]
                                 )
                                 for i, area in enumerate(self.range_reservoir)
                             ]

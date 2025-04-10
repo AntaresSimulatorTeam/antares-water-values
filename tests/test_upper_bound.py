@@ -10,7 +10,6 @@ from functions_iterative import (
 )
 from optimization import AntaresProblem
 from reservoir_management import MultiStockManagement
-from stock_discretization import StockDiscretization
 from type_definition import AreaIndex, Array1D, Dict, WeekIndex
 
 bellman_values = np.array(
@@ -210,7 +209,6 @@ def test_upper_bound(
     upper_bound, controls, _, _ = compute_upper_bound(
         param=param_one_week,
         multi_stock_management=multi_stock_management_one_node,
-        stock_discretization=StockDiscretization(discretization_one_node),
         list_models=list_models,
         V={
             WeekIndex(week): UniVariateEstimator(V)
@@ -229,7 +227,6 @@ def test_upper_bound(
     upper_bound, controls, _, _ = compute_upper_bound(
         param=param_one_week,
         multi_stock_management=multi_stock_management_one_node,
-        stock_discretization=StockDiscretization(discretization_one_node),
         list_models=list_models,
         V={
             WeekIndex(week): UniVariateEstimator(V)
@@ -270,7 +267,6 @@ def test_upper_bound_with_bellman_values(
     upper_bound, controls, _, _ = compute_upper_bound(
         param=param_one_week,
         multi_stock_management=multi_stock_management_one_node,
-        stock_discretization=StockDiscretization(discretization_one_node),
         list_models=list_models,
         V={
             WeekIndex(week): UniVariateEstimator(V)
@@ -330,7 +326,6 @@ def test_upper_bound_with_xpress(
         upper_bound, controls, _, _ = compute_upper_bound(
             param=param_one_week,
             multi_stock_management=multi_stock_management_one_node,
-            stock_discretization=StockDiscretization(discretization_one_node),
             list_models=list_models,
             V={
                 WeekIndex(week): UniVariateEstimator(V)
@@ -349,7 +344,6 @@ def test_upper_bound_with_xpress(
         upper_bound, controls, _, _ = compute_upper_bound(
             param=param_one_week,
             multi_stock_management=multi_stock_management_one_node,
-            stock_discretization=StockDiscretization(discretization_one_node),
             list_models=list_models,
             V={
                 WeekIndex(week): UniVariateEstimator(V)

@@ -12,6 +12,7 @@ from tqdm import tqdm
 
 from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
 from estimation import LinearCostEstimator, LinearInterpolator
+from functions_iterative import compute_upper_bound
 from optimization import (
     AntaresProblem,
     Basis,
@@ -1469,11 +1470,7 @@ def sddp_cutting_planes(
     precision: float = 1e-2,
     verbose: bool = False,
 ) -> tuple[
-    np.ndarray,
-    np.ndarray,
-    LinearCostEstimator,
-    List[np.ndarray],
-    np.ndarray,
+    np.ndarray, np.ndarray, LinearCostEstimator, List[np.ndarray], np.ndarray, float
 ]:
 
     # Initialize julia
@@ -1540,7 +1537,7 @@ def sddp_cutting_planes(
         )
         jl_reservoirs, norms = formatted_data[2], formatted_data[4]
         # SDDP to train on our cost approx
-        sim_res, model, _ = jl_sddp.manage_reservoirs(*formatted_data)
+        sim_res, model, lb = jl_sddp.manage_reservoirs(*formatted_data)
 
         # Resulting controls per scenario
         array_controls = np.array(
@@ -1621,7 +1618,8 @@ def sddp_cutting_planes(
     usage_values, bellman_costs, levels_uv = jl_sddp.get_usage_values(
         param.len_week, param.len_scenario, jl_reservoirs, model, norms, n_states
     )
-    return usage_values, bellman_costs, costs_approx, all_uvs, levels_uv
+
+    return usage_values, bellman_costs, costs_approx, all_uvs, levels_uv, lb
 
 
 def iter_bell_vals_v2(
@@ -1643,6 +1641,7 @@ def iter_bell_vals_v2(
     LinearCostEstimator,
     List[np.ndarray],
     np.ndarray,
+    float,
 ]:
 
     # Choose first controls to test
@@ -1674,23 +1673,32 @@ def iter_bell_vals_v2(
         ),
     )
     # Iterative part
-    usage_values, bellman_costs, costs_approx, all_uvs, levels_uv = sddp_cutting_planes(
-        param=param,
-        multi_stock_management=multi_stock_management,
-        output_path=output_path,
-        name_solver=name_solver,
-        costs_approx=costs_approx,
-        saving_dir=saving_dir,
-        costs=costs,
-        level_init=starting_pt,
-        precision=precision,
-        normalization=normalization,
-        maxiter=maxiter,
-        verbose=verbose,
-        n_states=n_states,
+    usage_values, bellman_costs, costs_approx, all_uvs, levels_uv, lower_bound = (
+        sddp_cutting_planes(
+            param=param,
+            multi_stock_management=multi_stock_management,
+            output_path=output_path,
+            name_solver=name_solver,
+            costs_approx=costs_approx,
+            saving_dir=saving_dir,
+            costs=costs,
+            level_init=starting_pt,
+            precision=precision,
+            normalization=normalization,
+            maxiter=maxiter,
+            verbose=verbose,
+            n_states=n_states,
+        )
     )
 
-    return usage_values, bellman_costs, costs_approx, all_uvs, levels_uv
+    return (
+        usage_values,
+        bellman_costs,
+        costs_approx,
+        all_uvs,
+        levels_uv,
+        lower_bound,
+    )
 
 
 def generate_fast_uvs_v2(

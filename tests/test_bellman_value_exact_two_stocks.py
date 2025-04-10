@@ -131,7 +131,6 @@ def test_solve_with_bellman_multi_stock(
 
     _, _, Vu, slope, _, xf, _ = m.solve_problem_with_bellman_values(
         multi_stock_management=multi_stock_management_two_nodes,
-        stock_discretization=StockDiscretization(discretization_two_nodes),
         V=BellmanValueEstimation(V, StockDiscretization(discretization_two_nodes)),
         level_i=multi_stock_management_two_nodes.get_initial_level(),
         take_into_account_z_and_y=True,

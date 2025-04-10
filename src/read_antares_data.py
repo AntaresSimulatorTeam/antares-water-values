@@ -150,54 +150,39 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
 
 
 @dataclass
-class Compute_res_cons:
-
-    weeks_in_year = 52
-    hours_in_week = 168
-    hours_in_day = 24
-    days_in_week = hours_in_week // hours_in_day
-    days_in_year = days_in_week * weeks_in_year + 1
+class Residual_load:
 
     def __init__(self, dir_study: str, name_area: str) -> None:
         self.area = name_area
         self.read_data(dir_study)
-        self.compute_daily_load()
-        self.compute_daily_solar(dir_study)
-        self.compute_daily_wind(dir_study)
-        self.compute_daily_ror()
-        self.compute_daily_res_cons()
+        self.compute_residual_load()
+        self.compute_solar(dir_study)
+        self.compute_wind(dir_study)
+        self.compute_residual_load()
 
-    def read_data(self, dir_study) -> None:
-        """Reads all necessary data."""
+    def read_data(self, dir_study:str) -> None: 
+
         self.load = np.loadtxt(f"{dir_study}/input/load/series/load_{self.area}.txt")
+        self.nb_scenarios=self.load.shape[1]
         self.solar = np.loadtxt(f"{dir_study}/input/renewables/series/{self.area}/{self.area}_solar_pv/series.txt")
         self.wind_offshore = np.loadtxt(f"{dir_study}/input/renewables/series/{self.area}/{self.area}_wind_offshore/series.txt")
         self.wind_onshore = np.loadtxt(f"{dir_study}/input/renewables/series/{self.area}/{self.area}_wind_onshore/series.txt")
         self.ror = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/ror.txt")
 
-    def compute_daily_renewable(self, data, capacity_key, cluster_file) -> np.ndarray:
-        """Computes the daily renewable energy production."""
-        nb_scenarios = data.shape[1]
+    def compute_renewable(self, data:np.ndarray, capacity_key:str, cluster_file:str) -> np.ndarray:
+        
         config = ConfigParser()
         config.read(f"{cluster_file}")
         capacity = float(config.get(f"{self.area}_{capacity_key}", "nominalcapacity"))
         data *= capacity
-        return data.reshape(self.days_in_year, self.hours_in_day, nb_scenarios).sum(axis=1)
+        return data
 
-    def compute_daily_solar(self, dir_study) -> None:
-        self.daily_solar = self.compute_daily_renewable(self.solar, "solar_pv", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
+    def compute_solar(self, dir_study:str) -> None:
+        self.solar = self.compute_renewable(self.solar, "solar_pv", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
 
-    def compute_daily_wind(self, dir_study) -> None:
-        self.daily_wind_offshore = self.compute_daily_renewable(self.wind_offshore, "wind_offshore", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
-        self.daily_wind_onshore = self.compute_daily_renewable(self.wind_onshore, "wind_onshore", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
+    def compute_wind(self, dir_study:str) -> None:
+        self.wind_offshore = self.compute_renewable(self.wind_offshore, "wind_offshore", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
+        self.wind_onshore = self.compute_renewable(self.wind_onshore, "wind_onshore", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
 
-    def compute_daily_ror(self) -> None:
-        nb_scenarios = self.ror.shape[1]
-        self.daily_ror = self.ror.reshape(self.days_in_year, self.hours_in_day, nb_scenarios).sum(axis=1)
-
-    def compute_daily_load(self) -> None:
-        nb_scenarios = self.load.shape[1]
-        self.daily_load = self.load.reshape(self.days_in_year, self.hours_in_day, nb_scenarios).sum(axis=1)
-
-    def compute_daily_res_cons(self) -> None:
-        self.daily_res_cons = self.daily_load - self.daily_solar - self.daily_wind_offshore - self.daily_wind_onshore - self.daily_ror
+    def compute_residual_load(self) -> None:
+        self.residual_load=self.load-self.solar-self.wind_offshore-self.wind_onshore-self.ror

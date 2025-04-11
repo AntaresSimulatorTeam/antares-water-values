@@ -161,7 +161,7 @@ class Residual_load:
         self.compute_residual_load()
 
     def read_data(self, dir_study:str) -> None: 
-
+        
         self.load = np.loadtxt(f"{dir_study}/input/load/series/load_{self.area}.txt")
         self.nb_scenarios=self.load.shape[1]
         self.solar = np.loadtxt(f"{dir_study}/input/renewables/series/{self.area}/{self.area}_solar_pv/series.txt")

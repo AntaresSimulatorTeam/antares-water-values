@@ -12,13 +12,13 @@ class Bellman_values:
         self.capacity=capacity
         self.nb_week=nb_week
         self.nb_scenarios=residual_load.nb_scenarios
-        self.bv=np.zeros((52,self.capacity,self.nb_scenarios))
-        self.mean_bv=np.zeros((52,self.capacity))
+        self.bv=np.zeros((52,self.capacity+1,self.nb_scenarios))
+        self.mean_bv=np.zeros((52,self.capacity+1))
         self.compute_bellman_values()
 
     def compute_bellman_values(self) -> None:
         for w in reversed(range(18,18+self.nb_week-1)):
-            for c in range(self.capacity):
+            for c in range(self.capacity+1):
                 for s in range(self.nb_scenarios):
                     best_value=0
                     for control in range(min(5,c)+1):

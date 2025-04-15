@@ -13,8 +13,8 @@ class GainFunction:
 
     def gain_for_week_control_and_scenario(self, week_index: int, control : int, scenario : int) -> float:
 
-        week_start=week_index*7+2
-        week_end=week_start+5
+        week_start=week_index*7
+        week_end=week_start+7
 
         self.daily_residual_load_for_week=self.daily_residual_load[week_start:week_end,scenario]
         self.daily_residual_load_for_week=(np.sort(self.daily_residual_load_for_week))[::-1]

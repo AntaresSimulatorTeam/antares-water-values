@@ -28,26 +28,24 @@ class Trajectories :
 
         for s in range(self.nb_scenarios):
             remaining_capacity=self.capacity
-            for w in range(18,18+self.nb_week):
+            for w in range(19,18+self.nb_week):
                 if remaining_capacity==0:
                     self.trajectories[s,w-18]=0
                     continue
                 
                 thresholds=self.usage_values.usage_values[w,:remaining_capacity]
-                week_start=w*7+2
-                week_end=week_start+5
-                week_days=self.residual_load.residual_load[week_start*24:week_end*24,s].reshape(5,24).sum(axis=1)
-                sorted_load=np.sort(week_days)[::-1]
+                week_start=(w-1)*7
+                week_end=week_start+7
+                week_days=self.residual_load.residual_load[week_start*24:week_end*24,s].reshape(7,24).sum(axis=1)
+                sorted_load=(np.sort(week_days))[::-1]
 
                 control = 0
-                for d in range(min(5,remaining_capacity)):
-                    idx=remaining_capacity-1-d
-                    if sorted_load[d]>thresholds[idx] and idx>=0:
-                        control+=1
-                        print("conso res: ", sorted_load[d], " seuil: ", thresholds[idx], " semaine : ",w," stock : ", remaining_capacity-control, " scenario : " , s)
+                for d in range(min(5, remaining_capacity)):
+                    idx = remaining_capacity - 1 - d
+                    if sorted_load[d] < thresholds[idx]: 
+                        break         # puis on s’arrête
+                    control += 1      # sinon on continue
 
-                    else:
-                        break
 
                 self.trajectories[s, w - 18] = control
                 remaining_capacity -= control

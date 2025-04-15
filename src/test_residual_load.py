@@ -22,10 +22,10 @@ uv=UV_tempo_red(residual_load=residual_load_1,gain_function=gain_func,bellman_va
 # print(gain_func.gain_for_week_control_and_scenario(38,5,0))
 # bellman.compute_bellman_values()
 # print(bellman.bv[18:40,:,:])
-print(bellman.mean_bv[18:40,:])
-# gain_func.gain_for_week_control_and_scenario(38,0,0)
+# print(bellman.mean_bv[18:40,:])
+# gain_func.gain_for_week_control_and_scenario(18,0,191)
 # print(gain_func.daily_residual_load_for_week)
-# valeurs_usage=uv.usage_values[18:40,:]
+# valeurs_usage=uv.usage_values[18,21]
 
 # print(valeurs_usage)
 
@@ -52,40 +52,40 @@ print(bellman.mean_bv[18:40,:])
 
 
 
-# # Calcul des trajectoires
-# trajectories = Trajectories(
-#     residual_load=residual_load_1,
-#     gain_function=gain_func,
-#     bellman_values=bellman,
-#     usage_values=uv,
-#     capacity=22,
-#     nb_week=22
-# )
-# trajectories.calculate_trajectories()  # appel pour calculer les trajectoires
+# Calcul des trajectoires
+trajectories = Trajectories(
+    residual_load=residual_load_1,
+    gain_function=gain_func,
+    bellman_values=bellman,
+    usage_values=uv,
+    capacity=22,
+    nb_week=22
+)
 
+# print("Jours tirés pour le scénario 0 :", trajectories.trajectory_for_scenario(0))
 
+nb_scenarios = trajectories.nb_scenarios
+nb_weeks = trajectories.nb_week
+initial_capacity = trajectories.capacity
 
-# nb_scenarios = trajectories.nb_scenarios
-# nb_weeks = trajectories.nb_week
-# initial_capacity = trajectories.capacity
+x = np.arange(nb_weeks)  # Semaines
 
-# x = np.arange(nb_weeks)  # Semaines
+plt.figure()
 
-# plt.figure(figsize=(12, 6))
+for s in range(200):
+    stock = [initial_capacity]
+    for control in trajectories.trajectory_for_scenario(s):
+        stock.append(stock[-1] - control)
+    stock = stock[1:]  # Supprimer le stock initial (avant la semaine 18)
+    
+    # print(f"Stock restant pour le scénario {s} :", stock)  # <--- 📢 ICI on affiche le stock
 
-# for s in range(1):
-#     stock = [initial_capacity]
-#     for control in trajectories.trajectory_for_scenario(s):
-#         stock.append(stock[-1] - control)
-#     stock = stock[1:]  # Supprimer le stock initial (avant la semaine 18)
-#     plt.plot(x, stock, label=f"Scénario {s}")
+    plt.plot(x, stock, label=f"Scénario {s}")
 
-
-
-# plt.xlabel("Semaine")
-# plt.ylabel("Stock restant")
-# plt.title("Évolution du stock par scénario")
-# plt.grid(True)
-# plt.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), borderaxespad=0.)
-# plt.tight_layout()
-# plt.show()
+plt.xlabel("Semaine")
+plt.ylabel("Stock restant")
+plt.title("Évolution du stock par scénario")
+plt.grid(True)
+plt.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), borderaxespad=0.)
+plt.tight_layout()
+plt.show()

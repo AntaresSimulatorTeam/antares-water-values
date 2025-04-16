@@ -188,5 +188,5 @@ class Residual_load:
     def compute_residual_load(self) -> None:
         self.residual_load=self.load-self.solar-self.wind_offshore-self.wind_onshore-self.ror
         
-        juillet_aout = self.residual_load[0:65*24, :]
+        juillet_aout = self.residual_load[24:65*24, :]
         self.residual_load = np.concatenate((self.residual_load, juillet_aout), axis=0)

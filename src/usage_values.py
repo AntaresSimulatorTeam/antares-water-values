@@ -16,7 +16,7 @@ class UV_tempo:
         self.nb_week=self.bellman_values.nb_week
         self.start_week=bellman_values.start_week
         self.end_week=bellman_values.end_week
-        self.usage_values=np.zeros((61,self.capacity))
+        self.usage_values=np.zeros((62,self.capacity))
         self.compute_usage_values()
 
     def compute_usage_values(self) -> None:

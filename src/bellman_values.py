@@ -20,8 +20,8 @@ class Bellman_values:
         self.max_control=max_control
         self.start_week=start_week
         self.end_week=self.start_week+nb_week
-        self.bv=np.zeros((61,self.capacity+1,self.nb_scenarios))
-        self.mean_bv=np.zeros((61,self.capacity+1))
+        self.bv=np.zeros((62,self.capacity+1,self.nb_scenarios))
+        self.mean_bv=np.zeros((62,self.capacity+1))
         self.compute_bellman_values()
 
     def compute_bellman_values(self) -> None:

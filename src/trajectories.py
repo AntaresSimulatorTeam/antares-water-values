@@ -4,6 +4,7 @@ from bellman_values import Bellman_values
 from usage_values import UV_tempo
 from dataclasses import dataclass
 import numpy as np
+from typing import Optional
 
 @dataclass
 class Trajectories :
@@ -14,7 +15,8 @@ class Trajectories :
                 usage_values:UV_tempo,
                 capacity:int, 
                 nb_week:int,
-                max_control:int):
+                max_control:int,
+                trajectories_red:Optional[np.ndarray]=None):
         self.residual_load=residual_load
         self.gain_function=gain_function
         self.bellman_values=bellman_values
@@ -26,6 +28,7 @@ class Trajectories :
         self.start_week=self.bellman_values.start_week
         self.end_week=self.bellman_values.end_week
         self.max_control=max_control
+        self.trajectories_red=trajectories_red #[nb_scenarios,nb_weeks]
         self.calculate_trajectories()
     
     def calculate_trajectories(self)-> None:
@@ -50,10 +53,26 @@ class Trajectories :
                         break         # puis on s’arrête
                     control += 1      # sinon on continue
 
+                if self.trajectories_red is not None:      
+                    if w<18:
+                        if remaining_capacity-control<22:
+                            control=remaining_capacity-22
+                    
+                    elif w >=18 and w <= 40:
+                        red_weeks_idx = w - 18
+                        red_used_so_far = np.sum(self.trajectories_red[s, :red_weeks_idx])
+
+                        
+                        if remaining_capacity-control < 22-red_used_so_far:
+                            print("on vérifie que le stock blanc reste positif")
+                            # diff = red_used_so_far - red_white_used_so_far
+                            # control += diff  # on augmente le control pour équilibrer
+                            control=int(remaining_capacity+red_used_so_far-22)
+                        # control = min(control, remaining_capacity)
+
 
                 self.trajectories[s, w - self.start_week] = control
                 remaining_capacity -= control
-
                 if remaining_capacity<0:
                     remaining_capacity=0
     

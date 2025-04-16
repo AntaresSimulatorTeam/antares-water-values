@@ -8,7 +8,7 @@ class GainFunctionTEMPO:
     def __init__(self, residual_load : Residual_load, max_control:int):
         self.residual_load=residual_load.residual_load
         self.nb_scenarios=residual_load.nb_scenarios
-        self.daily_residual_load=residual_load.residual_load.reshape(365+65,24,self.nb_scenarios).sum(axis=1)
+        self.daily_residual_load=residual_load.residual_load.reshape(365+64,24,self.nb_scenarios).sum(axis=1)
         self.max_control=max_control
 
     def gain_for_week_control_and_scenario(self, week_index: int, control : int, scenario : int) -> float:

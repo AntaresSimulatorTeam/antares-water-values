@@ -2,3 +2,5 @@ numpy
 scipy
 xpress
 ortools
+antares.craft
+plotly.graph_objects

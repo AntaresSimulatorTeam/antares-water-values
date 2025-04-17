@@ -6,6 +6,7 @@ from dataclasses import dataclass
 @dataclass
 class GainFunctionTEMPO:
     def __init__(self, residual_load : Residual_load, max_control:int):
+        
         self.residual_load=residual_load.residual_load
         self.nb_scenarios=residual_load.nb_scenarios
         self.daily_residual_load=residual_load.residual_load.reshape(365+64,24,self.nb_scenarios).sum(axis=1)

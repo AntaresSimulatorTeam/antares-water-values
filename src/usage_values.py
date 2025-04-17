@@ -1,21 +1,18 @@
-from read_antares_data import Residual_load
-from gain_function_TEMPO import GainFunctionTEMPO
 from bellman_values import Bellman_values
 from dataclasses import dataclass
 import numpy as np
 
 @dataclass
 class UV_tempo:
-    def __init__(self,residual_load : Residual_load, 
-                 gain_function : GainFunctionTEMPO, 
+    def __init__(self, 
                  bellman_values: Bellman_values):
-        self.residual_load=residual_load
-        self.gain_function=gain_function
         self.bellman_values=bellman_values
+
         self.capacity=self.bellman_values.capacity
         self.nb_week=self.bellman_values.nb_week
         self.start_week=bellman_values.start_week
         self.end_week=bellman_values.end_week
+
         self.usage_values=np.zeros((62,self.capacity))
         self.compute_usage_values()
 

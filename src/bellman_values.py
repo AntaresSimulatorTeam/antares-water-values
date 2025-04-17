@@ -1,4 +1,3 @@
-from read_antares_data import Residual_load
 from gain_function_TEMPO import GainFunctionTEMPO
 from dataclasses import dataclass
 import numpy as np
@@ -6,20 +5,20 @@ import numpy as np
 @dataclass
 class Bellman_values:
     
-    def __init__(self,residual_load : Residual_load, 
-                 gain_function : GainFunctionTEMPO,
+    def __init__(self, gain_function : GainFunctionTEMPO,
                  capacity:int, 
                  nb_week:int, 
-                 max_control:int,
                  start_week:int):
-        self.residual_load=residual_load
+        
+        self.max_control=gain_function.max_control
         self.gain_function=gain_function
-        self.capacity=capacity
         self.nb_week=nb_week
-        self.nb_scenarios=residual_load.nb_scenarios
-        self.max_control=max_control
         self.start_week=start_week
+
+        self.capacity=capacity
+        self.nb_scenarios=self.gain_function.nb_scenarios
         self.end_week=self.start_week+nb_week
+
         self.bv=np.zeros((62,self.capacity+1,self.nb_scenarios))
         self.mean_bv=np.zeros((62,self.capacity+1))
         self.compute_bellman_values()

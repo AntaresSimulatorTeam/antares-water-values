@@ -1,178 +1,139 @@
-from pathlib import Path
 from read_antares_data import Residual_load
 import numpy as np
 from gain_function_TEMPO import GainFunctionTEMPO
 from bellman_values import Bellman_values
 from usage_values import UV_tempo
-from trajectories import Trajectories
-import matplotlib.pyplot as plt
+from trajectories_TEMPO import Trajectories_TEMPO
 import plotly.graph_objects as go
 
 
 dir_study="C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036"
 area="fr"
 
-residual_load_1=Residual_load(dir_study=dir_study,name_area=area)
-residual_load_2=Residual_load(dir_study=dir_study,name_area=area)
+residual_load=Residual_load(dir_study=dir_study,name_area=area)
 
-gain_func_red=GainFunctionTEMPO(residual_load=residual_load_1,max_control=5)
-bellman_red=Bellman_values(residual_load=residual_load_1,
-                           gain_function=gain_func_red,
-                           capacity=22,
-                           nb_week=22,
-                           max_control=5,
-                           start_week=18)
-uv_red=UV_tempo(residual_load=residual_load_1,
-                    gain_function=gain_func_red,
-                    bellman_values=bellman_red)
+gain_function_tempo_r=GainFunctionTEMPO(residual_load=residual_load,max_control=5)
+gain_function_tempo_wr=GainFunctionTEMPO(residual_load=residual_load,max_control=6)
 
-gain_func_white_and_red=GainFunctionTEMPO(residual_load=residual_load_2,max_control=6)
-bellman_white_and_red=Bellman_values(residual_load=residual_load_2,
-                                     gain_function=gain_func_white_and_red,
-                                     capacity=65,
-                                     nb_week=53,
-                                     max_control=6,
-                                     start_week=9)
-uv_white_and_red=UV_tempo(residual_load=residual_load_2,
-                              gain_function=gain_func_white_and_red,
-                              bellman_values=bellman_white_and_red)
+bellman_values_r=Bellman_values(gain_function=gain_function_tempo_r,capacity=22,nb_week=22,start_week=18)
+bellman_values_wr=Bellman_values(gain_function=gain_function_tempo_wr,capacity=65,nb_week=53,start_week=9)
 
+usage_values_r=UV_tempo(bellman_values=bellman_values_r)
+usage_values_wr=UV_tempo(bellman_values=bellman_values_wr)
 
-# print(bellman_white_and_red.gain_function.daily_residual_load_for_week)
-# print(uv_red.bellman_values.mean_bv[18:40,:])
-# print(uv_white_and_red.bellman_values.mean_bv[9:62,:])
-# print(uv_white_and_red.usage_values[9:62,:])
+trajectories_r=Trajectories_TEMPO(usage_values=usage_values_r)
+trajectories_white_and_red=Trajectories_TEMPO(usage_values=usage_values_wr,trajectories_red=trajectories_r.trajectories)
 
-trajectories_red= Trajectories(
-    residual_load=residual_load_1,
-    gain_function=gain_func_red,
-    bellman_values=bellman_red,
-    usage_values=uv_red,
-    capacity=22,
-    nb_week=22,
-    max_control=5
+# Affichage des courbes
+
+import plotly.graph_objects as go
+
+# Nombre de scénarios
+nb_scenarios = trajectories_white_and_red.nb_scenarios
+
+# Semaines
+weeks = np.arange(trajectories_white_and_red.nb_week)
+
+# Création des traces pour chaque scénario
+fig = go.Figure()
+
+for s in range(nb_scenarios):
+    stock_r = trajectories_r.stock_for_scenario(s)
+    stock_wr = trajectories_white_and_red.stock_for_scenario(s)
+    stock_w = trajectories_white_and_red.white_stock_for_scenario(s)
+
+    visible = (s == 0)  # Seul le scénario 0 est visible par défaut
+
+    # Décalage de la courbe de stock rouge : None jusqu'à la semaine 9
+    stock_r_shifted = [None]*9 + list(stock_r[:])
+
+    fig.add_trace(go.Scatter(
+        x=weeks,
+        y=stock_r_shifted,
+        name="Stock jours rouges",
+        visible=visible,
+        line=dict(color='red'),
+        legendgroup=f"scen{s}",
+        showlegend=True if s == 0 else False
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=weeks,
+        y=stock_wr,
+        name="Stock jours rouges + blancs",
+        visible=visible,
+        line=dict(color='blue'),
+        legendgroup=f"scen{s}",
+        showlegend=True if s == 0 else False
+    ))
+
+    fig.add_trace(go.Scatter(
+        x=weeks,
+        y=stock_w,
+        name="Stock jours blancs",
+        visible=visible,
+        line=dict(color='green'),
+        legendgroup=f"scen{s}",
+        showlegend=True if s == 0 else False
+    ))
+
+# Ajout du menu déroulant
+buttons = []
+
+# Boutons pour chaque scénario individuel
+for s in range(nb_scenarios):
+    visibility = [False] * (3 * nb_scenarios)
+    visibility[3*s] = visibility[3*s + 1] = visibility[3*s + 2] = True
+
+    buttons.append(dict(
+        label=f"Scénario {s}",
+        method="update",
+        args=[{"visible": visibility},
+              {"title": f"Stocks des jours Tempo - Scénario {s}"}]
+    ))
+
+# Bouton pour afficher tous les scénarios - Stock rouge
+visibility_all_red = [True if i % 3 == 0 else False for i in range(3 * nb_scenarios)]
+buttons.append(dict(
+    label="Tous les scénarios - Rouge",
+    method="update",
+    args=[{"visible": visibility_all_red},
+          {"title": "Stocks des jours rouges - Tous les scénarios"}]
+))
+
+# Bouton pour afficher tous les scénarios - Stock rouge + blanc
+visibility_all_wr = [True if i % 3 == 1 else False for i in range(3 * nb_scenarios)]
+buttons.append(dict(
+    label="Tous les scénarios - Rouge + Blanc",
+    method="update",
+    args=[{"visible": visibility_all_wr},
+          {"title": "Stocks des jours rouges + blancs - Tous les scénarios"}]
+))
+
+# Bouton pour afficher tous les scénarios - Stock blanc
+visibility_all_white = [True if i % 3 == 2 else False for i in range(3 * nb_scenarios)]
+buttons.append(dict(
+    label="Tous les scénarios - Blanc",
+    method="update",
+    args=[{"visible": visibility_all_white},
+          {"title": "Stocks des jours blancs - Tous les scénarios"}]
+))
+
+# Mise à jour de la mise en page avec les nouveaux boutons
+fig.update_layout(
+    updatemenus=[dict(
+        active=0,
+        buttons=buttons,
+        direction="down",
+        x=1.05,
+        y=1,
+        showactive=True
+    )],
+    title="Stocks des jours Tempo - Scénario 0",
+    xaxis_title="Semaine",
+    yaxis_title="Stock de jours restants",
+    legend=dict(x=0, y=-0.2, orientation="h"),
+    margin=dict(t=80)
 )
 
-
-
-trajectories_white_and_red = Trajectories(
-    residual_load=residual_load_2,
-    gain_function=gain_func_white_and_red,
-    bellman_values=bellman_white_and_red,
-    usage_values=uv_white_and_red,
-    capacity=65,
-    nb_week=53,
-    max_control=6,
-    trajectories_red=trajectories_red.trajectories
-)
-
-
-class TempoStockPlotter:
-    def __init__(self, trajectories_red:Trajectories, trajectories_wr:Trajectories, start_red:int, end_red:int):
-        self.trajectories_red = trajectories_red
-        self.trajectories_wr = trajectories_wr
-        self.start_red = start_red
-        self.end_red = end_red
-
-
-        self.stock_red = self.compute_stock(self.trajectories_red)
-        self.stock_wr = self.compute_stock(self.trajectories_wr)
-        self.stock_white = self.compute_white_stock()
-
-    def compute_stock(self, trajectories:Trajectories)->np.ndarray:
-        nb_weeks = trajectories.nb_week
-        nb_scenarios = 200
-        stock = np.zeros((nb_scenarios, nb_weeks))
-        for s in range(nb_scenarios):
-            current_stock = [trajectories.capacity]
-            for control in trajectories.trajectory_for_scenario(s):
-                current_stock.append(current_stock[-1] - control)
-            stock[s, :] = current_stock[1:]
-        return stock
-
-    def compute_white_stock(self)->np.ndarray:
-        stock_white = np.zeros_like(self.stock_wr)
-        for s in range(200):
-            # Avant période rouge
-            stock_white[s, :self.start_red] = self.stock_wr[s, :self.start_red]-np.full(self.start_red,22)
-            # Pendant période rouge
-            red_weeks = self.end_red - self.start_red
-            # stock_white[s, self.start_red:self.end_red] = self.stock_wr[s, self.start_red:self.end_red] - self.stock_red[s, :red_weeks]
-            stock_white[s, self.start_red:self.end_red] = (self.stock_wr[s, self.start_red:self.end_red] - 
-            self.stock_red[s,:]
-)
-            # Après période rouge
-            stock_white[s, self.end_red:] = self.stock_wr[s, self.end_red:]
-        return stock_white
-
-    def show_interactive_plot(self)-> None:
-        fig = go.Figure()
-
-        for s in range(self.stock_wr.shape[0]):
-            visible = (s == 0)  # Seul le 1er scénario visible par défaut
-
-            # Rouge
-            fig.add_trace(go.Scatter(
-                y=self.stock_red[s, :],
-                x=np.arange(self.start_red+1, self.end_red+1),
-                name="Stock Rouge",
-                visible=visible,
-                line=dict(color="red", dash="dot")
-            ))
-
-            # Rouge + Blanc
-            fig.add_trace(go.Scatter(
-                y=self.stock_wr[s, :],
-                x=np.arange(1, self.stock_wr.shape[1] + 1),
-                name="Stock Rouge + Blanc",
-                visible=visible,
-                line=dict(color="orange")
-            ))
-
-            # Blanc
-            fig.add_trace(go.Scatter(
-                y=self.stock_white[s, :],
-                x=np.arange(1, self.stock_wr.shape[1] + 1),
-                name="Stock Blanc",
-                visible=visible,
-                line=dict(color="blue", dash="dash")
-            ))
-
-        steps = []
-        for i in range(self.stock_wr.shape[0]):
-            vis = [False] * 3 * self.stock_wr.shape[0]
-            vis[3 * i] = True     # red
-            vis[3 * i + 1] = True # wr
-            vis[3 * i + 2] = True # white
-
-            step = dict(
-                method="update",
-                args=[{"visible": vis},
-                      {"title": f"Scénario {i}"}],
-                label=f"{i}"
-            )
-            steps.append(step)
-
-        sliders = [dict(
-            active=0,
-            currentvalue={"prefix": "Scénario : "},
-            pad={"t": 50},
-            steps=steps
-        )]
-
-        fig.update_layout(
-            sliders=sliders,
-            title="Stocks TEMPO - Rouge, Rouge+Blanc, Blanc",
-            xaxis_title="Semaine",
-            yaxis_title="Stock",
-            height=600
-        )
-
-        fig.show()
-
-plotter = TempoStockPlotter(trajectories_red, trajectories_white_and_red,start_red=9,end_red=31)
-plotter.show_interactive_plot()
-
-print(plotter.compute_stock(trajectories=trajectories_red)[0])
-print(plotter.compute_stock(trajectories=trajectories_white_and_red)[0])
-print(plotter.stock_white[0])
+fig.show()

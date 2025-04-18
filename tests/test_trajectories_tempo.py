@@ -1,9 +1,9 @@
 from read_antares_data import ResidualLoad
 import numpy as np
-from gain_function_tempo import GainFunctionTempo
+from gain_function import GainFunctionTempo
 from bellman_values import BellmanValues
 from usage_values import UsageValuesTempo
-from trajectories_tempo import TrajectoriesTempo
+from trajectories import TrajectoriesTempo
 import plotly.graph_objects as go
 
 def test_trajectories_tempo() -> None:

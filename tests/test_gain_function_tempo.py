@@ -1,5 +1,5 @@
 from read_antares_data import ResidualLoad
-from gain_function_tempo import GainFunctionTempo
+from gain_function import GainFunctionTempo
 import pytest
 
 def test_gain_gunction_tempo() -> None:

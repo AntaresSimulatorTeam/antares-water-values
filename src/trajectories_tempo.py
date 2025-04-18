@@ -53,12 +53,12 @@ class TrajectoriesTempo :
                     control += 1      # sinon on continue
 
                 if self.trajectories_red is not None:
-                    if w < 18:
+                    if w <= 18:
                         # On protège les jours rouges à venir
                         if remaining_capacity - control < 22:
                             control = int(max(0, remaining_capacity - 22))
 
-                    elif 18 <= w < 40:
+                    elif 19 <= w < 40:
                         red_weeks_idx = w - 18
                         control_r = self.trajectories_red[s, red_weeks_idx-1]
 

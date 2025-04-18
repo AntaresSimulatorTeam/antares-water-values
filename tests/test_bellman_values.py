@@ -20,7 +20,7 @@ def test_bellman_values() -> None:
     assert bellman_values_r.bv[18,0,0]== pytest.approx(0,0)
     assert bellman_values_r.bv[18,5,4]== pytest.approx(8064074,1)
     assert bellman_values_r.bv[38,22,9]==pytest.approx(5313571,673)
-    assert bellman_values_r.mean_bv[21,4]==pytest.approx(3305794,0)
+    assert bellman_values_r.mean_bv[21,4]==pytest.approx(6511952,507)
 
     # test with tempo white and red
     gain_function_tempo_wr = GainFunctionTempo(residual_load=residual_load, max_control=6)

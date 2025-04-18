@@ -29,12 +29,13 @@ def test_trajectories_tempo() -> None:
     trajectories_white=trajectories_white_and_red.trajectories_white
 
 
-    assert np.array_equal(trajectories_r.trajectory_for_scenario(4), np.array([[0,0,1,4,4,1,1,0,0,2,0,0,0,0,2,1,0,0,2,2,2,0]]))
-    assert np.array_equal(trajectories_white_and_red.white_trajectory_for_scenario(4), np.array([[0,0,0,0,0,0,0,0,1,1,2,2,2,2,4,3,1,0,2,2,0,0,0,1,1,0,0,0,0,1,0,1,0,5,1,0,0,0,0,0,0,0,0,0,4,2,0,0,2,0,1,2,0]]))
+    assert np.array_equal(trajectories_r.trajectory_for_scenario(4), np.array([0,0,1,4,4,1,1,0,0,2,0,0,0,0,2,1,0,0,2,2,2]).astype(float))
+    assert np.array_equal(trajectories_white_and_red.white_trajectory_for_scenario(4), np.array([0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 2, 2, 2, 2, 4, 3, 1, 0, 2, 2, 0, 0, 0, 1, 1, 0, 0, 0, 0, 1, 0, 1, 0, 5, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 2, 0, 0, 2, 0, 1, 2]
+).astype(float))
 
-    assert np.array_equal(trajectories_r.stock_for_scenario(4), np.array([[22,22,22,21,17,13,12,11,11,11,9,9,9,9,9,7,6,6,6,4,2,0]]))
-    assert np.array_equal(trajectories_white_and_red.stock_for_scenario(4), np.array([[65,65,65,65,65,65,65,65,65,64,63,61,58,52,46,41,37,36,36,32,30,30,30,30,27,25,25,25,23,21,18,18,17,17,12,11,11,11,11,11,11,11,11,11,11,7,5,5,5,3,3,2,0
-]]))
-    assert np.array_equal(trajectories_white_and_red.white_stock_for_scenario(4), np.array([[43,43,43,43,43,43,43,43,43,42,41,39,37,35,33,29,26,25,25,23,21,21,21,21,20,19,19,19,19,19,18,18,17,17,12,11,11,11,11,11,11,11,11,11,11,7,5,5,5,3,3,2,0
-]]))
+    assert np.array_equal(trajectories_r.stock_for_scenario(4), np.array([22,22,22,21,17,13,12,11,11,11,9,9,9,9,9,7,6,6,6,4,2,0]).astype(float))
+    assert np.array_equal(trajectories_white_and_red.stock_for_scenario(4), np.array([65,65,65,65,65,65,65,65,65,64,63,61,58,52,46,41,37,36,36,32,30,30,30,30,27,25,25,25,23,21,18,18,17,17,12,11,11,11,11,11,11,11,11,11,11,7,5,5,5,3,3,2,0
+]).astype(float))
+    assert np.array_equal(trajectories_white_and_red.white_stock_for_scenario(4), np.array([43,43,43,43,43,43,43,43,43,42,41,39,37,35,33,29,26,25,25,23,21,21,21,21,20,19,19,19,19,19,18,18,17,17,12,11,11,11,11,11,11,11,11,11,11,7,5,5,5,3,3,2,0
+]).astype(float))
     

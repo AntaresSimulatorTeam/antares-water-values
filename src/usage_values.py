@@ -1,11 +1,11 @@
-from bellman_values import Bellman_values
+from bellman_values import BellmanValues
 from dataclasses import dataclass
 import numpy as np
 
 @dataclass
-class UV_tempo:
+class UsageValuesTempo:
     def __init__(self, 
-                 bellman_values: Bellman_values):
+                 bellman_values: BellmanValues):
         self.bellman_values=bellman_values
 
         self.capacity=self.bellman_values.capacity

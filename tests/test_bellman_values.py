@@ -1,6 +1,6 @@
-from read_antares_data import Residual_load
-from gain_function_tempo import GainFunctionTEMPO
-from bellman_values import Bellman_values
+from read_antares_data import ResidualLoad
+from gain_function_tempo import GainFunctionTempo
+from bellman_values import BellmanValues
 import pytest
 
 def test_bellman_values() -> None:
@@ -11,11 +11,11 @@ def test_bellman_values() -> None:
     dir_study = "test_data/one_node(1)"
     area = "area"
 
-    residual_load = Residual_load(dir_study=dir_study, name_area=area)
+    residual_load = ResidualLoad(dir_study=dir_study, name_area=area)
 
     # test with tempo red
-    gain_function_tempo_r = GainFunctionTEMPO(residual_load=residual_load, max_control=5)
-    bellman_values_r = Bellman_values(gain_function=gain_function_tempo_r, capacity=22, nb_week=22, start_week=18)
+    gain_function_tempo_r = GainFunctionTempo(residual_load=residual_load, max_control=5)
+    bellman_values_r = BellmanValues(gain_function=gain_function_tempo_r, capacity=22, nb_week=22, start_week=18)
 
     assert bellman_values_r.bv[18,0,0]== pytest.approx(0,0)
     assert bellman_values_r.bv[18,5,4]== pytest.approx(8064074,1)
@@ -23,8 +23,8 @@ def test_bellman_values() -> None:
     assert bellman_values_r.mean_bv[21,4]==pytest.approx(3305794,0)
 
     # test with tempo white and red
-    gain_function_tempo_wr = GainFunctionTEMPO(residual_load=residual_load, max_control=6)
-    bellman_values_wr = Bellman_values(gain_function=gain_function_tempo_wr, capacity=65, nb_week=53, start_week=9)
+    gain_function_tempo_wr = GainFunctionTempo(residual_load=residual_load, max_control=6)
+    bellman_values_wr = BellmanValues(gain_function=gain_function_tempo_wr, capacity=65, nb_week=53, start_week=9)
     assert bellman_values_wr.bv[9,0,0]== pytest.approx(0,0)
     assert bellman_values_wr.bv[9,5,4]== pytest.approx(8090482,629)
     assert bellman_values_wr.bv[60,1,8]== pytest.approx(687190,6525)

@@ -1,11 +1,11 @@
-from gain_function_tempo import GainFunctionTEMPO
+from gain_function_tempo import GainFunctionTempo
 from dataclasses import dataclass
 import numpy as np
 
 @dataclass
-class Bellman_values:
+class BellmanValues:
     
-    def __init__(self, gain_function : GainFunctionTEMPO,
+    def __init__(self, gain_function : GainFunctionTempo,
                  capacity:int, 
                  nb_week:int, 
                  start_week:int):

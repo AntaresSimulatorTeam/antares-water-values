@@ -1,12 +1,12 @@
-from usage_values import UV_tempo
+from usage_values import UsageValuesTempo
 from dataclasses import dataclass
 import numpy as np
 from typing import Optional
 
 @dataclass
-class Trajectories_TEMPO :
+class TrajectoriesTempo :
     def __init__(self,
-                usage_values:UV_tempo,
+                usage_values:UsageValuesTempo,
                 trajectories_red:Optional[np.ndarray]=None):
         
         self.usage_values=usage_values
@@ -24,13 +24,13 @@ class Trajectories_TEMPO :
         
         self.trajectories_red=trajectories_red
 
-        self.calculate_trajectories()
+        self.compute_trajectories()
         self.compute_stock()
 
-        self.calculate_white_trajectories()
+        self.compute_white_trajectories()
         self.compute_white_stock()
     
-    def calculate_trajectories(self)-> None:
+    def compute_trajectories(self)-> None:
 
         for s in range(self.nb_scenarios):
             remaining_capacity=self.capacity
@@ -73,7 +73,7 @@ class Trajectories_TEMPO :
                 remaining_capacity -= control
                 remaining_capacity=int(max(remaining_capacity,0))
     
-    def calculate_white_trajectories(self)->None:
+    def compute_white_trajectories(self)->None:
         if self.trajectories_red is not None:
             self.trajectories_white=np.copy(self.trajectories)
             for s in range(self.nb_scenarios):

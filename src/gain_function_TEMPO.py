@@ -1,11 +1,11 @@
 import numpy as np
-from read_antares_data import Residual_load
+from read_antares_data import ResidualLoad
 from dataclasses import dataclass
 
 
 @dataclass
-class GainFunctionTEMPO:
-    def __init__(self, residual_load : Residual_load, max_control:int):
+class GainFunctionTempo:
+    def __init__(self, residual_load : ResidualLoad, max_control:int):
         
         self.residual_load=residual_load.residual_load
         self.nb_scenarios=residual_load.nb_scenarios

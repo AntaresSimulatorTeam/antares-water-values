@@ -150,7 +150,7 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
 
 
 @dataclass
-class Residual_load:
+class ResidualLoad:
 
     def __init__(self, dir_study: str, name_area: str) -> None:
         self.area = name_area

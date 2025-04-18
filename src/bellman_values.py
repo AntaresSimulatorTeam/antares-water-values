@@ -1,4 +1,4 @@
-from gain_function_TEMPO import GainFunctionTEMPO
+from gain_function_tempo import GainFunctionTEMPO
 from dataclasses import dataclass
 import numpy as np
 

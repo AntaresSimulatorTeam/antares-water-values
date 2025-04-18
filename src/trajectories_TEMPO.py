@@ -27,9 +27,8 @@ class Trajectories_TEMPO :
         self.calculate_trajectories()
         self.compute_stock()
 
-        if self.trajectories_red is not None:
-            self.calculate_white_trajectories()
-            self.compute_white_stock()
+        self.calculate_white_trajectories()
+        self.compute_white_stock()
     
     def calculate_trajectories(self)-> None:
 
@@ -82,6 +81,8 @@ class Trajectories_TEMPO :
                     index=w
                     red_index=w-9
                     self.trajectories_white[s,index]-=self.trajectories_red[s,red_index]
+        else:
+            self.trajectories_white=np.array([])
 
     def compute_stock(self) -> None:
         for s in range(self.nb_scenarios):
@@ -92,14 +93,17 @@ class Trajectories_TEMPO :
                 remaining_capacity-=self.trajectories[s,w-self.start_week-1]
             
     def compute_white_stock(self)-> None:
-        self.stock_white=np.zeros_like(self.stock)
-        for s in range(self.nb_scenarios):
-            self.stock_white[s,0]=self.capacity
-            self.stock_white[s,:self.start_week]=self.stock[s,:self.start_week]-np.full(self.start_week,22)
-            for w in range(self.start_week+1,self.end_week):
-                index=w-self.start_week
-                control_w=self.trajectories_white[s,index-1]
-                self.stock_white[s,index]=self.stock_white[s,index-1]-control_w
+        if self.trajectories_red is not None:
+            self.stock_white=np.zeros_like(self.stock)
+            for s in range(self.nb_scenarios):
+                self.stock_white[s,0]=self.capacity
+                self.stock_white[s,:self.start_week]=self.stock[s,:self.start_week]-np.full(self.start_week,22)
+                for w in range(self.start_week+1,self.end_week):
+                    index=w-self.start_week
+                    control_w=self.trajectories_white[s,index-1]
+                    self.stock_white[s,index]=self.stock_white[s,index-1]-control_w
+        else:
+            self.stock_white=np.array([])
 
     def trajectory_for_scenario(self, scenario:int)-> np.ndarray:
         return self.trajectories[scenario]
@@ -107,8 +111,8 @@ class Trajectories_TEMPO :
     def stock_for_scenario(self,scenario:int) -> np.ndarray:
         return self.stock[scenario]
     
-    def white_trajectory_for_scenario(self, scenario: int) -> Optional[np.ndarray]:
-        return self.trajectories_white[scenario] if self.trajectories_white is not None else None
+    def white_trajectory_for_scenario(self, scenario: int) -> np.ndarray:
+        return self.trajectories_white[scenario] if self.trajectories_white.shape[scenario]>0 else np.array([])
 
-    def white_stock_for_scenario(self, scenario: int) -> Optional[np.ndarray]:
-        return self.stock_white[scenario] if self.stock_white is not None else None
+    def white_stock_for_scenario(self, scenario: int) -> np.ndarray:
+        return self.stock_white[scenario] if self.stock_white.shape[scenario]>0 else np.array([])

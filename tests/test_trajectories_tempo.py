@@ -8,7 +8,7 @@ import plotly.graph_objects as go
 
 def test_trajectories_tempo() -> None:
 
-    dir_study = "test_data/one_node(1)"
+    dir_study = "test_data/one_node_(1)"
     area = "area"
 
     residual_load=ResidualLoad(dir_study=dir_study,name_area=area)

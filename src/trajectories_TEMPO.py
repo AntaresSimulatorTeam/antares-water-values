@@ -112,7 +112,7 @@ class TrajectoriesTempo :
         return self.stock[scenario]
     
     def white_trajectory_for_scenario(self, scenario: int) -> np.ndarray:
-        return self.trajectories_white[scenario] if self.trajectories_white.shape[scenario]>0 else np.array([])
+        return self.trajectories_white[scenario] if self.trajectories_white[scenario].shape[0]>0 else np.array([])
 
     def white_stock_for_scenario(self, scenario: int) -> np.ndarray:
-        return self.stock_white[scenario] if self.stock_white.shape[scenario]>0 else np.array([])
+        return self.stock_white[scenario] if self.stock_white[scenario].shape[0]>0 else np.array([])

@@ -7,8 +7,8 @@ from trajectories_tempo import TrajectoriesTempo
 import plotly.graph_objects as go
 
 
-dir_study="test_data/one_node_(1)"
-area="area"
+dir_study="C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036"
+area="fr"
 
 residual_load=ResidualLoad(dir_study=dir_study,name_area=area)
 

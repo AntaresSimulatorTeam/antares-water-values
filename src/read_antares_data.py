@@ -62,12 +62,16 @@ class Reservoir:
         max_power_data = np.loadtxt(
             f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
         )
-        weekly_energy = max_power_data[: self.days_in_year] * self.hours_in_day
-        weekly_energy = weekly_energy.reshape(
+        daily_energy = max_power_data [: self.days_in_year] * self.hours_in_day
+        weekly_energy = daily_energy.reshape(
             (self.weeks_in_year, self.days_in_week, 4)
         ).sum(axis=1)
-        self.max_generating = weekly_energy[:, 0]
-        self.max_pumping = weekly_energy[:, 2]
+
+        self.max_daily_generating = daily_energy[:, 0]
+        self.max_daily_pumping = daily_energy[:, 2]
+
+        self.max_weekly_generating = weekly_energy[:, 0]
+        self.max_weekly_pumping = weekly_energy[:, 2]
 
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")

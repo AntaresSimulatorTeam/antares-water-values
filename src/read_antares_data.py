@@ -70,8 +70,8 @@ class Reservoir:
         self.max_daily_generating = daily_energy[:, 0]
         self.max_daily_pumping = daily_energy[:, 2]
 
-        self.max_weekly_generating = weekly_energy[:, 0]
-        self.max_weekly_pumping = weekly_energy[:, 2]
+        self.max_generating = weekly_energy[:, 0]
+        self.max_pumping = weekly_energy[:, 2]
 
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")

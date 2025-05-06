@@ -1,4 +1,4 @@
-from read_antares_data import ResidualLoad
+from read_antares_data import NetLoad
 from tempo import GainFunctionTempo
 from tempo import BellmanValuesTempo
 from tempo import TrajectoriesTempo
@@ -7,10 +7,10 @@ import pytest
 
 dir_study = "test_data/one_node_(1)"
 area = "area"
-residual_load = ResidualLoad(dir_study=dir_study, name_area=area)
-gain_function_tempo_r = GainFunctionTempo(residual_load=residual_load, max_control=5)
+net_load = NetLoad(dir_study=dir_study, name_area=area)
+gain_function_tempo_r = GainFunctionTempo(net_load=net_load, max_control=5)
 bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo_r, capacity=22, nb_week=22, start_week=18)
-gain_function_tempo_wr = GainFunctionTempo(residual_load=residual_load, max_control=6)
+gain_function_tempo_wr = GainFunctionTempo(net_load=net_load, max_control=6)
 bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo_wr, capacity=65, nb_week=53, start_week=9)
 trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
 trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,trajectories_red=trajectories_r.trajectories)
@@ -20,7 +20,7 @@ trajectories_white=trajectories_white_and_red.trajectories_white
 
 def test_gain_gunction_tempo() -> None:
     # Test with max_control = 5
-    gain_function_tempo_r = GainFunctionTempo(residual_load=residual_load, max_control=5)
+    gain_function_tempo_r = GainFunctionTempo(net_load=net_load, max_control=5)
     assert gain_function_tempo_r.gain_for_week_control_and_scenario(18,5,0) == pytest.approx(4035975,878)
     assert gain_function_tempo_r.gain_for_week_control_and_scenario(22,3,1) == pytest.approx(3017476,155)
 

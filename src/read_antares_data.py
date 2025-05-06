@@ -154,15 +154,15 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
 
 
 @dataclass
-class ResidualLoad:
+class NetLoad:
 
     def __init__(self, dir_study: str, name_area: str) -> None:
         self.area = name_area
         self.read_data(dir_study)
-        self.compute_residual_load()
+        self.compute_net_load()
         self.compute_solar(dir_study)
         self.compute_wind(dir_study)
-        self.compute_residual_load()
+        self.compute_net_load()
         
 
     def read_data(self, dir_study:str) -> None: 
@@ -189,8 +189,8 @@ class ResidualLoad:
         self.wind_offshore = self.compute_renewable(self.wind_offshore, "wind_offshore", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
         self.wind_onshore = self.compute_renewable(self.wind_onshore, "wind_onshore", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
 
-    def compute_residual_load(self) -> None:
-        self.residual_load=self.load-self.solar-self.wind_offshore-self.wind_onshore-self.ror
+    def compute_net_load(self) -> None:
+        self.net_load=self.load-self.solar-self.wind_offshore-self.wind_onshore-self.ror
         
-        juillet_aout = self.residual_load[24:65*24, :]
-        self.residual_load = np.concatenate((self.residual_load, juillet_aout), axis=0)
+        juillet_aout = self.net_load[24:65*24, :]
+        self.net_load = np.concatenate((self.net_load, juillet_aout), axis=0)

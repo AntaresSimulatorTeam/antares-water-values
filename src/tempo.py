@@ -1,14 +1,14 @@
-from read_antares_data import ResidualLoad
+from read_antares_data import NetLoad
 import numpy as np
 from typing import Optional
 import plotly.graph_objects as go
 
 class GainFunctionTempo:
-    def __init__(self, residual_load : ResidualLoad, max_control:int):
+    def __init__(self, net_load : NetLoad, max_control:int):
         
-        self.residual_load=residual_load.residual_load
-        self.nb_scenarios=residual_load.nb_scenarios
-        self.daily_residual_load=residual_load.residual_load.reshape(365+64,24,self.nb_scenarios).sum(axis=1)
+        self.net_load=net_load.net_load
+        self.nb_scenarios=net_load.nb_scenarios
+        self.daily_net_load=net_load.net_load.reshape(365+64,24,self.nb_scenarios).sum(axis=1)
         self.max_control=max_control
 
     def gain_for_week_control_and_scenario(self, week_index: int, control : int, scenario : int) -> float:
@@ -17,12 +17,12 @@ class GainFunctionTempo:
         week_end=week_start+7
         
 
-        self.daily_residual_load_for_week=self.daily_residual_load[week_start:week_end,scenario] #consommation résiduelle par jour pour la semaine considérée
+        self.daily_net_load_for_week=self.daily_net_load[week_start:week_end,scenario] #consommation résiduelle par jour pour la semaine considérée
 
 
-        self.daily_residual_load_for_week=(np.sort(self.daily_residual_load_for_week[:self.max_control]))[::-1]
+        self.daily_net_load_for_week=(np.sort(self.daily_net_load_for_week[:self.max_control]))[::-1]
 
-        gain=np.sum(self.daily_residual_load_for_week[:control])
+        gain=np.sum(self.daily_net_load_for_week[:control])
         return gain
 
 
@@ -77,7 +77,7 @@ class TrajectoriesTempo :
         
         self.bv=bv
         self.usage_values=bv.usage_values
-        self.residual_load=self.bv.gain_function.residual_load
+        self.net_load=self.bv.gain_function.net_load
         self.capacity=self.bv.capacity
         self.nb_week=self.bv.nb_week
         self.nb_scenarios=self.bv.nb_scenarios
@@ -109,7 +109,7 @@ class TrajectoriesTempo :
                 thresholds=self.usage_values[w,:remaining_capacity]
                 week_start=(w-1)*7+2
                 week_end=week_start+7
-                week_days=self.residual_load[week_start*24:week_end*24,s].reshape(7,24).sum(axis=1)
+                week_days=self.net_load[week_start*24:week_end*24,s].reshape(7,24).sum(axis=1)
                 sorted_load=(np.sort(week_days[:self.max_control]))[::-1]
 
                 control = 0
@@ -252,10 +252,10 @@ def plot_trajectories(trajectories_r:TrajectoriesTempo,trajectories_wr:Trajector
 # dir_study="C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036"
 # area="fr"
 
-# residual_load=ResidualLoad(dir_study=dir_study,name_area=area)
+# net_load=NetLoad(dir_study=dir_study,name_area=area)
 
-# gain_function_tempo_r=GainFunctionTempo(residual_load=residual_load,max_control=5)
-# gain_function_tempo_wr=GainFunctionTempo(residual_load=residual_load,max_control=6)
+# gain_function_tempo_r=GainFunctionTempo(net_load=net_load,max_control=5)
+# gain_function_tempo_wr=GainFunctionTempo(net_load=net_load,max_control=6)
 
 # bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,nb_week=22,start_week=18)
 # bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,nb_week=53,start_week=9)

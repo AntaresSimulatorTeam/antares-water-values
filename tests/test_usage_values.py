@@ -1,7 +1,6 @@
 from read_antares_data import ResidualLoad
 from gain_function_tempo import GainFunctionTempo
-from bellman_values import BellmanValues
-from usage_values import UsageValuesTempo
+from bellman_and_usage_values_tempo import BellmanValuesTempo
 import pytest
 
 def test_usage_values() -> None:
@@ -16,14 +15,12 @@ def test_usage_values() -> None:
 
     # test with tempo red
     gain_function_tempo_r = GainFunctionTempo(residual_load=residual_load, max_control=5)
-    bellman_values_r = BellmanValues(gain_function=gain_function_tempo_r, capacity=22, nb_week=22, start_week=18)
-    usage_values_r = UsageValuesTempo(bellman_values=bellman_values_r)
+    bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo_r, capacity=22, nb_week=22, start_week=18)
 
-    assert usage_values_r.usage_values[24,2]== pytest.approx(1634285,504)
+    assert bellman_values_r.usage_values[24,2]== pytest.approx(1634285,504)
 
     # test with tempo white and red
     gain_function_tempo_wr = GainFunctionTempo(residual_load=residual_load, max_control=6)
-    bellman_values_wr = BellmanValues(gain_function=gain_function_tempo_wr, capacity=65, nb_week=53, start_week=9)
-    usage_values_wr = UsageValuesTempo(bellman_values=bellman_values_wr)
+    bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo_wr, capacity=65, nb_week=53, start_week=9)
     
-    assert usage_values_wr.usage_values[35,11]== pytest.approx(959545,2878)
+    assert bellman_values_wr.usage_values[35,11]== pytest.approx(959545,2878)

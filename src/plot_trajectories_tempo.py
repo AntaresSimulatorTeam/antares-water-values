@@ -1,9 +1,8 @@
 from read_antares_data import ResidualLoad
 import numpy as np
 from gain_function_tempo import GainFunctionTempo
-from bellman_values import BellmanValues
-from usage_values import UsageValuesTempo
-from trajectories_tempo import TrajectoriesTempo
+from bellman_and_usage_values_tempo import BellmanValuesTempo
+from bellman_and_usage_values_tempo import TrajectoriesTempo
 import plotly.graph_objects as go
 
 
@@ -15,14 +14,11 @@ residual_load=ResidualLoad(dir_study=dir_study,name_area=area)
 gain_function_tempo_r=GainFunctionTempo(residual_load=residual_load,max_control=5)
 gain_function_tempo_wr=GainFunctionTempo(residual_load=residual_load,max_control=6)
 
-bellman_values_r=BellmanValues(gain_function=gain_function_tempo_r,capacity=22,nb_week=22,start_week=18)
-bellman_values_wr=BellmanValues(gain_function=gain_function_tempo_wr,capacity=65,nb_week=53,start_week=9)
+bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,nb_week=22,start_week=18)
+bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,nb_week=53,start_week=9)
 
-usage_values_r=UsageValuesTempo(bellman_values=bellman_values_r)
-usage_values_wr=UsageValuesTempo(bellman_values=bellman_values_wr)
-
-trajectories_r=TrajectoriesTempo(usage_values=usage_values_r)
-trajectories_white_and_red=TrajectoriesTempo(usage_values=usage_values_wr,trajectories_red=trajectories_r.trajectories)
+trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
+trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,trajectories_red=trajectories_r.trajectories)
 
 # Affichage des courbes
 
@@ -59,16 +55,6 @@ for s in range(nb_scenarios):
 
     fig.add_trace(go.Scatter(
         x=weeks,
-        y=stock_wr,
-        name="Stock jours rouges + blancs",
-        visible=visible,
-        line=dict(color='blue'),
-        legendgroup=f"scen{s}",
-        showlegend=True if s == 0 else False
-    ))
-
-    fig.add_trace(go.Scatter(
-        x=weeks,
         y=stock_w,
         name="Stock jours blancs",
         visible=visible,
@@ -82,8 +68,8 @@ buttons = []
 
 # Boutons pour chaque scénario individuel
 for s in range(nb_scenarios):
-    visibility = [False] * (3 * nb_scenarios)
-    visibility[3*s] = visibility[3*s + 1] = visibility[3*s + 2] = True
+    visibility = [False] * (2 * nb_scenarios)
+    visibility[2*s] = visibility[2*s + 1] = visibility[2*s + 1] = True
 
     buttons.append(dict(
         label=f"Scénario {s}",
@@ -91,33 +77,6 @@ for s in range(nb_scenarios):
         args=[{"visible": visibility},
               {"title": f"Stocks des jours Tempo - Scénario {s}"}]
     ))
-
-# Bouton pour afficher tous les scénarios - Stock rouge
-visibility_all_red = [True if i % 3 == 0 else False for i in range(3 * nb_scenarios)]
-buttons.append(dict(
-    label="Tous les scénarios - Rouge",
-    method="update",
-    args=[{"visible": visibility_all_red},
-          {"title": "Stocks des jours rouges - Tous les scénarios"}]
-))
-
-# Bouton pour afficher tous les scénarios - Stock rouge + blanc
-visibility_all_wr = [True if i % 3 == 1 else False for i in range(3 * nb_scenarios)]
-buttons.append(dict(
-    label="Tous les scénarios - Rouge + Blanc",
-    method="update",
-    args=[{"visible": visibility_all_wr},
-          {"title": "Stocks des jours rouges + blancs - Tous les scénarios"}]
-))
-
-# Bouton pour afficher tous les scénarios - Stock blanc
-visibility_all_white = [True if i % 3 == 2 else False for i in range(3 * nb_scenarios)]
-buttons.append(dict(
-    label="Tous les scénarios - Blanc",
-    method="update",
-    args=[{"visible": visibility_all_white},
-          {"title": "Stocks des jours blancs - Tous les scénarios"}]
-))
 
 # Mise à jour de la mise en page avec les nouveaux boutons
 fig.update_layout(

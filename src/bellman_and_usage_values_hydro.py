@@ -1,10 +1,13 @@
 from gain_function_hydro import GainFunctionHydro
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
 from scipy.interpolate import interp1d
 import time
 import plotly.graph_objects as go
 from type_definition import Callable
+
+rcParams['font.family'] = 'Cambria'
 
 class BellmanValuesHydro:
     def __init__(self, gain_function: GainFunctionHydro,
@@ -160,7 +163,7 @@ class BellmanValuesHydro:
             plt.plot(
                 stock_levels, 
                 -usage_values[w],
-                label=f"Semaine {w+1}"
+                label=f"S {w+1}"
             )
 
         plt.xlabel('Stock (%)')

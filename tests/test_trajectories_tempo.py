@@ -1,9 +1,8 @@
 from read_antares_data import ResidualLoad
 import numpy as np
 from gain_function_tempo import GainFunctionTempo
-from bellman_values import BellmanValues
-from usage_values import UsageValuesTempo
-from trajectories_tempo import TrajectoriesTempo
+from bellman_and_usage_values_tempo import BellmanValuesTempo
+from bellman_and_usage_values_tempo import TrajectoriesTempo
 import plotly.graph_objects as go
 
 def test_trajectories_tempo() -> None:
@@ -16,14 +15,11 @@ def test_trajectories_tempo() -> None:
     gain_function_tempo_r=GainFunctionTempo(residual_load=residual_load,max_control=5)
     gain_function_tempo_wr=GainFunctionTempo(residual_load=residual_load,max_control=6)
 
-    bellman_values_r=BellmanValues(gain_function=gain_function_tempo_r,capacity=22,nb_week=22,start_week=18)
-    bellman_values_wr=BellmanValues(gain_function=gain_function_tempo_wr,capacity=65,nb_week=53,start_week=9)
+    bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,nb_week=22,start_week=18)
+    bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,nb_week=53,start_week=9)
 
-    usage_values_r=UsageValuesTempo(bellman_values=bellman_values_r)
-    usage_values_wr=UsageValuesTempo(bellman_values=bellman_values_wr)
-
-    trajectories_r=TrajectoriesTempo(usage_values=usage_values_r)
-    trajectories_white_and_red=TrajectoriesTempo(usage_values=usage_values_wr,trajectories_red=trajectories_r.trajectories)
+    trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
+    trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,trajectories_red=trajectories_r.trajectories)
     
     # white trajectories is calculated from trajectories_white_and_red
     trajectories_white=trajectories_white_and_red.trajectories_white

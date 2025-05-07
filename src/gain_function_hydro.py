@@ -4,6 +4,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from type_definition import Callable
 import matplotlib.pyplot as plt
+import time
 
 class GainFunctionHydro:
     def __init__(self, dir_study: str, name_area: str) -> None:
@@ -13,7 +14,9 @@ class GainFunctionHydro:
 
         self.nb_weeks=self.reservoir.inflow.shape[0]
         # self.nb_scenarios=self.net_load.shape[1]
-        self.nb_scenarios=10
+        self.scenarios=range(200)
+        # self.scenarios=[4,5,18,48,66,78,82,117,129,138,152]
+ 
 
     def get_controls_for_week_and_scenario_simplified(self, week_index:int, control_discretization:int) -> np.ndarray:
         max_week_energy=np.sum(self.max_daily_generating[week_index * 7:(week_index + 1) * 7])
@@ -55,8 +58,8 @@ class GainFunctionHydro:
         return np.maximum(controls,0)
 
     def compute_controls(self)->np.ndarray:
-        # controls = np.array([[self.get_controls_for_week_and_scenario(w, s) for s in range(self.nb_scenarios)] for w in range(self.nb_weeks)])
-        controls = np.array([[self.get_controls_for_week_and_scenario_simplified(w, 50) for s in range(self.nb_scenarios)] for w in range(self.nb_weeks)])
+        controls = np.array([[self.get_controls_for_week_and_scenario(w, s) for s in self.scenarios] for w in range(self.nb_weeks)])
+        # controls = np.array([[self.get_controls_for_week_and_scenario_simplified(w, 50) for s in self.scenarios] for w in range(self.nb_weeks)])
         return controls
 
     def compute_curtailed_net_load(self,week_index:int, control:float, scenario : int) -> np.ndarray:
@@ -104,5 +107,11 @@ class GainFunctionHydro:
         return interp1d(controls_for_week_and_scenario,gains,fill_value="extrapolate")
         
     def compute_gain_functions(self,controls:np.ndarray,alpha:int)->np.ndarray: 
-        gains_functions=np.array([[self.gain_function(w,controls,s,alpha) for s in range(self.nb_scenarios)] for w in range(self.nb_weeks)])
+        gains_functions=np.array([[self.gain_function(w,controls,s,alpha) for s in self.scenarios] for w in range(self.nb_weeks)])
         return gains_functions
+    
+start=time.time()
+gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036", "fr")
+gain.compute_gain_functions(gain.compute_controls(),2)
+end=time.time()
+print('calculation time : ',end-start)

@@ -14,7 +14,7 @@ class GainFunctionHydro:
 
         self.nb_weeks=self.reservoir.inflow.shape[0]
         # self.nb_scenarios=self.net_load.shape[1]
-        self.scenarios=range(200)
+        self.scenarios=range(10)
         # self.scenarios=[4,5,18,48,66,78,82,117,129,138,152]
  
 

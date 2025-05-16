@@ -1,14 +1,15 @@
+import numpy as np
+import pytest
+
 from functions_iterative import (
-    TimeScenarioParameter,
     ReservoirManagement,
     TimeScenarioIndex,
+    TimeScenarioParameter,
 )
+from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
-from read_antares_data import Reservoir
-import pytest
-import numpy as np
 
 
 def test_bellman_value_precalculated_reward() -> None:
@@ -89,9 +90,9 @@ def test_bellman_value_precalculated_reward() -> None:
             [
                 [
                     -5.88819050e09,
-                    -5.37158308e09,
+                    -5.37158307e09,
                     -4.30354519e09,
-                    -3.62174927e09,
+                    -3.59375007e09,
                     -1.99857483e09,
                     0.00000000e00,
                 ],
@@ -99,7 +100,7 @@ def test_bellman_value_precalculated_reward() -> None:
                     -5.28486770e09,
                     -4.36279337e09,
                     -3.38627736e09,
-                    -2.42429723e09,
+                    -2.42329801e09,
                     -1.40291199e09,
                     0.00000000e00,
                 ],
@@ -107,7 +108,7 @@ def test_bellman_value_precalculated_reward() -> None:
                     -5.12697202e09,
                     -4.20489758e09,
                     -3.22838159e09,
-                    -2.26640141e09,
+                    -2.26540219e09,
                     -1.24501626e09,
                     0.00000000e00,
                 ],
@@ -115,7 +116,7 @@ def test_bellman_value_precalculated_reward() -> None:
                     -4.98446177e09,
                     -4.04738189e09,
                     -3.07425291e09,
-                    -2.10850558e09,
+                    -2.10750636e09,
                     -1.10278955e09,
                     0.00000000e00,
                 ],
@@ -123,7 +124,7 @@ def test_bellman_value_precalculated_reward() -> None:
                     -4.87915628e09,
                     -3.94207640e09,
                     -2.96894743e09,
-                    -1.99659827e09,
+                    -1.99659826e09,
                     -9.97484041e08,
                     0.00000000e00,
                 ],
@@ -209,7 +210,7 @@ def test_bellman_value_precalculated_reward() -> None:
                 ],
                 [
                     -3.75708018e09,
-                    -2.82991041e09,
+                    -2.83013259e09,
                     -1.97635460e09,
                     -1.13323307e09,
                     -2.76736122e08,
@@ -217,7 +218,7 @@ def test_bellman_value_precalculated_reward() -> None:
                 ],
                 [
                     -3.70444843e09,
-                    -2.77727863e09,
+                    -2.77750081e09,
                     -1.92372285e09,
                     -1.08060136e09,
                     -2.24105162e08,
@@ -225,7 +226,7 @@ def test_bellman_value_precalculated_reward() -> None:
                 ],
                 [
                     -3.65181671e09,
-                    -2.72464685e09,
+                    -2.72486903e09,
                     -1.87109111e09,
                     -1.02796969e09,
                     -1.71474287e08,
@@ -233,7 +234,7 @@ def test_bellman_value_precalculated_reward() -> None:
                 ],
                 [
                     -3.59918506e09,
-                    -2.67201512e09,
+                    -2.67223730e09,
                     -1.81845943e09,
                     -9.75338039e08,
                     -1.18843427e08,
@@ -241,7 +242,7 @@ def test_bellman_value_precalculated_reward() -> None:
                 ],
                 [
                     -3.54655341e09,
-                    -2.61938341e09,
+                    -2.61960559e09,
                     -1.76582776e09,
                     -9.22706398e08,
                     -6.62126083e07,

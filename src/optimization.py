@@ -1,15 +1,18 @@
+import pickle as pkl
 import re
+from time import time
+
+import numpy as np
+import ortools.linear_solver.pywraplp as pywraplp
+from ortools.linear_solver.python import model_builder
+from scipy.interpolate import interp1d
+
 from calculate_reward_and_bellman_values import (
-    ReservoirManagement,
     BellmanValueCalculation,
+    ReservoirManagement,
 )
 from read_antares_data import TimeScenarioParameter
-import numpy as np
-from time import time
-from scipy.interpolate import interp1d
-from ortools.linear_solver.python import model_builder
-import ortools.linear_solver.pywraplp as pywraplp
-from type_definition import Array1D, Array2D, Array3D, Array4D, List
+from type_definition import Array1D, Array2D, Array3D, Array4D, List, Optional
 
 
 class Basis:
@@ -50,6 +53,8 @@ class AntaresProblem:
         itr: int = 1,
         name_solver: str = "CLP",
         name_scenario: int = -1,
+        load_from_proto: bool = False,
+        proto_path: Optional[str] = None,
     ) -> None:
         """
         Create a new Xpress problem and load the problem stored in the associated mps file.
@@ -75,11 +80,14 @@ class AntaresProblem:
 
         if name_scenario == -1:
             name_scenario = scenario + 1
-
-        mps_path = path + f"/problem-{name_scenario}-{week+1}--optim-nb-{itr}.mps"
-        model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
-        model.import_from_mps_file(mps_path)
-        model_proto = model.export_to_proto()
+        if load_from_proto:
+            with open(proto_path, "rb") as file:
+                model_proto = pkl.load(file)
+        else:
+            mps_path = path + f"/problem-{name_scenario}-{week+1}--optim-nb-{itr}.mps"
+            model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
+            model.import_from_mps_file(mps_path)
+            model_proto = model.export_to_proto()
 
         solver = pywraplp.Solver.CreateSolver(name_solver)
         assert solver, "Couldn't find any supported solver"
@@ -102,6 +110,25 @@ class AntaresProblem:
 
         self.basis: List = []
         self.control_basis: List = []
+
+    def reset(self, reservoir_management: ReservoirManagement) -> None:
+        cst = self.solver.constraints()
+        binding_id = [
+            i
+            for i in range(len(cst))
+            if re.search(
+                f"^HydroPower::area<{reservoir_management.reservoir.area}>::week<.",
+                cst[i].name(),
+            )
+        ]
+        assert len(binding_id) == 1
+        var = self.solver.variables()
+        self.binding_id = cst[binding_id[0]]
+        self.U = var[[i for i in range(len(var)) if var[i].name() == "u"][0]]
+        self.x_s = var[[i for i in range(len(var)) if var[i].name() == "x_s"][0]]
+        self.x_s_1 = var[[i for i in range(len(var)) if var[i].name() == "x_s_1"][0]]
+        self.z = var[[i for i in range(len(var)) if var[i].name() == "z"][0]]
+        self.y = var[[i for i in range(len(var)) if var[i].name() == "y"][0]]
 
     def add_basis(self, basis: Basis, control_basis: float) -> None:
         """

@@ -1,22 +1,25 @@
-from calculate_reward_and_bellman_values import (
-    RewardApproximation,
-    ReservoirManagement,
-    BellmanValueCalculation,
-)
-from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
-from optimization import AntaresProblem
-from optimization import Basis
+import pickle as pkl
+from functools import partial
+from multiprocessing import Pool, Process
+from pathlib import Path
+from time import time
+
 import numpy as np
 from scipy.interpolate import interp1d
+
+from calculate_reward_and_bellman_values import (
+    BellmanValueCalculation,
+    ReservoirManagement,
+    RewardApproximation,
+)
 from functions_iterative import (
+    compute_upper_bound_with_stored_models,
     compute_upper_bound_without_stored_models,
     create_model,
-    compute_upper_bound_with_stored_models,
 )
-from time import time
-from multiprocessing import Process, Pool
-from functools import partial
-from type_definition import Array1D, Array2D, Array3D, Dict, Array4D, Optional, Any
+from optimization import AntaresProblem, Basis
+from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
+from type_definition import Any, Array1D, Array2D, Array3D, Array4D, Dict, Optional
 
 
 def calculate_complete_reward(
@@ -87,6 +90,7 @@ def calculate_reward_for_one_scenario(
     controls: Dict[TimeScenarioIndex, Array1D],
     solver: str,
     dict_basis: Dict[TimeScenarioIndex, Basis],
+    saving_dir: str,
 ) -> tuple[
     Dict[TimeScenarioIndex, RewardApproximation],
     Array1D,
@@ -112,19 +116,8 @@ def calculate_reward_for_one_scenario(
     for week in range(param.len_week):
         start = time()
         print(f"{scenario} {week}")
-        m = AntaresProblem(
-            scenario=scenario,
-            week=week,
-            path=output_path,
-            itr=1,
-            name_scenario=(
-                param.name_scenario[scenario] if len(param.name_scenario) > 1 else -1
-            ),
-            name_solver=solver,
-        )
-        m.create_weekly_problem_itr(
-            param=param,
-            reservoir_management=reservoir_management,
+        m = create_model(
+            param, reservoir_management, output_path, week, scenario, solver, saving_dir
         )
 
         basis_0 = Basis([], [])
@@ -259,6 +252,7 @@ def calculate_bellman_value_directly(
     reservoir_management: ReservoirManagement,
     output_path: str,
     X: Array1D,
+    saving_dir: str,
     solver: str = "CLP",
     processes: Optional[int] = None,
 ) -> tuple[Array2D, Array2D, Array4D, Array3D, Array2D]:
@@ -317,6 +311,7 @@ def calculate_bellman_value_directly(
                     dict_basis=dict_basis,
                     V=V,
                     week=week,
+                    saving_dir=saving_dir,
                 ),
                 range(param.len_scenario),
             )
@@ -386,10 +381,13 @@ def calculate_bellman_values_for_one_week_and_one_scenario(
     dict_basis: Dict[TimeScenarioIndex, Basis],
     V: Array2D,
     week: int,
+    saving_dir: str,
 ) -> Dict[str, Any]:
     print(f"{scenario} {week}", end="\r")
     debut = time()
-    m = create_model(param, reservoir_management, output_path, week, scenario, solver)
+    m = create_model(
+        param, reservoir_management, output_path, week, scenario, solver, saving_dir
+    )
 
     basis = Basis([], [])
     if m.store_basis:

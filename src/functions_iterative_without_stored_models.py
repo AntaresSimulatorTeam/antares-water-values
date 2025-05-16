@@ -1,21 +1,23 @@
+from functools import partial
+from multiprocessing import Pool
+from time import time
+
 import numpy as np
 from scipy.interpolate import interp1d
-from time import time
-from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
+
 from calculate_reward_and_bellman_values import (
-    RewardApproximation,
-    ReservoirManagement,
     BellmanValueCalculation,
+    ReservoirManagement,
+    RewardApproximation,
 )
 from functions_iterative import (
-    compute_x_multi_scenario,
     compute_upper_bound_without_stored_models,
+    compute_x_multi_scenario,
 )
+from optimization import Basis
+from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from simple_bellman_value_calculation import calculate_reward_for_one_scenario
 from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List, Optional
-from multiprocessing import Pool
-from functools import partial
-from optimization import Basis
 
 
 def calculate_reward(
@@ -25,6 +27,7 @@ def calculate_reward(
     reservoir_management: ReservoirManagement,
     output_path: str,
     solver: str,
+    saving_dir: str,
     dict_basis: Dict[TimeScenarioIndex, Basis],
     processes: Optional[int] = None,
 ) -> tuple[
@@ -75,6 +78,7 @@ def calculate_reward(
                 controls=dict_controls,
                 solver=solver,
                 dict_basis=dict_basis,
+                saving_dir=saving_dir,
             ),
             range(param.len_scenario),
         )
@@ -108,6 +112,7 @@ def calculate_bellman_values_with_iterative_method_without_stored_models(
     X: Array1D,
     N: int,
     tol_gap: float,
+    saving_dir: str,
     solver: str = "GLOP",
     processes: Optional[int] = None,
 ) -> tuple[
@@ -190,6 +195,7 @@ def calculate_bellman_values_with_iterative_method_without_stored_models(
             solver=solver,
             processes=processes,
             dict_basis=dict_basis,
+            saving_dir=saving_dir,
         )
         itr_tot.append(current_itr[:, :, 0])
 
@@ -202,23 +208,23 @@ def calculate_bellman_values_with_iterative_method_without_stored_models(
 
         V = bellman_value_calculation.calculate_VU()
 
-        final_values = V[:, 0]
-        reservoir_management_2 = ReservoirManagement(
-            reservoir=reservoir_management.reservoir,
-            penalty_bottom_rule_curve=0,
-            penalty_upper_rule_curve=0,
-            penalty_final_level=0,
-            force_final_level=True,
-            overflow=reservoir_management.overflow,
-        )
+        # final_values = V[:, 0]
+        # reservoir_management_2 = ReservoirManagement(
+        #     reservoir=reservoir_management.reservoir,
+        #     penalty_bottom_rule_curve=0,
+        #     penalty_upper_rule_curve=0,
+        #     penalty_final_level=0,
+        #     force_final_level=True,
+        #     overflow=reservoir_management.overflow,
+        # )
 
-        bellman_value_calculation = BellmanValueCalculation(
-            param=param,
-            reward=G,
-            reservoir_management=reservoir_management_2,
-            stock_discretization=X,
-        )
-        V = bellman_value_calculation.calculate_VU(final_values=final_values)
+        # bellman_value_calculation = BellmanValueCalculation(
+        #     param=param,
+        #     reward=G,
+        #     reservoir_management=reservoir_management_2,
+        #     stock_discretization=X,
+        # )
+        # V = bellman_value_calculation.calculate_VU(final_values=final_values)
 
         V_fut = interp1d(X, V[:, 0])
         V0 = V_fut(reservoir_management.reservoir.initial_level)
@@ -234,6 +240,7 @@ def calculate_bellman_values_with_iterative_method_without_stored_models(
                 store_basis=True if solver == "XPRESS_LP" else False,
                 processes=processes,
                 dict_basis=dict_basis,
+                saving_dir=saving_dir,
             )
         )
         itr_tot.append(current_itr)

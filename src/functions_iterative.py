@@ -1,19 +1,21 @@
-import numpy as np
-from scipy.interpolate import interp1d
-from time import time
-from optimization import (
-    AntaresProblem,
-    Basis,
-)
-from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
-from calculate_reward_and_bellman_values import (
-    RewardApproximation,
-    ReservoirManagement,
-    BellmanValueCalculation,
-)
-from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List, Optional
-from multiprocessing import Pool
+import pickle as pkl
 from functools import partial
+from multiprocessing import Pool
+from pathlib import Path
+from time import time
+
+import numpy as np
+from ortools.linear_solver.python import model_builder
+from scipy.interpolate import interp1d
+
+from calculate_reward_and_bellman_values import (
+    BellmanValueCalculation,
+    ReservoirManagement,
+    RewardApproximation,
+)
+from optimization import AntaresProblem, Basis
+from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
+from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List, Optional
 
 
 def compute_x_multi_scenario(
@@ -408,21 +410,43 @@ def create_model(
     week: int,
     scenario: int,
     solver: str,
+    saving_dir: str,
 ) -> AntaresProblem:
-    m = AntaresProblem(
-        scenario=scenario,
-        week=week,
-        path=output_path,
-        itr=1,
-        name_solver=solver,
-        name_scenario=(
-            param.name_scenario[scenario] if len(param.name_scenario) > 1 else -1
-        ),
-    )
-    m.create_weekly_problem_itr(
-        param=param,
-        reservoir_management=reservoir_management,
-    )
+    proto_path = saving_dir + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+    if Path(proto_path).is_file():
+        m = AntaresProblem(
+            scenario=scenario,
+            week=week,
+            path=output_path,
+            itr=1,
+            name_solver=solver,
+            name_scenario=(
+                param.name_scenario[scenario] if len(param.name_scenario) > 1 else -1
+            ),
+            load_from_proto=True,
+            proto_path=proto_path,
+        )
+        m.reset(reservoir_management)
+    else:
+        m = AntaresProblem(
+            scenario=scenario,
+            week=week,
+            path=output_path,
+            itr=1,
+            name_solver=solver,
+            name_scenario=(
+                param.name_scenario[scenario] if len(param.name_scenario) > 1 else -1
+            ),
+        )
+        m.create_weekly_problem_itr(
+            param=param,
+            reservoir_management=reservoir_management,
+        )
+
+        proto = model_builder.ModelBuilder().export_to_proto()  # type: ignore[no-untyped-call]
+        m.solver.ExportModelToProto(output_model=proto)
+        with open(proto_path, "wb") as file:
+            pkl.dump(proto, file)
 
     return m
 
@@ -467,6 +491,7 @@ def compute_upper_bound_without_stored_models(
     output_path: str,
     solver: str,
     dict_basis: Dict[TimeScenarioIndex, Basis],
+    saving_dir: str,
     store_basis: bool = False,
     processes: Optional[int] = None,
 ) -> tuple[float, Array2D, Array3D, Dict[TimeScenarioIndex, Basis]]:
@@ -509,6 +534,7 @@ def compute_upper_bound_without_stored_models(
                 store_basis=store_basis,
                 solver=solver,
                 dict_basis=dict_basis,
+                saving_dir=saving_dir,
             ),
             range(param.len_scenario),
         )
@@ -534,6 +560,7 @@ def solve_one_scenario_with_bellman_values_without_stored_models(
     V: Array2D,
     output_path: str,
     solver: str,
+    saving_dir: str,
     dict_basis: Dict[TimeScenarioIndex, Basis],
     store_basis: bool = False,
 ) -> tuple[float, Array1D, Array2D, Dict[TimeScenarioIndex, Basis]]:
@@ -554,6 +581,7 @@ def solve_one_scenario_with_bellman_values_without_stored_models(
             week=week,
             scenario=scenario,
             solver=solver,
+            saving_dir=saving_dir,
         )
 
         basis = Basis([], [])

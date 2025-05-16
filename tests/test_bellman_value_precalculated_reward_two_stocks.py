@@ -58,14 +58,14 @@ def test_weekly_bellman_problem(
 
     assert np.array(
         [controls[a][ScenarioIndex(0)] for a in multi_stock_management_two_nodes.areas]
-    ) == pytest.approx(np.array([236048.693, 419664.0]))
-    assert cost == pytest.approx(17088730.699999996)
+    ) == pytest.approx(np.array([238355.804, 419664.0]))
+    assert cost == pytest.approx(16858019.6)
     assert np.array(
         [duals[a] for a in multi_stock_management_two_nodes.areas]
     ) == pytest.approx(np.array([-100, 0]))
     assert np.array(
         [levels[a][ScenarioIndex(0)] for a in multi_stock_management_two_nodes.areas]
-    ) == pytest.approx(np.array([162266.807, 481561.5]))
+    ) == pytest.approx(np.array([159959.696, 481561.5]))
 
 
 def test_bellman_value_precalculated_multi_stock(

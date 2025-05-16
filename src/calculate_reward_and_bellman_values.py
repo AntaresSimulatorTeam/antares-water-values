@@ -1,7 +1,8 @@
-from read_antares_data import TimeScenarioParameter, Reservoir, TimeScenarioIndex
-from scipy.interpolate import interp1d
 import numpy as np
-from type_definition import Array1D, Array2D, Optional, Dict, Callable
+from scipy.interpolate import interp1d
+
+from read_antares_data import Reservoir, TimeScenarioIndex, TimeScenarioParameter
+from type_definition import Array1D, Array2D, Callable, Dict, Optional
 
 
 class ReservoirManagement:
@@ -311,32 +312,54 @@ class BellmanValueCalculation:
                     Vu = G + V_fut(state_fut) + penalty
                     xf = state_fut
                     control = points[u]
-
-        Umin = level_i + stock.inflow[week, scenario] - stock.bottom_rule_curve[week]
         if (
-            -stock.max_pumping[week] * stock.efficiency
-            <= Umin
-            <= stock.max_generating[week]
+            week == self.time_scenario_param.len_week - 1
+            and self.reservoir_management.final_level
         ):
-            state_fut = level_i - Umin + stock.inflow[week, scenario]
-            penalty = pen(state_fut)
-            if (reward_fn(Umin) + V_fut(state_fut) + penalty) > Vu:
-                Vu = reward_fn(Umin) + V_fut(state_fut) + penalty
-                xf = state_fut
-                control = Umin
+            Ufinal = (
+                level_i
+                + stock.inflow[week, scenario]
+                - self.reservoir_management.final_level
+            )
+            if (
+                -stock.max_pumping[week] * stock.efficiency
+                <= Ufinal
+                <= stock.max_generating[week]
+            ):
+                state_fut = level_i - Ufinal + stock.inflow[week, scenario]
+                penalty = pen(state_fut)
+                if (reward_fn(Ufinal) + V_fut(state_fut) + penalty) > Vu:
+                    Vu = reward_fn(Ufinal) + V_fut(state_fut) + penalty
+                    xf = state_fut
+                    control = Ufinal
+        else:
+            Umin = (
+                level_i + stock.inflow[week, scenario] - stock.bottom_rule_curve[week]
+            )
+            if (
+                -stock.max_pumping[week] * stock.efficiency
+                <= Umin
+                <= stock.max_generating[week]
+            ):
+                state_fut = level_i - Umin + stock.inflow[week, scenario]
+                penalty = pen(state_fut)
+                if (reward_fn(Umin) + V_fut(state_fut) + penalty) > Vu:
+                    Vu = reward_fn(Umin) + V_fut(state_fut) + penalty
+                    xf = state_fut
+                    control = Umin
 
-        Umax = level_i + stock.inflow[week, scenario] - stock.upper_rule_curve[week]
-        if (
-            -stock.max_pumping[week] * stock.efficiency
-            <= Umax
-            <= stock.max_generating[week]
-        ):
-            state_fut = level_i - Umax + stock.inflow[week, scenario]
-            penalty = pen(state_fut)
-            if (reward_fn(Umax) + V_fut(state_fut) + penalty) > Vu:
-                Vu = reward_fn(Umax) + V_fut(state_fut) + penalty
-                xf = state_fut
-                control = Umax
+            Umax = level_i + stock.inflow[week, scenario] - stock.upper_rule_curve[week]
+            if (
+                -stock.max_pumping[week] * stock.efficiency
+                <= Umax
+                <= stock.max_generating[week]
+            ):
+                state_fut = level_i - Umax + stock.inflow[week, scenario]
+                penalty = pen(state_fut)
+                if (reward_fn(Umax) + V_fut(state_fut) + penalty) > Vu:
+                    Vu = reward_fn(Umax) + V_fut(state_fut) + penalty
+                    xf = state_fut
+                    control = Umax
 
         control = min(
             -(xf - level_i - stock.inflow[week, scenario]),

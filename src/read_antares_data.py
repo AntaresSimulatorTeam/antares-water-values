@@ -1,6 +1,7 @@
-from dataclasses import dataclass, field
 import subprocess
 from configparser import ConfigParser
+from dataclasses import dataclass, field
+
 import numpy as np
 
 
@@ -93,14 +94,10 @@ class Reservoir:
             rule_curves[0, 0] == rule_curves[0, 1]
         ), "Initial level is not correctly defined by bottom and upper rule curves"
         self.initial_level = rule_curves[0, 0]
-        bottom_rule_curve = rule_curves[6:365:7, 0]
-        upper_rule_curve = rule_curves[6:365:7, 1]
-        self.bottom_rule_curve = np.concatenate(
-            (bottom_rule_curve, bottom_rule_curve[[0]])
-        )
-        self.upper_rule_curve = np.concatenate(
-            (upper_rule_curve, upper_rule_curve[[0]])
-        )
+        bottom_rule_curve = rule_curves[7::7, 0]
+        upper_rule_curve = rule_curves[7::7, 1]
+        self.bottom_rule_curve = bottom_rule_curve
+        self.upper_rule_curve = upper_rule_curve
 
     def get_hydro_ini_file(self, dir_study: str) -> ConfigParser:
         hydro_ini_file = ConfigParser()

@@ -1,14 +1,13 @@
+import numpy as np
+import pytest
+
 from functions_iterative import (
-    TimeScenarioParameter,
     ReservoirManagement,
     TimeScenarioIndex,
-)
-from simple_bellman_value_calculation import (
-    calculate_bellman_value_directly,
+    TimeScenarioParameter,
 )
 from read_antares_data import Reservoir
-import pytest
-import numpy as np
+from simple_bellman_value_calculation import calculate_bellman_value_directly
 
 
 def test_bellman_value_exact() -> None:
@@ -39,7 +38,7 @@ def test_bellman_value_exact() -> None:
                     -5.8881910e09,
                     -5.3715830e09,
                     -4.3035453e09,
-                    -3.6217492e09,
+                    -3.5937500e09,
                     -1.9985748e09,
                     0.0000000e00,
                 ],
@@ -47,7 +46,7 @@ def test_bellman_value_exact() -> None:
                     -5.2848681e09,
                     -4.3627935e09,
                     -3.3862774e09,
-                    -2.4242972e09,
+                    -2.4232980e09,
                     -1.4029120e09,
                     0.0000000e00,
                 ],
@@ -55,7 +54,7 @@ def test_bellman_value_exact() -> None:
                     -5.1269724e09,
                     -4.2048975e09,
                     -3.2283817e09,
-                    -2.2664013e09,
+                    -2.2654021e09,
                     -1.2450163e09,
                     0.0000000e00,
                 ],
@@ -63,7 +62,7 @@ def test_bellman_value_exact() -> None:
                     -4.9844623e09,
                     -4.0473820e09,
                     -3.0742531e09,
-                    -2.1085059e09,
+                    -2.1075066e09,
                     -1.1027895e09,
                     0.0000000e00,
                 ],
@@ -157,7 +156,7 @@ def test_bellman_value_exact() -> None:
                 ],
                 [
                     -3.7570803e09,
-                    -2.8299108e09,
+                    -2.8301327e09,
                     -1.9763548e09,
                     -1.1332330e09,
                     -2.7673613e08,
@@ -165,7 +164,7 @@ def test_bellman_value_exact() -> None:
                 ],
                 [
                     -3.7044485e09,
-                    -2.7772790e09,
+                    -2.7775009e09,
                     -1.9237230e09,
                     -1.0806013e09,
                     -2.2410518e08,
@@ -173,7 +172,7 @@ def test_bellman_value_exact() -> None:
                 ],
                 [
                     -3.6518167e09,
-                    -2.7246472e09,
+                    -2.7248694e09,
                     -1.8710912e09,
                     -1.0279697e09,
                     -1.7147429e08,
@@ -181,20 +180,20 @@ def test_bellman_value_exact() -> None:
                 ],
                 [
                     -3.5991852e09,
-                    -2.6720154e09,
+                    -2.6722376e09,
                     -1.8184595e09,
-                    -9.7533811e08,
+                    -9.7533805e08,
                     -1.1884343e08,
                     0.0000000e00,
                 ],
                 [
                     -3.5465536e09,
-                    -2.6193836e09,
+                    -2.6196058e09,
                     -1.7658280e09,
                     -9.2270643e08,
                     -6.6212612e07,
                     0.0000000e00,
                 ],
-            ],
+            ]
         )
     )

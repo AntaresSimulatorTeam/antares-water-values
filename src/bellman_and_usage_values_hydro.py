@@ -6,6 +6,8 @@ from scipy.interpolate import interp1d
 import time
 import plotly.graph_objects as go
 from type_definition import Callable
+import pandas as pd
+
 
 rcParams['font.family'] = 'Cambria'
 
@@ -24,9 +26,11 @@ class BellmanValuesHydro:
         self.nb_weeks=self.gain_function.nb_weeks
         self.scenarios=self.gain_function.scenarios
         
-        self.controls=self.gain_function.compute_controls()
-        self.gain_functions=self.gain_function.compute_gain_functions(self.controls,2)
-    
+        # self.controls=self.gain_function.compute_controls()
+        self.gain_functions=self.gain_function.compute_gain_functions(2)
+
+        # self.scenarios_for_bv_calc=[4,5,18,48,66,78,82,117,129,138,152]
+        # self.scenarios_for_bv_calc=range(200)
         self.bv=np.zeros((self.nb_weeks+1,51,len(self.scenarios)))
         self.mean_bv=np.zeros((self.nb_weeks+1,51))
 
@@ -35,23 +39,32 @@ class BellmanValuesHydro:
         self.compute_trajectories()
 
     def penalty(self,week_idx:int)->Callable:
-        if week_idx==self.nb_weeks:
-            penalty = lambda x: 10000000000*abs(x-self.reservoir.initial_level)
+        if week_idx==self.nb_weeks-1:
+            penalty = lambda x: abs(x-self.reservoir.initial_level)/1e3
+            # penalty = lambda x:0
         else :
+            first_point_x=max(0,self.reservoir.bottom_rule_curve[week_idx]-(self.reservoir.capacity-self.reservoir.upper_rule_curve[week_idx]))
             penalty = interp1d(
-                [0,self.reservoir.bottom_rule_curve[week_idx],self.reservoir.upper_rule_curve[week_idx],self.reservoir.capacity],
-                [10000000000* (self.reservoir.bottom_rule_curve[week_idx]),0,0,10000000000*(self.reservoir.capacity - self.reservoir.upper_rule_curve[week_idx])],
+                [
+                    first_point_x,
+                    self.reservoir.bottom_rule_curve[week_idx],
+                    self.reservoir.upper_rule_curve[week_idx],
+                    self.reservoir.capacity],
+                [1e3,0,0,1e3],
                 kind="linear",fill_value="extrapolate")
+            # penalty = lambda x:0
+            
         return penalty
 
     def compute_bellman_values(self) -> None:
         for w in reversed(range(self.nb_weeks)): 
             for c in range(0, 101, 2):
-                penalty_function=self.penalty(w+1)
+                penalty_function=self.penalty(w)
                 for s in self.scenarios:
                     inflows_for_week = self.inflow[w, s]
                     current_stock = (c /100) * self.reservoir_capacity
-                    controls=self.controls[w,s]
+                    gain_function=self.gain_functions[w,s]
+                    controls=gain_function.x
                     future_bellman_function = interp1d(
                         np.linspace(0, self.reservoir_capacity, 51),
                         self.mean_bv[w + 1], 
@@ -62,27 +75,27 @@ class BellmanValuesHydro:
                     best_value = np.inf 
                     for control in controls:     
                         # control = min(control, current_stock)         
-                        control = min(control-inflows_for_week, current_stock)
+                        control = min(control, current_stock+inflows_for_week)
 
-                        next_stock = current_stock - control
-                        gain = self.gain_functions[w, s](control)
+                        next_stock = current_stock - control + inflows_for_week
+                        gain = gain_function(control)
                         future_value = future_bellman_function(next_stock)
                         penalty=penalty_function(next_stock)
                         total_value = gain + future_value + penalty
 
                         if total_value < best_value:
                             best_value = total_value
-                    
+                            
                     for c_new in range(0,101,2):
                         max_week_energy=np.sum(self.gain_function.max_daily_generating[w * 7:(w + 1) * 7])
                         week_energy_turbine=current_stock-c_new/100 * self.reservoir_capacity
                         if week_energy_turbine<0 or week_energy_turbine>max_week_energy:
                             continue
                         # control=min(current_stock-c_new/100 * self.reservoir_capacity,current_stock)                    
-                        control=min(current_stock-c_new/100 * self.reservoir_capacity-inflows_for_week,current_stock)                    
-                        next_stock=current_stock-control
+                        control=min(current_stock-c_new/100 * self.reservoir_capacity,current_stock+inflows_for_week)                    
+                        next_stock=current_stock-control+inflows_for_week
                         penalty=penalty_function(next_stock)
-                        gain = self.gain_functions[w,s](control)
+                        gain = gain_function(control)
                         future_value = future_bellman_function(next_stock)
                         total_value = gain + future_value +penalty
 
@@ -95,22 +108,24 @@ class BellmanValuesHydro:
                 self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2])
 
     def compute_usage_values(self) -> None:
-        self.usage_values=np.zeros((self.nb_weeks+1,51))
+        self.usage_values=np.zeros((self.nb_weeks+1,50))
         for w in range(self.nb_weeks+1):
             for c in range(2,102,2):
                 self.usage_values[w,(c//2)-1]=self.mean_bv[w,c//2]-self.mean_bv[w,(c//2)-1]
 
     def compute_trajectories(self) -> None:
         self.trajectories = np.zeros((len(self.scenarios),self.nb_weeks+1))
+        self.optimal_controls = np.zeros((len(self.scenarios),self.nb_weeks))
         self.trajectories[:,0] = self.reservoir.initial_level
         # self.trajectories[:,0]=0.4*self.reservoir_capacity
+        
         for s in self.scenarios:
             for w in range(self.nb_weeks):
-                penalty_function=self.penalty(w+1)
+                penalty_function=self.penalty(w)
                 current_stock = self.trajectories[s,w]
                 inflows_for_week = self.inflow[w,s]
                 gain_function = self.gain_functions[w,s]
-                controls = self.controls[w,s]
+                controls = gain_function.x
                 future_bellman_function = interp1d(
                         np.linspace(0, self.reservoir_capacity, 51),
                         self.mean_bv[w + 1], 
@@ -123,8 +138,8 @@ class BellmanValuesHydro:
 
                 for control in controls:
                     # control = min(control, current_stock)
-                    control = min(control-inflows_for_week,current_stock)
-                    next_stock = current_stock - control
+                    control = min(control,current_stock+inflows_for_week)
+                    next_stock = current_stock - control+inflows_for_week
                     gain = gain_function(control)
                     future_value = future_bellman_function(next_stock)
                     penalty=penalty_function(next_stock)
@@ -132,39 +147,52 @@ class BellmanValuesHydro:
                     if total_value < best_value:
                         best_value = total_value
                         best_next_stock = next_stock
-
+                        optimal_control=control
+                       
                 for c_new in range(0,101,2):
                     max_week_energy=np.sum(self.gain_function.max_daily_generating[w * 7:(w + 1) * 7])
                     week_energy_turbine=current_stock-c_new/100 * self.reservoir_capacity
                     if week_energy_turbine<0 or week_energy_turbine>max_week_energy:
                         continue
                     # control=min(current_stock-c_new/100 * self.reservoir_capacity,current_stock)
-                    control=min(current_stock-c_new/100 * self.reservoir_capacity - inflows_for_week,current_stock)
-                    next_stock=current_stock-control
+                    control=min(current_stock-c_new/100 * self.reservoir_capacity ,current_stock+inflows_for_week)
+                    next_stock=current_stock-control+inflows_for_week
                     gain = gain_function(control)
                     future_value = future_bellman_function(next_stock)
                     penalty=penalty_function(next_stock)
                     total_value = gain + future_value + penalty
                     if total_value < best_value:
                         best_value = total_value
-                        best_next_stock = c_new/100 * self.reservoir_capacity
+                        best_next_stock = next_stock
+                        optimal_control=control
+                       
 
                 if best_next_stock is not None:
                     self.trajectories[s,w+1] =best_next_stock
-
+                    self.optimal_controls[s,w] = optimal_control
+                    lower_bound=self.reservoir.bottom_rule_curve[w]
+                    upper_bound=self.reservoir.upper_rule_curve[w]
+                    if not (lower_bound <= best_next_stock <= upper_bound):
+                        print(
+                            f"⚠️ Stock hors courbes guides - Semaine {w+1}, scénario {s+1} : "
+                            f"{best_next_stock:.2f} ∉ [{lower_bound:.2f}, {upper_bound:.2f}]"
+                        )
                 else:
                     self.trajectories[s,w+1]=None
+                    self.optimal_controls[s,w]=None
+                
+        self.trajectories=self.trajectories[:,1:]
 
     def plot_usage_values(self,usage_values: np.ndarray) -> None:
         
-        stock_levels = np.linspace(0, 100, 51) 
+        stock_levels = np.linspace(2, 100, 50) 
         plt.figure(figsize=(12, 6))
 
         for w in range(self.nb_weeks+1):
             plt.plot(
                 stock_levels, 
                 usage_values[w],
-                label=f"S {w+1}"
+                label=f"S {w}"
             )
 
         plt.xlabel('Stock (%)')
@@ -218,6 +246,39 @@ class BellmanValuesHydro:
 
         fig.show()
 
+    def export_controls(self) -> pd.DataFrame:
+        data = []
+
+        for s in bv.scenarios:
+            for w in range(bv.nb_weeks):
+                u = bv.optimal_controls[s, w]
+                data.append({
+                    "area": self.gain_function.name_area,
+                    "u": u,
+                    "week": w + 1,
+                    "mcYear": s + 1,
+                    "sim": "u_0"
+                })
+
+        df = pd.DataFrame(data)
+        return df
+
+    def export_trajectories(self) ->pd.DataFrame:
+        data = []
+
+        for s in bv.scenarios:
+            for w in range(bv.nb_weeks):
+                hlevel = bv.trajectories[s,w]
+                data.append({
+                    "area": self.gain_function.name_area,
+                    "hlevel": hlevel,
+                    "week": w + 1,
+                    "mcYear": s + 1,
+                    "sim": "u_0"
+                })
+        df = pd.DataFrame(data)
+        return df
+    
 
 start=time.time()
 gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036", "fr")
@@ -225,9 +286,16 @@ bv=BellmanValuesHydro(gain)
 end=time.time()
 
 print("Execution time: ", end-start)
-# print(bv.trajectories)
-# print(bv.mean_bv)
-# print(bv.usage_values)
+# # print(bv.trajectories)
+# # print(bv.mean_bv)
+# # print(bv.usage_values)
 bv.plot_trajectories_with_buttons()
-bv.plot_usage_values(bv.usage_values)
+# bv.plot_usage_values(bv.usage_values)
+
+# trajectories=bv.export_trajectories()
+# trajectories.to_csv("trajectories.csv", index=False)
+
+# constraint_values = bv.export_controls()
+# constraint_values.to_csv("constraint_values.csv", index=False)
+# print(constraint_values.head())
 

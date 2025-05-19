@@ -158,21 +158,22 @@ class NetLoad:
 
     def __init__(self, dir_study: str, name_area: str) -> None:
         self.area = name_area
-        self.read_data(dir_study)
+        self.dir_study=dir_study
+        self.read_data()
         self.compute_net_load()
-        self.compute_solar(dir_study)
-        self.compute_wind(dir_study)
+        self.compute_solar()
+        self.compute_wind()
         self.compute_net_load()
         
 
-    def read_data(self, dir_study:str) -> None: 
+    def read_data(self) -> None: 
         
-        self.load = np.loadtxt(f"{dir_study}/input/load/series/load_{self.area}.txt")
+        self.load = np.loadtxt(f"{self.dir_study}/input/load/series/load_{self.area}.txt")
         self.nb_scenarios=self.load.shape[1]
-        self.solar = np.loadtxt(f"{dir_study}/input/renewables/series/{self.area}/{self.area}_solar_pv/series.txt")
-        self.wind_offshore = np.loadtxt(f"{dir_study}/input/renewables/series/{self.area}/{self.area}_wind_offshore/series.txt")
-        self.wind_onshore = np.loadtxt(f"{dir_study}/input/renewables/series/{self.area}/{self.area}_wind_onshore/series.txt")
-        self.ror = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/ror.txt")
+        self.solar = np.loadtxt(f"{self.dir_study}/input/renewables/series/{self.area}/{self.area}_solar_pv/series.txt")
+        self.wind_offshore = np.loadtxt(f"{self.dir_study}/input/renewables/series/{self.area}/{self.area}_wind_offshore/series.txt")
+        self.wind_onshore = np.loadtxt(f"{self.dir_study}/input/renewables/series/{self.area}/{self.area}_wind_onshore/series.txt")
+        self.ror = np.loadtxt(f"{self.dir_study}/input/hydro/series/{self.area}/ror.txt")
 
     def compute_renewable(self, data:np.ndarray, capacity_key:str, cluster_file:str) -> np.ndarray:
         
@@ -182,12 +183,12 @@ class NetLoad:
         data *= capacity
         return data
 
-    def compute_solar(self, dir_study:str) -> None:
-        self.solar = self.compute_renewable(self.solar, "solar_pv", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
+    def compute_solar(self) -> None:
+        self.solar = self.compute_renewable(self.solar, "solar_pv", f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini")
 
-    def compute_wind(self, dir_study:str) -> None:
-        self.wind_offshore = self.compute_renewable(self.wind_offshore, "wind_offshore", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
-        self.wind_onshore = self.compute_renewable(self.wind_onshore, "wind_onshore", f"{dir_study}/input/renewables/clusters/{self.area}/list.ini")
+    def compute_wind(self) -> None:
+        self.wind_offshore = self.compute_renewable(self.wind_offshore, "wind_offshore", f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini")
+        self.wind_onshore = self.compute_renewable(self.wind_onshore, "wind_onshore", f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini")
 
     def compute_net_load(self) -> None:
         self.net_load=self.load-self.solar-self.wind_offshore-self.wind_onshore-self.ror

@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 import time
 
+
 class GainFunctionHydro:
     def __init__(self, dir_study: str, name_area: str) -> None:
         self.dir_study=dir_study
@@ -17,18 +18,19 @@ class GainFunctionHydro:
 
         self.nb_weeks=self.reservoir.inflow.shape[0]
         # self.nb_scenarios=self.net_load.shape[1]
-        self.scenarios=range(200)
-        # self.scenarios=[4,5,18,48,66,78,82,117,129,138,152]
+        self.scenarios=range(10)
 
-    #1ere méthode 
  
-    def get_controls_for_week_and_scenario_simplified(self, week_index:int, control_discretization:int) -> np.ndarray:
+    def get_controls_for_week(self, week_index:int, control_discretization:int) -> np.ndarray:
         max_week_energy=np.sum(self.max_daily_generating[week_index * 7:(week_index + 1) * 7])
-        controls=np.linspace(0, max_week_energy, control_discretization)
+
+        x=np.linspace(0,1,control_discretization)
+        x_transformed=x**2
+        controls=x_transformed*max_week_energy
         return controls
   
     def compute_controls(self)->np.ndarray:
-        controls=np.array([[self.get_controls_for_week_and_scenario_simplified(w,50) for s in self.scenarios] for w in range(self.nb_weeks)])
+        controls=np.array([[self.get_controls_for_week(w,50) for s in self.scenarios] for w in range(self.nb_weeks)])
         return controls 
 
     def compute_curtailed_net_load(self, week_index: int, control: float, scenario: int) -> np.ndarray:
@@ -66,61 +68,43 @@ class GainFunctionHydro:
         curtailed_net_loads=np.array([self.compute_curtailed_net_load(week_index, control, scenario) for control in controls_for_week_and_scenario])
         gains=np.sum(curtailed_net_loads**alpha/1E9,axis=1)
         return interp1d(controls_for_week_and_scenario,gains,fill_value="extrapolate")
+
+    def gain_function_reversed(self,week_index:int,scenario:int,alpha:float)->tuple:
+        net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
+        max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
+
+        curtail=np.minimum(net_load_for_week,max_energy_hour)
+        control=np.sum(curtail)
+        control_list=[control]
+        curtailed_energy=net_load_for_week-curtail
+        gain=np.sum(curtailed_energy**alpha/1e9)
+        gain_list=[gain]
+        curtailed_energy_list=[curtailed_energy]
+
+        sorted_indices=np.argsort(curtailed_energy)
+
+        for i in sorted_indices[::10]:
+            threshold=net_load_for_week[i]
+            new_curtailed_energy=np.minimum(net_load_for_week,np.maximum(threshold,curtailed_energy))
+            delta=new_curtailed_energy-curtailed_energy
+            control-=np.sum(delta)
+            gain+=np.sum((new_curtailed_energy**alpha-curtailed_energy**alpha)/1e9)
+            control_list.append(control)
+            gain_list.append(gain)
+
+            curtailed_energy=new_curtailed_energy
+            curtailed_energy_list.append(curtailed_energy)
         
+        return interp1d(control_list[::-1],gain_list[::-1],fill_value="extrapolate"), curtailed_energy_list[::-1]
+    
+
     def compute_gain_functions(self,alpha:float)->np.ndarray:
         controls=self.compute_controls()
+        # gain_functions=np.array([[self.gain_function_reversed(w,s,alpha)[0] for s in self.scenarios] for w in range(self.nb_weeks)])
         gain_functions=np.array([[self.gain_function(w,controls,s,alpha) for s in self.scenarios] for w in range(self.nb_weeks)])
         return gain_functions
     
-    
-    # 2eme méthode
-
-    def gain_function_1(self, week_index: int, scenario: int, alpha: float) -> interp1d:
-        net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario].copy()
-        max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
-        
-        control = np.minimum(net_load_for_week, max_energy_hour)
-        curtailed_load = net_load_for_week - control
-        gain = np.sum(curtailed_load ** alpha / 1e9)
-        control_total = np.sum(control)
-
-        gain_list = [gain]
-        control_list = [control_total]
-
-        sorted_indices = np.argsort(curtailed_load)
-        control_sorted = control[sorted_indices]
-        cumulative_energy = np.cumsum(control_sorted)
-        total_energy = cumulative_energy[-1]
-
-        n_points = 50
-        target_energy_levels = np.linspace(0, total_energy, n_points)
-        selected_indices = np.searchsorted(cumulative_energy, target_energy_levels)
-        selected_indices = np.unique(np.clip(selected_indices, 0, len(sorted_indices) - 1))
-        thresholds = net_load_for_week[sorted_indices[selected_indices]]
-
-        for threshold in thresholds:
-            new_curtailed_load = np.minimum(net_load_for_week, np.maximum(threshold, curtailed_load))
-            delta = new_curtailed_load - curtailed_load
-            gain += np.sum((new_curtailed_load ** alpha - curtailed_load ** alpha) / 1e9)
-            new_control = control - delta
-            new_control_total = max(0, np.sum(new_control))
-
-            if abs(new_control_total - control_total) > 1e-8:
-                gain_list.append(gain)
-                control_list.append(new_control_total)
-
-            curtailed_load = new_curtailed_load
-            control = new_control
-            control_total = new_control_total
-
-        return interp1d(control_list, gain_list, fill_value='extrapolate')
-
-
-    def compute_gain_functions_1(self,alpha:float)->np.ndarray: 
-        gain_functions=np.array([[self.gain_function_1(w,s,alpha) for s in self.scenarios] for w in range(self.nb_weeks)])
-        return gain_functions
-    
-    
+   
     # affichages
 
     def plot_gain_function(self,week_index:int,scenario:int,alpha:float)->None:
@@ -137,33 +121,43 @@ class GainFunctionHydro:
         plt.tight_layout()
         plt.show()
 
-    def plot_load(self, week_index: int, total_energy: float, scenario: int) -> None:
-        original_residual_load = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
-        curtailed_residual_load = self.compute_curtailed_net_load(week_index, total_energy, scenario)
+    def plot_load(self, week_index: int, control: float, scenario: int) -> None:
+        original_load = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
+        curtailed_load = self.compute_curtailed_net_load(week_index, control, scenario)
         
-        # sorted_original = np.sort(original_residual_load)[::-1]
-        # sorted_curtailed = np.sort(curtailed_residual_load)[::-1]
-        print(np.sum(curtailed_residual_load**2))
-        hours = np.arange(len(original_residual_load))
+        hours = np.arange(len(original_load))
 
         width = 0.45
 
         plt.figure(figsize=(14, 6))
-        plt.bar(hours - width/2, original_residual_load, width=width, label='Initiale triée', color='skyblue')
-        plt.bar(hours + width/2, curtailed_residual_load, width=width, label='Écrêtée triée', color='salmon')
-        plt.title("Histogramme des consommations résiduelles triées (ordre décroissant)")
-        plt.xlabel("Heures triées")
+        plt.bar(hours - width/2, original_load, width=width, label='Initiale', color='skyblue')
+        plt.bar(hours + width/2, curtailed_load, width=width, label='Écrêtée', color='salmon')
+        plt.title("Histogramme des consommations résiduelles")
+        plt.xlabel("Heures")
         plt.ylabel("Consommation Résiduelle")
         plt.legend()
         plt.grid(True, axis='y')
         plt.tight_layout()
         plt.show()
 
-    
+    def plot_load_reversed(self,week_index:int,scenario:int,alpha:float,nb_heures_ecretees:int)->None:
+        original_load = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
+        curtailed_loads = self.gain_function_reversed(week_index, scenario,alpha)[1]
+        curtailed_load=curtailed_loads[nb_heures_ecretees]
+        # print(np.sum(original_load-curtailed_load))
+        
+        hours = np.arange(len(original_load))
 
+        width = 0.45
 
-# gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036", "fr")
-# start=time.time()
-# gain.compute_gain_functions(alpha=2)
-# end=time.time()
-# print('calculation time : ',end-start)
+        plt.figure(figsize=(14, 6))
+        plt.bar(hours - width/2, original_load, width=width, label='Initiale', color='skyblue')
+        plt.bar(hours + width/2, curtailed_load, width=width, label='Écrêtée', color='salmon')
+        plt.title("Histogramme des consommations résiduelles")
+        plt.xlabel("Heures")
+        plt.ylabel("Consommation Résiduelle")
+        plt.legend()
+        plt.grid(True, axis='y')
+        plt.tight_layout()
+        plt.show()        
+

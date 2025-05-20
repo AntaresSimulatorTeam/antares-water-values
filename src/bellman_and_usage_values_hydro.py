@@ -26,11 +26,8 @@ class BellmanValuesHydro:
         self.nb_weeks=self.gain_function.nb_weeks
         self.scenarios=self.gain_function.scenarios
         
-        # self.controls=self.gain_function.compute_controls()
         self.gain_functions=self.gain_function.compute_gain_functions(2)
 
-        # self.scenarios_for_bv_calc=[4,5,18,48,66,78,82,117,129,138,152]
-        # self.scenarios_for_bv_calc=range(200)
         self.bv=np.zeros((self.nb_weeks+1,51,len(self.scenarios)))
         self.mean_bv=np.zeros((self.nb_weeks+1,51))
 
@@ -41,7 +38,6 @@ class BellmanValuesHydro:
     def penalty(self,week_idx:int)->Callable:
         if week_idx==self.nb_weeks-1:
             penalty = lambda x: abs(x-self.reservoir.initial_level)/1e3
-            # penalty = lambda x:0
         else :
             first_point_x=max(0,self.reservoir.bottom_rule_curve[week_idx]-(self.reservoir.capacity-self.reservoir.upper_rule_curve[week_idx]))
             penalty = interp1d(
@@ -52,7 +48,6 @@ class BellmanValuesHydro:
                     self.reservoir.capacity],
                 [1e3,0,0,1e3],
                 kind="linear",fill_value="extrapolate")
-            # penalty = lambda x:0
             
         return penalty
 
@@ -74,7 +69,6 @@ class BellmanValuesHydro:
 
                     best_value = np.inf 
                     for control in controls:     
-                        # control = min(control, current_stock)         
                         control = min(control, current_stock+inflows_for_week)
 
                         next_stock = current_stock - control + inflows_for_week
@@ -91,7 +85,6 @@ class BellmanValuesHydro:
                         week_energy_turbine=current_stock-c_new/100 * self.reservoir_capacity
                         if week_energy_turbine<0 or week_energy_turbine>max_week_energy:
                             continue
-                        # control=min(current_stock-c_new/100 * self.reservoir_capacity,current_stock)                    
                         control=min(current_stock-c_new/100 * self.reservoir_capacity,current_stock+inflows_for_week)                    
                         next_stock=current_stock-control+inflows_for_week
                         penalty=penalty_function(next_stock)
@@ -117,7 +110,6 @@ class BellmanValuesHydro:
         self.trajectories = np.zeros((len(self.scenarios),self.nb_weeks+1))
         self.optimal_controls = np.zeros((len(self.scenarios),self.nb_weeks))
         self.trajectories[:,0] = self.reservoir.initial_level
-        # self.trajectories[:,0]=0.4*self.reservoir_capacity
         
         for s in self.scenarios:
             for w in range(self.nb_weeks):
@@ -137,7 +129,6 @@ class BellmanValuesHydro:
                 best_next_stock = None
 
                 for control in controls:
-                    # control = min(control, current_stock)
                     control = min(control,current_stock+inflows_for_week)
                     next_stock = current_stock - control+inflows_for_week
                     gain = gain_function(control)
@@ -154,7 +145,6 @@ class BellmanValuesHydro:
                     week_energy_turbine=current_stock-c_new/100 * self.reservoir_capacity
                     if week_energy_turbine<0 or week_energy_turbine>max_week_energy:
                         continue
-                    # control=min(current_stock-c_new/100 * self.reservoir_capacity,current_stock)
                     control=min(current_stock-c_new/100 * self.reservoir_capacity ,current_stock+inflows_for_week)
                     next_stock=current_stock-control+inflows_for_week
                     gain = gain_function(control)
@@ -183,6 +173,8 @@ class BellmanValuesHydro:
                 
         self.trajectories=self.trajectories[:,1:]
 
+    # affichages
+
     def plot_usage_values(self,usage_values: np.ndarray) -> None:
         
         stock_levels = np.linspace(2, 100, 50) 
@@ -203,7 +195,7 @@ class BellmanValuesHydro:
         plt.tight_layout()
         plt.show()
 
-    def plot_trajectories_with_buttons(self)-> None:
+    def plot_trajectories(self)-> None:
         fig = go.Figure()
 
         for s in self.scenarios:
@@ -217,10 +209,38 @@ class BellmanValuesHydro:
                 visible=visible
             ))
 
+            # Courbe guide haute (ex: upper_rule_curve)
+            upper_percent = self.upper_rule_curve / self.reservoir_capacity * 100
+            fig.add_trace(go.Scatter(
+                x=list(range(self.nb_weeks + 1)),
+                y=upper_percent,
+                mode='lines',
+                name=f'Upper rule curve {s}',
+                line=dict(dash='dash', color='green'),
+                visible=visible,
+                showlegend=(s == 0)  # pour éviter répétition dans la légende
+            ))
+
+            # Courbe guide basse (ex: lower_rule_curve)
+            lower_percent = self.bottom_rule_curve / self.reservoir_capacity * 100
+            fig.add_trace(go.Scatter(
+                x=list(range(self.nb_weeks + 1)),
+                y=lower_percent,
+                mode='lines',
+                name=f'Lower rule curve {s}',
+                line=dict(dash='dash', color='red'),
+                visible=visible,
+                showlegend=(s == 0)
+            ))
+
+        n_traces_per_scenario = 3
         buttons = []
         for s in self.scenarios:
-            visibility = [False] * len(self.scenarios)
-            visibility[s] = True
+            visibility = [False] * (len(self.scenarios) * n_traces_per_scenario)
+            base = s * n_traces_per_scenario
+            visibility[base] = True       # stock
+            visibility[base + 1] = True   # upper
+            visibility[base + 2] = True   # lower
             buttons.append(dict(
                 label=f"Scénario {s}",
                 method="update",
@@ -245,6 +265,8 @@ class BellmanValuesHydro:
         )
 
         fig.show()
+
+    # exports
 
     def export_controls(self) -> pd.DataFrame:
         data = []
@@ -286,16 +308,12 @@ bv=BellmanValuesHydro(gain)
 end=time.time()
 
 print("Execution time: ", end-start)
-# # print(bv.trajectories)
-# # print(bv.mean_bv)
-# # print(bv.usage_values)
-bv.plot_trajectories_with_buttons()
-# bv.plot_usage_values(bv.usage_values)
+
+bv.plot_trajectories()
 
 # trajectories=bv.export_trajectories()
 # trajectories.to_csv("trajectories.csv", index=False)
 
 # constraint_values = bv.export_controls()
 # constraint_values.to_csv("constraint_values.csv", index=False)
-# print(constraint_values.head())
 

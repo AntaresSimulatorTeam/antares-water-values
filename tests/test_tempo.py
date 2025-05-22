@@ -9,9 +9,9 @@ dir_study = "test_data/one_node_(1)"
 area = "area"
 net_load = NetLoad(dir_study=dir_study, name_area=area)
 gain_function_tempo_r = GainFunctionTempo(net_load=net_load, max_control=5)
-bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo_r, capacity=22, nb_week=22, start_week=18)
+bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo_r, capacity=22, nb_week=22, start_week=18,CVar=1)
 gain_function_tempo_wr = GainFunctionTempo(net_load=net_load, max_control=6)
-bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo_wr, capacity=65, nb_week=53, start_week=9)
+bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo_wr, capacity=65, nb_week=53, start_week=9,CVar=1)
 trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
 trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,trajectories_red=trajectories_r.trajectories)
     

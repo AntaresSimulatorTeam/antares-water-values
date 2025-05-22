@@ -3,7 +3,6 @@ import numpy as np
 from typing import Optional
 import plotly.graph_objects as go
 import pandas as pd
-import os
 
 class GainFunctionTempo:
     def __init__(self, net_load : NetLoad, max_control:int):
@@ -318,4 +317,4 @@ class LaunchTempo :
 
 dir_study = "test_data/one_node_(1)"
 area = "area"
-LaunchTempo(dir_study=dir_study,area=area,CVar=0.2)
+# LaunchTempo(dir_study=dir_study,area=area,CVar=0.2)

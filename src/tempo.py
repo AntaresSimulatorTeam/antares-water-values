@@ -5,6 +5,9 @@ import plotly.graph_objects as go
 import pandas as pd
 import os
 
+"""To launch the calculations, export daily control and stock trajectories and plot stock trajectories :
+python "path"/tempo.py --dir_study "path_to_study" --area "name_area" --cvar float(CVar parameter, default 1) """
+
 class GainFunctionTempo:
     def __init__(self, net_load : NetLoad, max_control:int):
         
@@ -18,9 +21,7 @@ class GainFunctionTempo:
         week_start=week_index*7+2
         week_end=week_start+7
         
-
-        self.daily_net_load_for_week=self.daily_net_load[week_start:week_end,scenario] #consommation résiduelle par jour pour la semaine considérée
-
+        self.daily_net_load_for_week=self.daily_net_load[week_start:week_end,scenario]
 
         self.daily_net_load_for_week=(np.sort(self.daily_net_load_for_week[:self.max_control]))[::-1]
 
@@ -67,12 +68,10 @@ class BellmanValuesTempo:
                             best_value=total_value
                     self.bv[w,c,s]=best_value
 
-                #calcul de la CVar : si alpha = 1 calcul en espérance                
                 alpha = self.CVar
                 bellman_values = self.bv[w, c]
                 sorted_bv = np.sort(bellman_values)
                 cutoff_index = int((1-alpha) * len(sorted_bv))
-                # CVaR = moyenne des pires cas (sous le quantile 1 - alpha)
                 self.mean_bv[w, c] = np.mean(sorted_bv[cutoff_index:])
 
     def compute_usage_values(self) -> None:
@@ -361,10 +360,10 @@ class LaunchTempo :
             xaxis=dict(
                 title="Semaine",
                 showgrid=True,
-                gridcolor="rgba(100,100,100,0.2)",       # Couleur plus foncée
-                gridwidth=1,          # Épaisseur de la grille
-                dtick=1,                # Pas de 1 entre les ticks
-                tick0=1                 # Départ à 1
+                gridcolor="rgba(100,100,100,0.2)",      
+                gridwidth=1,          
+                dtick=1,               
+                tick0=1                
             ),
             yaxis=dict(
                 title="Stock de jours restants",
@@ -403,9 +402,9 @@ class LaunchTempo :
         trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,control_trajectories_red=trajectories_r.control_trajectories)
 
         self.export_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
-        self.plot_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
         self.export_daily_control_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
-
+        self.plot_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+        
 
 def main()->None:
     import argparse

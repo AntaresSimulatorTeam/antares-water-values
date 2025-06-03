@@ -195,60 +195,63 @@ class BellmanValuesHydro:
         plt.tight_layout()
         plt.show()
 
-    def plot_trajectories(self)-> None:
+    def plot_trajectories(self) -> None:
         fig = go.Figure()
+        weeks = list(range(1, self.nb_weeks + 2))
 
+        # Courbes guide (toujours visibles)
+        upper_percent = self.upper_rule_curve / self.reservoir_capacity * 100
+        fig.add_trace(go.Scatter(
+            x=weeks,
+            y=upper_percent,
+            mode='lines',
+            name='Upper rule curve',
+            line=dict(dash='dash', color='green'),
+            visible=True
+        ))
+
+        lower_percent = self.bottom_rule_curve / self.reservoir_capacity * 100
+        fig.add_trace(go.Scatter(
+            x=weeks,
+            y=lower_percent,
+            mode='lines',
+            name='Lower rule curve',
+            line=dict(dash='dash', color='red'),
+            visible=True
+        ))
+
+        # Trajectoires par scénario
         for s in self.scenarios:
             visible = True if s == 0 else False
             stock_percent = self.trajectories[s] / self.reservoir_capacity * 100
             fig.add_trace(go.Scatter(
-                x=list(range(self.nb_weeks+1)),
+                x=weeks,
                 y=stock_percent,
                 mode='lines+markers',
-                name=f'Scénario {s}',
+                name=f'MC {s + 1}',
                 visible=visible
             ))
 
-            # Courbe guide haute (ex: upper_rule_curve)
-            upper_percent = self.upper_rule_curve / self.reservoir_capacity * 100
-            fig.add_trace(go.Scatter(
-                x=list(range(self.nb_weeks + 1)),
-                y=upper_percent,
-                mode='lines',
-                name=f'Upper rule curve {s}',
-                line=dict(dash='dash', color='green'),
-                visible=visible,
-                showlegend=(s == 0)  # pour éviter répétition dans la légende
-            ))
-
-            # Courbe guide basse (ex: lower_rule_curve)
-            lower_percent = self.bottom_rule_curve / self.reservoir_capacity * 100
-            fig.add_trace(go.Scatter(
-                x=list(range(self.nb_weeks + 1)),
-                y=lower_percent,
-                mode='lines',
-                name=f'Lower rule curve {s}',
-                line=dict(dash='dash', color='red'),
-                visible=visible,
-                showlegend=(s == 0)
-            ))
-
-        n_traces_per_scenario = 3
+        # Configuration des boutons
+        n_scenarios = len(self.scenarios)
+        n_shared_guides = 2  # upper and lower rule curves
         buttons = []
+
         for s in self.scenarios:
-            visibility = [False] * (len(self.scenarios) * n_traces_per_scenario)
-            base = s * n_traces_per_scenario
-            visibility[base] = True       # stock
-            visibility[base + 1] = True   # upper
-            visibility[base + 2] = True   # lower
+            visibility = [True] * n_shared_guides + [False] * n_scenarios
+            visibility[n_shared_guides + s] = True  # afficher uniquement le scénario s
             buttons.append(dict(
-                label=f"Scénario {s}",
+                label=f"MC {s + 1}",
                 method="update",
-                args=[{"visible": visibility},
-                    {"title": f"Trajectoire du stock - Scénario {s}"}]
+                args=[
+                    {"visible": visibility},
+                    {"title.text": f"Trajectoire du stock - MC {s + 1}"}
+                ]
             ))
 
+        # Mise à jour du layout
         fig.update_layout(
+            font=dict(family="Cambria", size=14),
             updatemenus=[dict(
                 active=0,
                 buttons=buttons,
@@ -257,9 +260,24 @@ class BellmanValuesHydro:
                 y=1.15,
                 showactive=True
             )],
-            title="Trajectoire du stock - Scénario 0",
-            xaxis_title="Semaine",
-            yaxis_title="Stock (%)",
+            title=dict(text="Trajectoire du stock - MC 1", font=dict(family="Cambria", size=18)),
+            xaxis=dict(
+                title="Semaine",
+                showgrid=True,
+                gridcolor='lightgray',
+                gridwidth=1,
+                dtick=1,
+                zeroline=False
+            ),
+            yaxis=dict(
+                title="Stock (%)",
+                showgrid=True,
+                gridcolor='lightgray',
+                gridwidth=1,
+                tick0=0,
+                dtick=5,
+                zeroline=False
+            ),
             legend=dict(x=0, y=-0.2, orientation="h"),
             margin=dict(t=80)
         )
@@ -271,9 +289,9 @@ class BellmanValuesHydro:
     def export_controls(self) -> pd.DataFrame:
         data = []
 
-        for s in bv.scenarios:
-            for w in range(bv.nb_weeks):
-                u = bv.optimal_controls[s, w]
+        for s in self.scenarios:
+            for w in range(self.nb_weeks):
+                u = self.optimal_controls[s, w]
                 data.append({
                     "area": self.gain_function.name_area,
                     "u": u,
@@ -288,9 +306,9 @@ class BellmanValuesHydro:
     def export_trajectories(self) ->pd.DataFrame:
         data = []
 
-        for s in bv.scenarios:
-            for w in range(bv.nb_weeks):
-                hlevel = bv.trajectories[s,w]
+        for s in self.scenarios:
+            for w in range(self.nb_weeks):
+                hlevel =self.trajectories[s,w]
                 data.append({
                     "area": self.gain_function.name_area,
                     "hlevel": hlevel,
@@ -303,7 +321,7 @@ class BellmanValuesHydro:
     
 
 start=time.time()
-gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036", "fr")
+gain=GainFunctionHydro("/test_data/one_node_(1)", "area")
 bv=BellmanValuesHydro(gain)
 end=time.time()
 
@@ -312,8 +330,8 @@ print("Execution time: ", end-start)
 bv.plot_trajectories()
 
 # trajectories=bv.export_trajectories()
-# trajectories.to_csv("trajectories.csv", index=False)
+# trajectories.to_csv("C:/Users/brescianomat/Desktop/trajectories.csv", index=False)
 
 # constraint_values = bv.export_controls()
-# constraint_values.to_csv("constraint_values.csv", index=False)
+# constraint_values.to_csv("C:/Users/brescianomat/Desktop/constraint_values.csv", index=False)
 

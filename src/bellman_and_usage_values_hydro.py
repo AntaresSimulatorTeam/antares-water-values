@@ -7,6 +7,7 @@ import time
 import plotly.graph_objects as go
 from type_definition import Callable
 import pandas as pd
+import os
 
 
 rcParams['font.family'] = 'Cambria'
@@ -34,6 +35,7 @@ class BellmanValuesHydro:
         self.compute_bellman_values()
         self.compute_usage_values()
         self.compute_trajectories()
+        self.export_dir = self.make_unique_export_dir()
 
     def penalty(self,week_idx:int)->Callable:
         if week_idx==self.nb_weeks-1:
@@ -285,10 +287,22 @@ class BellmanValuesHydro:
         fig.show()
 
     # exports
+    def make_unique_export_dir(self) -> str:
+        base_path = os.path.join(self.gain_function.dir_study, "exports_hydro_trajectories")
+        if not os.path.exists(base_path):
+            os.makedirs(base_path)
+            return base_path
 
-    def export_controls(self) -> pd.DataFrame:
+        i = 1
+        while True:
+            new_path = f"{base_path}_{i}"
+            if not os.path.exists(new_path):
+                os.makedirs(new_path)
+                return new_path
+            i += 1
+
+    def export_controls(self,filename:str="controls.csv") -> None:
         data = []
-
         for s in self.scenarios:
             for w in range(self.nb_weeks):
                 u = self.optimal_controls[s, w]
@@ -301,9 +315,11 @@ class BellmanValuesHydro:
                 })
 
         df = pd.DataFrame(data)
-        return df
+        output_path = os.path.join(self.export_dir, filename)
+        df.to_csv(output_path,index=False)
+        print(f"Control trajectories export succeeded : {output_path}")
 
-    def export_trajectories(self) ->pd.DataFrame:
+    def export_trajectories(self,filename:str="trajectories.csv") ->None:
         data = []
 
         for s in self.scenarios:
@@ -317,17 +333,21 @@ class BellmanValuesHydro:
                     "sim": "u_0"
                 })
         df = pd.DataFrame(data)
-        return df
+        output_path = os.path.join(self.export_dir, filename)
+        df.to_csv(output_path,index=False)
+        print(f"Stock trajectories export succeeded : {output_path}")
     
 
 start=time.time()
-gain=GainFunctionHydro("/test_data/one_node_(1)", "area")
+gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036_copy", "fr")
 bv=BellmanValuesHydro(gain)
 end=time.time()
 
 print("Execution time: ", end-start)
 
 bv.plot_trajectories()
+bv.export_controls()
+bv.export_trajectories()
 
 # trajectories=bv.export_trajectories()
 # trajectories.to_csv("C:/Users/brescianomat/Desktop/trajectories.csv", index=False)

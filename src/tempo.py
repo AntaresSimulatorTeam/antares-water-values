@@ -120,11 +120,12 @@ class TrajectoriesTempo :
                         best_control=c
                         best_value=gain+future_value
                 if self.stock_trajectories_red is not None and best_control is not None:
+                    # interdit les stocks négatifs
                     if self.stock_trajectories[s,w-1]-best_control<self.stock_trajectories_red[s,w]:
                         best_control=self.stock_trajectories[s,w-1]-self.stock_trajectories_red[s,w]
-                    # if best_control<self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]:
-                    #     print(f"warning semaine {w+1} scnénario {s+1}")
-                    #     best_control=self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]
+                    # interdit les controles négatifs
+                    if best_control<self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]:
+                        best_control=self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]
 
                 if best_control is not None:
                     self.stock_trajectories[s,w]=self.stock_trajectories[s,w-1]-best_control
@@ -157,21 +158,6 @@ class TrajectoriesTempo :
     def stock_trajectory_for_scenario_white(self, scenario: int) -> np.ndarray:
         return self.stock_trajectories_white[scenario] if self.stock_trajectories_white[scenario].shape[0]>0 else np.array([])
 
-# dir_study="C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036_copy"
-# area='fr'
-
-# net_load=NetLoad(dir_study=dir_study,name_area=area)
-
-# gain_function_tempo_r=GainFunctionTempo(net_load=net_load,max_control=5)
-# gain_function_tempo_wr=GainFunctionTempo(net_load=net_load,max_control=6)
-
-# bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,start_week=18,end_week=38,CVar=1)
-# bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,start_week=9,end_week=60,CVar=1)
-
-# trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
-# trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,stock_trajectories_red=trajectories_r.stock_trajectories)
-
-# print(trajectories_white_and_red.stock_trajectories[119,:])
 
 class LaunchTempo :
     def __init__(self, dir_study: str, area: str, CVar: float):
@@ -368,8 +354,8 @@ class LaunchTempo :
         gain_function_tempo_r=GainFunctionTempo(net_load=net_load,max_control=5)
         gain_function_tempo_wr=GainFunctionTempo(net_load=net_load,max_control=6)
 
-        bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,start_week=18,end_week=38,CVar=1)
-        bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,start_week=9,end_week=60,CVar=1)
+        bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,start_week=18,end_week=38,CVar=self.CVar)
+        bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,start_week=9,end_week=60,CVar=self.CVar)
 
         trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
         trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,stock_trajectories_red=trajectories_r.stock_trajectories)

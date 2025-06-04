@@ -18,8 +18,8 @@ class GainFunctionHydro:
         self.efficiency=self.reservoir.efficiency
 
         self.nb_weeks=self.reservoir.inflow.shape[0]
-        self.scenarios=range(self.net_load.shape[1])
-        # self.scenarios=range(10)
+        # self.scenarios=range(self.net_load.shape[1])
+        self.scenarios=range(10)
 
     def gain_function(self, week_index: int, scenario: int, alpha: float) -> tuple[interp1d, np.ndarray]:
         net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
@@ -146,6 +146,6 @@ class GainFunctionHydro:
         plt.show()
 
 
-# gain=GainFunctionHydro("/test_data/one_node(1)", "area")
+gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036_copy", "fr")
 # gain.plot_gain_function(0,0,2)
-# gain.plot_load(0,0,2,3)
+gain.plot_load(0,0,2,10)

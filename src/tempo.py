@@ -4,6 +4,8 @@ from typing import Optional
 import plotly.graph_objects as go
 import pandas as pd
 import os
+import argparse
+
 
 """To launch the calculations, export daily control and stock trajectories and plot stock trajectories :
 python "path"/tempo.py --dir_study "path_to_study" --area "name_area" --cvar float(CVar parameter, default 1) """
@@ -33,18 +35,17 @@ class BellmanValuesTempo:
     
     def __init__(self, gain_function : GainFunctionTempo,
                  capacity:int, 
-                 nb_week:int, 
                  start_week:int,
+                 end_week:int,
                  CVar:float):
         
         self.max_control=gain_function.max_control
         self.gain_function=gain_function
-        self.nb_week=nb_week
         self.start_week=start_week
+        self.end_week=end_week
 
         self.capacity=capacity
         self.nb_scenarios=self.gain_function.nb_scenarios
-        self.end_week=self.start_week+nb_week
         self.CVar=CVar
 
         self.bv=np.zeros((62,self.capacity+1,self.nb_scenarios))
@@ -52,10 +53,10 @@ class BellmanValuesTempo:
         self.usage_values=np.zeros((62,self.capacity))
         
         self.compute_bellman_values()
-        self.compute_usage_values()
+        # self.compute_usage_values()
 
     def compute_bellman_values(self) -> None:
-        for w in reversed(range(self.start_week,self.end_week-1)):
+        for w in reversed(range(self.start_week,self.end_week+1)):
             for c in range(self.capacity+1):
                 for s in range(self.nb_scenarios):
                     best_value=0
@@ -75,7 +76,7 @@ class BellmanValuesTempo:
                 self.mean_bv[w, c] = np.mean(sorted_bv[cutoff_index:])
 
     def compute_usage_values(self) -> None:
-        for w in range(self.start_week,self.end_week):
+        for w in range(self.start_week,self.end_week+1):
             for c in range(1,self.capacity+1):
                 self.usage_values[w,c-1]=self.mean_bv[w,c]-self.mean_bv[w,c-1]
     
@@ -83,103 +84,66 @@ class BellmanValuesTempo:
 class TrajectoriesTempo :
     def __init__(self,
                 bv:BellmanValuesTempo,
-                control_trajectories_red:Optional[np.ndarray]=None):
+                stock_trajectories_red:Optional[np.ndarray]=None):
         
         self.bv=bv
         self.usage_values=bv.usage_values
         self.net_load=self.bv.gain_function.net_load
         self.capacity=self.bv.capacity
-        self.nb_week=self.bv.nb_week
         self.nb_scenarios=self.bv.nb_scenarios
         self.start_week=self.bv.start_week
         self.end_week=self.bv.end_week
         self.max_control=self.bv.max_control
 
-        self.control_trajectories=np.zeros((self.nb_scenarios,self.nb_week-1)) 
-        self.stock_trajectories=np.zeros((self.nb_scenarios,self.nb_week))
+        self.control_trajectories=np.zeros((self.nb_scenarios,61)) 
+        self.stock_trajectories=np.zeros((self.nb_scenarios,61))
         
-        self.control_trajectories_red=control_trajectories_red
+        self.stock_trajectories_red=stock_trajectories_red
 
-        self.compute_control_trajectories()
-        self.compute_stock_trajectories()
-
-        self.compute_control_trajectories_white()
-        self.compute_stock_trajectories_white()
+        self.compute_trajectories()
+        self.compute_trajectories_white()
     
-    def compute_control_trajectories(self)-> None:
 
+    def compute_trajectories(self) -> None:
         for s in range(self.nb_scenarios):
-            remaining_capacity=self.capacity
-            for w in range(self.start_week+1,self.end_week):
-                if remaining_capacity==0:
-                    self.control_trajectories[s,w-self.start_week-1]=0
-                    continue
-                
-                thresholds=self.usage_values[w,:remaining_capacity]
-                week_start=(w-1)*7+2
-                week_end=week_start+7
-                week_days=self.net_load[week_start*24:week_end*24,s].reshape(7,24).sum(axis=1)
-                sorted_days=np.argsort(week_days[:self.max_control])[::-1]
-                sorted_load=week_days[sorted_days]
+            self.stock_trajectories[s,:self.start_week]=self.capacity
+            for w in range(self.start_week,self.end_week+1):
+                if self.stock_trajectories[s,w-1]==0:
+                    self.stock_trajectories[s,w:]=0
+                    break
+                best_value=0
+                best_control=None
+                for c in range(min(int(self.max_control),int(self.stock_trajectories[s,w-1]))+1):
+                    gain = self.bv.gain_function.gain_for_week_control_and_scenario(w,c,s)
+                    future_value=self.bv.mean_bv[w+1,int(self.stock_trajectories[s,w-1])-c]
+                    if gain+future_value>best_value:
+                        best_control=c
+                        best_value=gain+future_value
+                if self.stock_trajectories_red is not None and best_control is not None:
+                    if self.stock_trajectories[s,w-1]-best_control<self.stock_trajectories_red[s,w]:
+                        best_control=self.stock_trajectories[s,w-1]-self.stock_trajectories_red[s,w]
+                    # if best_control<self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]:
+                    #     print(f"warning semaine {w+1} scnénario {s+1}")
+                    #     best_control=self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]
 
-                control = 0
-                for d in range(min(self.max_control, remaining_capacity)):
-                    idx = remaining_capacity - 1 - d
-                    if sorted_load[d] < thresholds[idx]: 
-                        break       
-                    control += 1
+                if best_control is not None:
+                    self.stock_trajectories[s,w]=self.stock_trajectories[s,w-1]-best_control
+                    self.control_trajectories[s,w]=best_control
+                else:
+                    self.stock_trajectories[s,w]=None
+                    self.control_trajectories[s,w]=None
 
-                if self.control_trajectories_red is not None:
-                    if w <= 18:
-                        if remaining_capacity - control < 22:
-                            control = int(max(0, remaining_capacity - 22))
 
-                    elif 19 <= w < 40:
-                        red_weeks_idx = w - 18
-                        control_r = self.control_trajectories_red[s, red_weeks_idx-1]
-                        control = int(max(control, control_r))
-                        control = int(min(control, remaining_capacity))
-
-                self.control_trajectories[s, w - self.start_week -1] = control
-                remaining_capacity -= control
-                remaining_capacity=int(max(remaining_capacity,0))
-        
-    
-    def compute_control_trajectories_white(self)->None:
-        if self.control_trajectories_red is not None:
-            self.control_trajectories_white=np.copy(self.control_trajectories)
-            for s in range(self.nb_scenarios):
-                for w in range(9,30):
-                    index=w
-                    red_index=w-9
-                    self.control_trajectories_white[s,index]-=self.control_trajectories_red[s,red_index]
+    def compute_trajectories_white(self)->None:
+        if self.stock_trajectories_red is not None:
+            self.stock_trajectories_white=self.stock_trajectories-self.stock_trajectories_red
         else:
-            self.control_trajectories_white=np.array([])
-
-    def compute_stock_trajectories(self) -> None:
-        for s in range(self.nb_scenarios):
-            self.stock_trajectories[s,0]=self.capacity
-            remaining_capacity=self.capacity
-            for w in range(self.start_week+1,self.end_week):
-                self.stock_trajectories[s,w-self.start_week]=remaining_capacity-self.control_trajectories[s,w-self.start_week-1]
-                if self.stock_trajectories[s,w-self.start_week]<0:
-                    print(f"WARNING Stock Négatif : MC {s+1}, Semaine {w+1}")
-                remaining_capacity-=self.control_trajectories[s,w-self.start_week-1]
-            
-    def compute_stock_trajectories_white(self)-> None:
-        if self.control_trajectories_red is not None:
-            self.stock_trajectories_white=np.zeros_like(self.stock_trajectories)
+            self.stock_trajectories_white=np.array([[]])
+        self.control_trajectories_white=np.zeros((self.nb_scenarios,61))
+        if self.stock_trajectories_red is not None:
             for s in range(self.nb_scenarios):
-                self.stock_trajectories_white[s,0]=self.capacity
-                self.stock_trajectories_white[s,:self.start_week]=self.stock_trajectories[s,:self.start_week]-np.full(self.start_week,22)
-                for w in range(self.start_week+1,self.end_week):
-                    index=w-self.start_week
-                    control_w=self.control_trajectories_white[s,index-1]
-                    self.stock_trajectories_white[s,index]=self.stock_trajectories_white[s,index-1]-control_w
-                    if self.stock_trajectories_white[s,w-self.start_week]<0:
-                        print(f"WARNING Stock Tempo Blancs Négatif : MC {s+1}, Semaine {w+1}")
-        else:
-            self.stock_trajectories_white=np.array([])
+                for w in range(1,61):
+                    self.control_trajectories_white[s,w]=self.stock_trajectories_white[s,w-1]-self.stock_trajectories_white[s,w]
 
     def control_trajectory_for_scenario(self, scenario:int)-> np.ndarray:
         return self.control_trajectories[scenario]
@@ -193,6 +157,21 @@ class TrajectoriesTempo :
     def stock_trajectory_for_scenario_white(self, scenario: int) -> np.ndarray:
         return self.stock_trajectories_white[scenario] if self.stock_trajectories_white[scenario].shape[0]>0 else np.array([])
 
+# dir_study="C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036_copy"
+# area='fr'
+
+# net_load=NetLoad(dir_study=dir_study,name_area=area)
+
+# gain_function_tempo_r=GainFunctionTempo(net_load=net_load,max_control=5)
+# gain_function_tempo_wr=GainFunctionTempo(net_load=net_load,max_control=6)
+
+# bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,start_week=18,end_week=38,CVar=1)
+# bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,start_week=9,end_week=60,CVar=1)
+
+# trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
+# trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,stock_trajectories_red=trajectories_r.stock_trajectories)
+
+# print(trajectories_white_and_red.stock_trajectories[119,:])
 
 class LaunchTempo :
     def __init__(self, dir_study: str, area: str, CVar: float):
@@ -221,18 +200,16 @@ class LaunchTempo :
         data = []
 
         nb_scenarios = trajectories_wr.nb_scenarios
-        nb_week = trajectories_wr.nb_week
 
         for s in range(nb_scenarios):
             stock_r = trajectories_r.stock_trajectory_for_scenario(s)
             stock_w = trajectories_wr.stock_trajectory_for_scenario_white(s)
-            stock_r_shifted = [None] * 9 + list(stock_r[:]) + [None] * 22
 
-            for week in range(nb_week):
+            for week in range(61):
                 data.append({
                     "MC": s + 1,
                     "semaine": week + 1,
-                    "jours_rouges_restants": stock_r_shifted[week],
+                    "jours_rouges_restants": stock_r[week],
                     "jours_blancs_restants": stock_w[week]
                 })
 
@@ -246,26 +223,24 @@ class LaunchTempo :
                     filename: str = "daily_control_trajectories.csv") -> None:
         data = []
         nb_scenarios = trajectories_wr.nb_scenarios
-        nb_week = trajectories_wr.nb_week
         net_load = trajectories_wr.bv.gain_function.net_load
 
         for s in range(nb_scenarios):
             tirage_r = trajectories_r.control_trajectory_for_scenario(s)
-            tirage_r_shifted = [None] * 9 + list(tirage_r[:]) + [None] * 22
             tirage_w = trajectories_wr.control_trajectory_for_scenario_white(s)
 
-            for week in range(nb_week - 1):
-                week_start = (week + 9) * 7 + 2
+            for week in range(61):
+                week_start = week* 7 + 2
                 week_end = week_start + 7
                 week_days = net_load[week_start * 24: week_end * 24, s].reshape(7, 24).sum(axis=1)
                 week_days_r = week_days[:5]
                 week_days_w = week_days[:6]
-
+ 
                 sorted_days_r = np.argsort(week_days_r)[::-1]
                 sorted_days_w = np.argsort(week_days_w)[::-1]
 
-                r = int(tirage_r_shifted[week]) if tirage_r_shifted[week] is not None else None
-                w = int(tirage_w[week])
+                r = int(tirage_r[week]) if tirage_r[week] is not None else None
+                w = int(tirage_w[week]) if tirage_w[week] is not None else None
 
                 used_days = set()
 
@@ -283,7 +258,7 @@ class LaunchTempo :
                         })
 
                 for d in sorted_days_w:
-                    if w > 0 and d not in used_days:
+                    if w is not None and w> 0 and d not in used_days:
                         color = "white"
                         used_days.add(d)
                         w -= 1
@@ -302,7 +277,7 @@ class LaunchTempo :
 
     def plot_stock_trajectories(self, trajectories_r: TrajectoriesTempo, trajectories_wr: TrajectoriesTempo) -> None:
         nb_scenarios = trajectories_wr.nb_scenarios
-        weeks = np.arange(1, trajectories_wr.nb_week + 1)
+        weeks = np.arange(1, 62)
 
         fig = go.Figure()
 
@@ -310,12 +285,10 @@ class LaunchTempo :
             stock_r = trajectories_r.stock_trajectory_for_scenario(s)
             stock_w = trajectories_wr.stock_trajectory_for_scenario_white(s)
 
-            stock_r_shifted = [None] * 9 + list(stock_r[:])
-            full_weeks = np.arange(1, len(stock_r_shifted) + 1)
 
             fig.add_trace(go.Scatter(
-                x=full_weeks,
-                y=stock_r_shifted,
+                x=weeks,
+                y=stock_r,
                 name="Stock jours rouges",
                 visible=(s == 0),
                 line=dict(color='red'),
@@ -395,11 +368,11 @@ class LaunchTempo :
         gain_function_tempo_r=GainFunctionTempo(net_load=net_load,max_control=5)
         gain_function_tempo_wr=GainFunctionTempo(net_load=net_load,max_control=6)
 
-        bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,nb_week=22,start_week=18,CVar=self.CVar)
-        bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,nb_week=53,start_week=9,CVar=self.CVar)
+        bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,start_week=18,end_week=38,CVar=1)
+        bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,start_week=9,end_week=60,CVar=1)
 
         trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
-        trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,control_trajectories_red=trajectories_r.control_trajectories)
+        trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,stock_trajectories_red=trajectories_r.stock_trajectories)
 
         self.export_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
         self.export_daily_control_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
@@ -407,7 +380,6 @@ class LaunchTempo :
         
 
 def main()->None:
-    import argparse
 
     parser = argparse.ArgumentParser(description="Lancer la génération des trajectoires Tempo.")
     parser.add_argument("--dir_study", type=str, required=True, help="Répertoire d'entrée contenant les données.")
@@ -422,3 +394,4 @@ def main()->None:
 
 if __name__ == "__main__":
     main()
+

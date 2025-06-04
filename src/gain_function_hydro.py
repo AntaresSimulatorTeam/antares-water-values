@@ -21,7 +21,7 @@ class GainFunctionHydro:
         # self.scenarios=range(self.net_load.shape[1])
         self.scenarios=range(10)
 
-    def gain_function(self, week_index: int, scenario: int, alpha: float) -> tuple[interp1d, np.ndarray]:
+    def gain_function(self, week_index: int, scenario: int, alpha: float) -> interp1d:
         net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
         max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
         max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
@@ -66,11 +66,11 @@ class GainFunctionHydro:
             control_list.append(control)
             gain_list.append(gain)
 
-        return interp1d(control_list, gain_list, fill_value="extrapolate"), np.array(gain_list)
+        return interp1d(control_list, gain_list, fill_value="extrapolate")
 
 
     def compute_gain_functions(self,alpha:float)->np.ndarray:
-        gain_functions=np.array([[self.gain_function(w,s,alpha)[0] for s in self.scenarios] for w in range(self.nb_weeks)])
+        gain_functions=np.array([[self.gain_function(w,s,alpha) for s in self.scenarios] for w in range(self.nb_weeks)])
         return gain_functions
     
    
@@ -78,8 +78,8 @@ class GainFunctionHydro:
 
     def plot_gain_function(self,week_index:int,scenario:int,alpha:float)->None:
         gain_func = self.gain_function(week_index, scenario, alpha)
-        control_values = gain_func[0].x
-        gain_values = gain_func[0](control_values)
+        control_values = gain_func.x
+        gain_values = gain_func(control_values)
         plt.figure(figsize=(8, 5))
         plt.plot(control_values, gain_values, marker='o')
         plt.xlabel("Contrôle hebdomadaire [MWh]")
@@ -146,6 +146,6 @@ class GainFunctionHydro:
         plt.show()
 
 
-gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036_copy", "fr")
+# gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036_copy", "fr")
 # gain.plot_gain_function(0,0,2)
-gain.plot_load(0,0,2,10)
+# gain.plot_load(0,0,2,4)

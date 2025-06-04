@@ -33,7 +33,7 @@ class BellmanValuesHydro:
         self.mean_bv=np.zeros((self.nb_weeks+1,51))
 
         self.compute_bellman_values()
-        self.compute_usage_values()
+        # self.compute_usage_values()
         self.compute_trajectories()
         self.export_dir = self.make_unique_export_dir()
 
@@ -104,19 +104,18 @@ class BellmanValuesHydro:
 
     def compute_usage_values(self) -> None:
         self.usage_values=np.zeros((self.nb_weeks+1,50))
-        for w in range(self.nb_weeks+1):
+        for w in range(self.nb_weeks):
             for c in range(2,102,2):
                 self.usage_values[w,(c//2)-1]=self.mean_bv[w,c//2]-self.mean_bv[w,(c//2)-1]
 
     def compute_trajectories(self) -> None:
-        self.trajectories = np.zeros((len(self.scenarios),self.nb_weeks+1))
+        self.trajectories = np.zeros((len(self.scenarios),self.nb_weeks))
         self.optimal_controls = np.zeros((len(self.scenarios),self.nb_weeks))
-        self.trajectories[:,0] = self.reservoir.initial_level
         
         for s in self.scenarios:
+            previous_stock=self.reservoir.initial_level
             for w in range(self.nb_weeks):
                 penalty_function=self.penalty(w)
-                current_stock = self.trajectories[s,w]
                 inflows_for_week = self.inflow[w,s]
                 gain_function = self.gain_functions[w,s]
                 controls = gain_function.x
@@ -128,52 +127,53 @@ class BellmanValuesHydro:
                     )
 
                 best_value = np.inf
-                best_next_stock = None
+                best_new_stock = None
 
                 for control in controls:
-                    control = min(control,current_stock+inflows_for_week)
-                    next_stock = current_stock - control+inflows_for_week
+                    control = min(control,previous_stock+inflows_for_week)
+                    new_stock = previous_stock - control+inflows_for_week
                     gain = gain_function(control)
-                    future_value = future_bellman_function(next_stock)
-                    penalty=penalty_function(next_stock)
+                    future_value = future_bellman_function(new_stock)
+                    penalty=penalty_function(new_stock)
                     total_value = gain + future_value + penalty
                     if total_value < best_value:
                         best_value = total_value
-                        best_next_stock = next_stock
+                        best_new_stock = new_stock
                         optimal_control=control
                        
                 for c_new in range(0,101,2):
                     max_week_energy=np.sum(self.gain_function.max_daily_generating[w * 7:(w + 1) * 7])
-                    week_energy_turbine=current_stock-c_new/100 * self.reservoir_capacity
+                    week_energy_turbine=previous_stock-c_new/100 * self.reservoir_capacity
                     if week_energy_turbine<0 or week_energy_turbine>max_week_energy:
                         continue
-                    control=min(current_stock-c_new/100 * self.reservoir_capacity ,current_stock+inflows_for_week)
-                    next_stock=current_stock-control+inflows_for_week
+                    control=min(previous_stock-c_new/100 * self.reservoir_capacity ,previous_stock+inflows_for_week)
+                    new_stock=previous_stock-control+inflows_for_week
                     gain = gain_function(control)
-                    future_value = future_bellman_function(next_stock)
-                    penalty=penalty_function(next_stock)
+                    future_value = future_bellman_function(new_stock)
+                    penalty=penalty_function(new_stock)
                     total_value = gain + future_value + penalty
                     if total_value < best_value:
                         best_value = total_value
-                        best_next_stock = next_stock
+                        best_new_stock = new_stock
                         optimal_control=control
                        
 
-                if best_next_stock is not None:
-                    self.trajectories[s,w+1] =best_next_stock
+                if best_new_stock is not None:
+                    self.trajectories[s,w] =best_new_stock
                     self.optimal_controls[s,w] = optimal_control
                     lower_bound=self.reservoir.bottom_rule_curve[w]
                     upper_bound=self.reservoir.upper_rule_curve[w]
-                    if not (lower_bound <= best_next_stock <= upper_bound):
+                    if not (lower_bound <= best_new_stock <= upper_bound):
                         print(
                             f"⚠️ Stock hors courbes guides - Semaine {w+1}, scénario {s+1} : "
-                            f"{best_next_stock:.2f} ∉ [{lower_bound:.2f}, {upper_bound:.2f}]"
+                            f"{best_new_stock:.2f} ∉ [{lower_bound:.2f}, {upper_bound:.2f}]"
                         )
                 else:
-                    self.trajectories[s,w+1]=None
+                    self.trajectories[s,w]=None
                     self.optimal_controls[s,w]=None
                 
-        self.trajectories=self.trajectories[:,1:]
+                previous_stock=best_new_stock
+                
 
     # affichages
 
@@ -186,7 +186,7 @@ class BellmanValuesHydro:
             plt.plot(
                 stock_levels, 
                 usage_values[w],
-                label=f"S {w}"
+                label=f"S {w+1}"
             )
 
         plt.xlabel('Stock (%)')
@@ -339,19 +339,13 @@ class BellmanValuesHydro:
     
 
 start=time.time()
-gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_A-Reference_2036_copy", "fr")
+gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Scripts Python/antares-water-values/test_data/one_node_(1)", "area")
 bv=BellmanValuesHydro(gain)
 end=time.time()
 
 print("Execution time: ", end-start)
 
-bv.plot_trajectories()
-bv.export_controls()
-bv.export_trajectories()
 
-# trajectories=bv.export_trajectories()
-# trajectories.to_csv("C:/Users/brescianomat/Desktop/trajectories.csv", index=False)
-
-# constraint_values = bv.export_controls()
-# constraint_values.to_csv("C:/Users/brescianomat/Desktop/constraint_values.csv", index=False)
-
+# bv.plot_trajectories()
+# bv.export_controls()
+# bv.export_trajectories()

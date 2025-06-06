@@ -273,17 +273,14 @@ class LaunchTempo :
         df.to_csv(output_path, index=False)
         print(f"Daily control trajectories export succeeded : {output_path}")
 
-
     def plot_stock_trajectories(self, trajectories_r: TrajectoriesTempo, trajectories_wr: TrajectoriesTempo) -> None:
         nb_scenarios = trajectories_wr.nb_scenarios
         weeks = np.arange(1, 62)
 
         fig = go.Figure()
 
-        # Palette arc-en-ciel vives (qualitative, adaptées à la différenciation)
         color_palette = px.colors.qualitative.Bold
 
-        # --- Traces fixes MC x : rouge et blanc en couleurs fixes ---
         for s in range(nb_scenarios):
             stock_r = trajectories_r.stock_trajectory_for_scenario(s)
             stock_w = trajectories_wr.stock_trajectory_for_scenario_white(s)
@@ -320,7 +317,6 @@ class LaunchTempo :
                 )
             ))
 
-        # --- Traces all MC rouges : couleurs différentes (arc en ciel) ---
         for s in range(nb_scenarios):
             stock_r = trajectories_r.stock_trajectory_for_scenario(s)
             color = color_palette[s % len(color_palette)]
@@ -340,7 +336,6 @@ class LaunchTempo :
                 )
             ))
 
-        # --- Traces all MC blancs : couleurs différentes (arc en ciel) ---
         for s in range(nb_scenarios):
             stock_w = trajectories_wr.stock_trajectory_for_scenario_white(s)
             color = color_palette[s % len(color_palette)]
@@ -361,12 +356,10 @@ class LaunchTempo :
             ))
 
         buttons = []
-
-        # Boutons MC x (2 courbes : rouge et blanc en couleurs fixes)
         for s in range(nb_scenarios):
             visibility = [False] * (4 * nb_scenarios)
-            visibility[2 * s] = True       # rouge fixe MC s
-            visibility[2 * s + 1] = True   # blanc fixe MC s
+            visibility[2 * s] = True
+            visibility[2 * s + 1] = True
             buttons.append(dict(
                 label=f"MC {s + 1}",
                 method="update",
@@ -376,7 +369,6 @@ class LaunchTempo :
                 ]
             ))
 
-        # Bouton all MC rouges (toutes courbes rouges aux couleurs arc-en-ciel)
         visibility_all_rouge = [False] * (4 * nb_scenarios)
         for s in range(nb_scenarios):
             visibility_all_rouge[2 * nb_scenarios + s] = True
@@ -389,7 +381,6 @@ class LaunchTempo :
             ]
         ))
 
-        # Bouton all MC blancs (toutes courbes blanches aux couleurs arc-en-ciel)
         visibility_all_blanc = [False] * (4 * nb_scenarios)
         for s in range(nb_scenarios):
             visibility_all_blanc[3 * nb_scenarios + s] = True
@@ -432,7 +423,7 @@ class LaunchTempo :
                 family="Cambria",
                 size=14
             ),
-            legend=dict(visible=False),  # Toujours pas de légende affichée
+            legend=dict(visible=False),
             margin=dict(t=100, b=120)
         )
 

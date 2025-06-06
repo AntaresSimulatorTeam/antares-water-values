@@ -2,7 +2,9 @@ from read_antares_data import NetLoad
 import numpy as np
 from typing import Optional
 import plotly.graph_objects as go
+import plotly.express as px
 import pandas as pd
+import time
 from type_definition import Callable
 from scipy.interpolate import interp1d
 import os
@@ -130,10 +132,10 @@ class TrajectoriesTempo :
                         best_control=c
                         best_value=total_value
                 if self.stock_trajectories_red is not None and best_control is not None:
-                    # interdit les stocks négatifs
+                    # interdit les stocks négatifs pour les stocks blancs
                     if self.stock_trajectories[s,w-1]-best_control<self.stock_trajectories_red[s,w]:
                         best_control=self.stock_trajectories[s,w-1]-self.stock_trajectories_red[s,w]
-                    # interdit les controles négatifs
+                    # interdit les controles négatifs pour les stocks blancs
                     if best_control<self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]:
                         best_control=self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]
 
@@ -271,42 +273,100 @@ class LaunchTempo :
         df.to_csv(output_path, index=False)
         print(f"Daily control trajectories export succeeded : {output_path}")
 
+
     def plot_stock_trajectories(self, trajectories_r: TrajectoriesTempo, trajectories_wr: TrajectoriesTempo) -> None:
         nb_scenarios = trajectories_wr.nb_scenarios
         weeks = np.arange(1, 62)
 
         fig = go.Figure()
 
+        # Palette arc-en-ciel vives (qualitative, adaptées à la différenciation)
+        color_palette = px.colors.qualitative.Bold
+
+        # --- Traces fixes MC x : rouge et blanc en couleurs fixes ---
         for s in range(nb_scenarios):
             stock_r = trajectories_r.stock_trajectory_for_scenario(s)
             stock_w = trajectories_wr.stock_trajectory_for_scenario_white(s)
 
-
             fig.add_trace(go.Scatter(
                 x=weeks,
                 y=stock_r,
-                name="Stock jours rouges",
+                name=f"Stock jours rouges MC {s + 1}",
                 visible=(s == 0),
                 line=dict(color='red'),
-                legendgroup="tempo",
-                showlegend=True
+                showlegend=False,
+                hovertemplate=(
+                    "Semaine %{x}<br>" +
+                    "Stock: %{y}<br>" +
+                    f"MC {s + 1}<br>" +
+                    "rouge<br>" +
+                    "<extra></extra>"
+                )
             ))
 
             fig.add_trace(go.Scatter(
                 x=weeks,
                 y=stock_w,
-                name="Stock jours blancs",
+                name=f"Stock jours blancs MC {s + 1}",
                 visible=(s == 0),
                 line=dict(color='green'),
-                legendgroup="tempo",
-                showlegend=True
+                showlegend=False,
+                hovertemplate=(
+                    "Semaine %{x}<br>" +
+                    "Stock: %{y}<br>" +
+                    f"MC {s + 1}<br>" +
+                    "blanc<br>" +
+                    "<extra></extra>"
+                )
+            ))
+
+        # --- Traces all MC rouges : couleurs différentes (arc en ciel) ---
+        for s in range(nb_scenarios):
+            stock_r = trajectories_r.stock_trajectory_for_scenario(s)
+            color = color_palette[s % len(color_palette)]
+            fig.add_trace(go.Scatter(
+                x=weeks,
+                y=stock_r,
+                name=f"All MC rouges {s + 1}",
+                visible=False,
+                line=dict(color=color),
+                showlegend=False,
+                hovertemplate=(
+                    "Semaine %{x}<br>" +
+                    "Stock: %{y}<br>" +
+                    f"MC {s + 1}<br>" +
+                    "rouge<br>" +
+                    "<extra></extra>"
+                )
+            ))
+
+        # --- Traces all MC blancs : couleurs différentes (arc en ciel) ---
+        for s in range(nb_scenarios):
+            stock_w = trajectories_wr.stock_trajectory_for_scenario_white(s)
+            color = color_palette[s % len(color_palette)]
+            fig.add_trace(go.Scatter(
+                x=weeks,
+                y=stock_w,
+                name=f"All MC blancs {s + 1}",
+                visible=False,
+                line=dict(color=color),
+                showlegend=False,
+                hovertemplate=(
+                    "Semaine %{x}<br>" +
+                    "Stock: %{y}<br>" +
+                    f"MC {s + 1}<br>" +
+                    "blanc<br>" +
+                    "<extra></extra>"
+                )
             ))
 
         buttons = []
+
+        # Boutons MC x (2 courbes : rouge et blanc en couleurs fixes)
         for s in range(nb_scenarios):
-            visibility = [False] * (2 * nb_scenarios)
-            visibility[2 * s] = True
-            visibility[2 * s + 1] = True
+            visibility = [False] * (4 * nb_scenarios)
+            visibility[2 * s] = True       # rouge fixe MC s
+            visibility[2 * s + 1] = True   # blanc fixe MC s
             buttons.append(dict(
                 label=f"MC {s + 1}",
                 method="update",
@@ -315,6 +375,32 @@ class LaunchTempo :
                     {"title.text": f"Stocks des jours Tempo - MC {s + 1}"}
                 ]
             ))
+
+        # Bouton all MC rouges (toutes courbes rouges aux couleurs arc-en-ciel)
+        visibility_all_rouge = [False] * (4 * nb_scenarios)
+        for s in range(nb_scenarios):
+            visibility_all_rouge[2 * nb_scenarios + s] = True
+        buttons.append(dict(
+            label="all MC rouges",
+            method="update",
+            args=[
+                {"visible": visibility_all_rouge},
+                {"title.text": "Stocks des jours rouges - All MC"}
+            ]
+        ))
+
+        # Bouton all MC blancs (toutes courbes blanches aux couleurs arc-en-ciel)
+        visibility_all_blanc = [False] * (4 * nb_scenarios)
+        for s in range(nb_scenarios):
+            visibility_all_blanc[3 * nb_scenarios + s] = True
+        buttons.append(dict(
+            label="all MC blancs",
+            method="update",
+            args=[
+                {"visible": visibility_all_blanc},
+                {"title.text": "Stocks des jours blancs - All MC"}
+            ]
+        ))
 
         fig.update_layout(
             updatemenus=[dict(
@@ -329,10 +415,10 @@ class LaunchTempo :
             xaxis=dict(
                 title="Semaine",
                 showgrid=True,
-                gridcolor="rgba(100,100,100,0.2)",      
-                gridwidth=1,          
-                dtick=1,               
-                tick0=1                
+                gridcolor="rgba(100,100,100,0.2)",
+                gridwidth=1,
+                dtick=1,
+                tick0=1
             ),
             yaxis=dict(
                 title="Stock de jours restants",
@@ -346,19 +432,19 @@ class LaunchTempo :
                 family="Cambria",
                 size=14
             ),
-            legend=dict(
-                orientation="h",
-                yanchor="top",
-                y=-0.2,
-                xanchor="center",
-                x=0.5
-            ),
+            legend=dict(visible=False),  # Toujours pas de légende affichée
             margin=dict(t=100, b=120)
         )
+
         fig.show()
 
-    def run(self)->None:
+        html_path = os.path.join(self.export_dir, "trajectories_plot.html")
+        fig.write_html(html_path)
+        print(f"Interactive plot saved at: {html_path}")
 
+
+    def run(self)->None:
+        start=time.time()    
         net_load=NetLoad(dir_study=self.dir_study,name_area=self.area)
 
         gain_function_tempo_r=GainFunctionTempo(net_load=net_load,max_control=5)
@@ -369,7 +455,8 @@ class LaunchTempo :
 
         trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
         trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,stock_trajectories_red=trajectories_r.stock_trajectories)
-
+        end=time.time()
+        print("Execution time: ", end-start)
         self.export_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
         self.export_daily_control_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
         self.plot_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)

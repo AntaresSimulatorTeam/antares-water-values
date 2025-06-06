@@ -3,6 +3,8 @@ import numpy as np
 from typing import Optional
 import plotly.graph_objects as go
 import pandas as pd
+from type_definition import Callable
+from scipy.interpolate import interp1d
 import os
 import argparse
 
@@ -55,16 +57,22 @@ class BellmanValuesTempo:
         self.compute_bellman_values()
         # self.compute_usage_values()
 
+    def penalty(self)->Callable:
+        penalty=interp1d([-1,0,self.capacity,self.capacity+1],
+                         [-1e9,0,0,-1e9], kind='linear',fill_value='extrapolate')
+        # penalty=lambda x:0
+        return penalty
+
     def compute_bellman_values(self) -> None:
         for w in reversed(range(self.start_week,self.end_week+1)):
             for c in range(self.capacity+1):
                 for s in range(self.nb_scenarios):
                     best_value=0
-                    for control in range(min(self.max_control,c)+1):
+                    for control in range(self.max_control+1):
                         gain = self.gain_function.gain_for_week_control_and_scenario(w,control,s)
-                        
+                        penalty=self.penalty()
                         future_value=self.mean_bv[w+1,c-control]
-                        total_value=gain+future_value
+                        total_value=gain+future_value+penalty(c-control)
                         if total_value>best_value:
                             best_value=total_value
                     self.bv[w,c,s]=best_value
@@ -113,12 +121,14 @@ class TrajectoriesTempo :
                     break
                 best_value=0
                 best_control=None
-                for c in range(min(int(self.max_control),int(self.stock_trajectories[s,w-1]))+1):
+                for c in range(self.max_control+1):
                     gain = self.bv.gain_function.gain_for_week_control_and_scenario(w,c,s)
                     future_value=self.bv.mean_bv[w+1,int(self.stock_trajectories[s,w-1])-c]
-                    if gain+future_value>best_value:
+                    penalty=self.bv.penalty()
+                    total_value=gain+future_value+penalty(int(self.stock_trajectories[s,w-1])-c)
+                    if total_value>best_value:
                         best_control=c
-                        best_value=gain+future_value
+                        best_value=total_value
                 if self.stock_trajectories_red is not None and best_control is not None:
                     # interdit les stocks négatifs
                     if self.stock_trajectories[s,w-1]-best_control<self.stock_trajectories_red[s,w]:

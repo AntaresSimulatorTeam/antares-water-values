@@ -28,7 +28,10 @@ class BellmanValuesHydro:
         self.nb_weeks=self.gain_function.nb_weeks
         self.scenarios=self.gain_function.scenarios
         
-        self.gain_functions=self.gain_function.compute_gain_functions(2)
+        self.gain_functions_turb_and_pump=self.gain_function.compute_gain_functions(2)
+        self.gain_functions=self.gain_functions_turb_and_pump[:,:,0]
+        self.turb_functions=self.gain_functions_turb_and_pump[:,:,1]
+        self.pump_functions=self.gain_functions_turb_and_pump[:,:,2]
 
         self.bv=np.zeros((self.nb_weeks+1,51,len(self.scenarios)))
         self.mean_bv=np.zeros((self.nb_weeks+1,51))
@@ -113,7 +116,8 @@ class BellmanValuesHydro:
     def compute_trajectories(self) -> None:
         self.trajectories = np.zeros((len(self.scenarios),self.nb_weeks))
         self.optimal_controls = np.zeros((len(self.scenarios),self.nb_weeks))
-        
+        self.optimal_turb = np.zeros((len(self.scenarios),self.nb_weeks))
+        self.optimal_pump = np.zeros((len(self.scenarios),self.nb_weeks))
         for s in self.scenarios:
             previous_stock=self.reservoir.initial_level
             for w in range(self.nb_weeks):
@@ -163,6 +167,8 @@ class BellmanValuesHydro:
                 if best_new_stock is not None:
                     self.trajectories[s,w] =best_new_stock
                     self.optimal_controls[s,w] = optimal_control
+                    self.optimal_turb[s,w] = self.turb_functions[w,s](optimal_control)
+                    self.optimal_pump[s,w] = self.pump_functions[w,s](optimal_control)
                     lower_bound=self.bottom_rule_curve[w]
                     upper_bound=self.upper_rule_curve[w]
                     if not (lower_bound <= best_new_stock <= upper_bound):
@@ -173,6 +179,8 @@ class BellmanValuesHydro:
                 else:
                     self.trajectories[s,w]=None
                     self.optimal_controls[s,w]=None
+                    self.optimal_pump[s,w]=None
+                    self.optimal_turb[s,w]=None
                 
                 previous_stock=best_new_stock
                 
@@ -326,9 +334,13 @@ class BellmanValuesHydro:
         for s in self.scenarios:
             for w in range(self.nb_weeks):
                 u = self.optimal_controls[s, w]
+                t = self.optimal_turb[s,w]
+                p = self.optimal_pump[s,w]
                 data.append({
                     "area": self.gain_function.name_area,
                     "u": u,
+                    "turb" : t,
+                    "pump": p,
                     "week": w + 1,
                     "mcYear": s + 1,
                     "sim": "u_0"
@@ -358,14 +370,14 @@ class BellmanValuesHydro:
         print(f"Stock trajectories export succeeded : {output_path}")
     
 
-# start=time.time()
-# gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Calculs de trajectoires de cibles et contraintes LT/Heuristique hydro/stockage H2/stockage_h2", "fr")
-# bv=BellmanValuesHydro(gain)
-# end=time.time()
+start=time.time()
+gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Calculs de trajectoires de cibles et contraintes LT/Heuristique hydro/stockage H2/stockage_h2", "fr")
+bv=BellmanValuesHydro(gain)
+end=time.time()
 
-# print("Execution time: ", end-start)
+print("Execution time: ", end-start)
 
 
-# bv.plot_trajectories()
-# bv.export_controls()
-# bv.export_trajectories()
+bv.plot_trajectories()
+bv.export_controls()
+bv.export_trajectories()

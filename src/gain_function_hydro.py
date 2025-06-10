@@ -22,13 +22,15 @@ class GainFunctionHydro:
         self.scenarios=range(self.net_load.shape[1])
         # self.scenarios=range(5)
 
-    def gain_function(self, week_index: int, scenario: int, alpha: float) -> interp1d:
+    def gain_function(self, week_index: int, scenario: int, alpha: float) -> np.ndarray:
         net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
         max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
         max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
         
         control_list = []
         gain_list = []
+        turb_list = []
+        pump_list = []
 
         turb_thresholds=np.quantile(np.linspace(np.min(net_load_for_week-max_energy_hour),
                                                 np.max(net_load_for_week+max_pumping_hour)*(self.turb_efficiency/self.efficiency)),
@@ -56,6 +58,8 @@ class GainFunctionHydro:
 
             control_hourly = curtail*self.turb_efficiency - actual_pump*self.efficiency
             control = np.sum(control_hourly)
+            turb_list.append(np.sum(curtail*self.turb_efficiency))
+            pump_list.append(np.sum(actual_pump*self.efficiency))
             # print(f"controle total effectué : {control}")
 
             gain = np.sum(curtailed_energy ** alpha / 1e9)
@@ -64,7 +68,9 @@ class GainFunctionHydro:
             gain_list.append(gain)
 
 
-        return interp1d(control_list, gain_list, fill_value="extrapolate")
+        return np.array([interp1d(control_list, gain_list, fill_value="extrapolate"),
+                        interp1d(control_list,turb_list,fill_value='extrapolate'),
+                        interp1d(control_list,pump_list,fill_value='extrapolate')])
 
 
     def compute_gain_functions(self,alpha:float)->np.ndarray:
@@ -75,7 +81,7 @@ class GainFunctionHydro:
     # affichages
 
     def plot_gain_function(self,week_index:int,scenario:int,alpha:float)->None:
-        gain_func = self.gain_function(week_index, scenario, alpha)
+        gain_func = self.gain_function(week_index, scenario, alpha)[0]
         control_values = gain_func.x
         gain_values = gain_func(control_values)
         # print(f"control values : {control_values}, gain_values : {gain_values}")

@@ -11,7 +11,7 @@ import os
 import argparse
 
 
-"""To launch the calculations, export daily control and stock trajectories and plot stock trajectories :
+"""To launch the calculations, export daily contro, stock trajectories and plots:
 python "path"/tempo.py --dir_study "path_to_study" --area "name_area" --cvar float(CVar parameter, default 1) """
 
 class GainFunctionTempo:
@@ -52,9 +52,9 @@ class BellmanValuesTempo:
         self.nb_scenarios=self.gain_function.nb_scenarios
         self.CVar=CVar
 
-        self.bv=np.zeros((62,self.capacity+1,self.nb_scenarios))
-        self.mean_bv=np.zeros((62,self.capacity+1))
-        self.usage_values=np.zeros((62,self.capacity))
+        self.bv=np.zeros((61,self.capacity+1,self.nb_scenarios))
+        self.mean_bv=np.zeros((61,self.capacity+1))
+        self.usage_values=np.zeros((61,self.capacity))
         
         self.compute_bellman_values()
         # self.compute_usage_values()
@@ -66,12 +66,13 @@ class BellmanValuesTempo:
         return penalty
 
     def compute_bellman_values(self) -> None:
-        for w in reversed(range(self.start_week,self.end_week+1)):
+        self.mean_bv[self.end_week]=np.zeros(self.capacity+1)
+        for w in reversed(range(self.start_week,self.end_week)):
             for c in range(self.capacity+1):
                 for s in range(self.nb_scenarios):
                     best_value=0
                     for control in range(self.max_control+1):
-                        gain = self.gain_function.gain_for_week_control_and_scenario(w,control,s)
+                        gain = self.gain_function.gain_for_week_control_and_scenario(w+1,control,s)
                         penalty=self.penalty()
                         future_value=self.mean_bv[w+1,c-control]
                         total_value=gain+future_value+penalty(c-control)
@@ -125,7 +126,7 @@ class TrajectoriesTempo :
                 best_control=None
                 for c in range(self.max_control+1):
                     gain = self.bv.gain_function.gain_for_week_control_and_scenario(w,c,s)
-                    future_value=self.bv.mean_bv[w+1,int(self.stock_trajectories[s,w-1])-c]
+                    future_value=self.bv.mean_bv[w,int(self.stock_trajectories[s,w-1])-c]
                     penalty=self.bv.penalty()
                     total_value=gain+future_value+penalty(int(self.stock_trajectories[s,w-1])-c)
                     if total_value>best_value:
@@ -432,7 +433,6 @@ class LaunchTempo :
         html_path = os.path.join(self.export_dir, "trajectories_plot.html")
         fig.write_html(html_path)
         print(f"Interactive plot saved at: {html_path}")
-
 
     def run(self)->None:
         start=time.time()    

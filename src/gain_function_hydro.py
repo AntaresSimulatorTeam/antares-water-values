@@ -19,8 +19,8 @@ class GainFunctionHydro:
         self.turb_efficiency=1.67
 
         self.nb_weeks=self.reservoir.inflow.shape[0]
-        self.scenarios=range(self.net_load.shape[1])
-        # self.scenarios=range(5)
+        # self.scenarios=range(self.net_load.shape[1])
+        self.scenarios=range(5)
 
     def gain_function(self, week_index: int, scenario: int, alpha: float) -> np.ndarray:
         net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
@@ -33,7 +33,7 @@ class GainFunctionHydro:
         pump_list = []
 
         turb_thresholds=np.quantile(np.linspace(np.min(net_load_for_week-max_energy_hour),
-                                                np.max(net_load_for_week+max_pumping_hour)*(self.turb_efficiency/self.efficiency)),
+                                                np.max(net_load_for_week+max_pumping_hour)*(self.turb_efficiency/self.efficiency)**(1/(alpha-1))),
                                                 np.linspace(0, 1, 25))
 
         for turb_threshold in turb_thresholds:
@@ -46,7 +46,7 @@ class GainFunctionHydro:
             if turb_threshold<0:
                 pump_threshold=turb_threshold
             else:
-                pump_threshold = (self.efficiency/self.turb_efficiency) * turb_threshold
+                pump_threshold = ((self.efficiency / self.turb_efficiency)**(1/(alpha-1))) * turb_threshold
             potential_pump = pump_threshold - curtailed_energy
 
             mask = curtailed_energy < pump_threshold
@@ -101,7 +101,7 @@ class GainFunctionHydro:
 
         n_thresholds = 168
         turb_thresholds = np.quantile(np.linspace(np.min(original_load-max_energy_hour),
-                                                  np.max(original_load+max_pumping_hour)*(self.turb_efficiency/self.efficiency)), 
+                                                  np.max(original_load+max_pumping_hour)*(self.turb_efficiency/self.efficiency)**(1/(alpha-1))), 
                                                   np.linspace(0, 1, n_thresholds))
 
         threshold = turb_thresholds[index_ecretement]
@@ -111,7 +111,7 @@ class GainFunctionHydro:
         if threshold < 0:
             pump_threshold = threshold
         else:
-            pump_threshold = (self.efficiency / self.turb_efficiency) * threshold
+            pump_threshold = ((self.efficiency / self.turb_efficiency)**(1/(alpha-1))) * threshold
 
         potential_pump = pump_threshold - curtailed_energy
         mask = curtailed_energy < pump_threshold
@@ -153,5 +153,5 @@ class GainFunctionHydro:
 
 
 # gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Calculs de trajectoires de cibles et contraintes LT/Heuristique hydro/stockage H2/stockage_h2", "fr")
-# gain.plot_gain_function(40,0,2)
-# gain.plot_load(40,0,2,50)
+# gain.plot_gain_function(50,0,2)
+# gain.plot_load(15,134,2,20)

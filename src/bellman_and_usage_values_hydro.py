@@ -1,7 +1,6 @@
 from gain_function_hydro import GainFunctionHydro
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib import cm
 import matplotlib.colors as colors
 from matplotlib import rcParams
 from scipy.interpolate import interp1d
@@ -36,7 +35,7 @@ class BellmanValuesHydro:
         self.pump_functions=self.gain_functions_turb_and_pump[:,:,2]
 
         self.bv=np.zeros((self.nb_weeks,51,len(self.scenarios)))
-        self.mean_bv=np.zeros((self.nb_weeks+1,51))
+        self.mean_bv=np.zeros((self.nb_weeks,51))
 
         self.compute_bellman_values()
         self.compute_usage_values()
@@ -110,7 +109,7 @@ class BellmanValuesHydro:
                 self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2])
 
     def compute_usage_values(self) -> None:
-        self.usage_values=np.zeros((self.nb_weeks+1,50))
+        self.usage_values=np.zeros((self.nb_weeks,50))
         for w in range(self.nb_weeks):
             for c in range(2,102,2):
                 self.usage_values[w,(c//2)-1]=self.mean_bv[w,c//2]-self.mean_bv[w,(c//2)-1]
@@ -193,7 +192,7 @@ class BellmanValuesHydro:
         if week_index < 0 or week_index >= self.nb_weeks:
             raise ValueError(f"Semaine invalide : {week_index}. Doit être entre 0 et {self.nb_weeks - 1}.")
 
-        stock_levels = np.linspace(0, 100, 51)  # Même base que usage_values si besoin
+        stock_levels = np.linspace(0, 100, 51)
         bellman_values = self.mean_bv[week_index,:]
 
         plt.figure(figsize=(10, 5))
@@ -237,7 +236,6 @@ class BellmanValuesHydro:
 
         fig, ax = plt.subplots(figsize=(14, 6))
 
-        # Normalisation linéaire sur toute la plage des valeurs (ou LogNorm si tu veux)
         # norm = colors.Normalize(np.min(self.usage_values[:-1]), np.max(self.usage_values[:-1]))
         norm = colors.Normalize(vmin=-30, vmax=0)
 
@@ -269,7 +267,6 @@ class BellmanValuesHydro:
         fig = go.Figure()
         weeks = list(range(1, self.nb_weeks + 2))
 
-        # Courbes guide (toujours visibles)
         upper_percent = self.upper_rule_curve / self.reservoir_capacity * 100
         fig.add_trace(go.Scatter(
             x=weeks,
@@ -290,8 +287,7 @@ class BellmanValuesHydro:
             visible=True
         ))
 
-        # Trajectoires par scénario
-        colors = px.colors.qualitative.Plotly  # palette de couleurs
+        colors = px.colors.qualitative.Plotly
 
         for s in self.scenarios:
             visible = True if s == 0 else False
@@ -307,10 +303,9 @@ class BellmanValuesHydro:
             ))
 
         n_scenarios = len(self.scenarios)
-        n_shared_guides = 2  # upper and lower rule curves
+        n_shared_guides = 2 
         buttons = []
 
-        # Bouton pour chaque scénario individuel
         for s in self.scenarios:
             visibility = [True] * n_shared_guides + [False] * n_scenarios
             visibility[n_shared_guides + s] = True
@@ -323,7 +318,6 @@ class BellmanValuesHydro:
                 ]
             ))
 
-        # Bouton pour afficher toutes les trajectoires
         visibility_all = [True] * (n_shared_guides + n_scenarios)
         buttons.append(dict(
             label=f"all MC",
@@ -334,7 +328,6 @@ class BellmanValuesHydro:
             ]
         ))
 
-        # Mise à jour du layout
         fig.update_layout(
             font=dict(family="Cambria", size=14),
             updatemenus=[dict(
@@ -429,17 +422,17 @@ class BellmanValuesHydro:
         print(f"Stock trajectories export succeeded : {output_path}")
     
 
-start=time.time()
-gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Calculs de trajectoires de cibles et contraintes LT/Heuristique hydro/stockage H2/stockage_h2", "fr")
-bv=BellmanValuesHydro(gain)
-end=time.time()
+# start=time.time()
+# gain=GainFunctionHydro("/test_data/one_node_(1)", "area")
+# bv=BellmanValuesHydro(gain)
+# end=time.time()
 
-print("Execution time: ", end-start)
+# print("Execution time: ", end-start)
 
 
-bv.plot_trajectories()
-bv.export_controls()
-bv.export_trajectories()
-bv.plot_bellman_value(51)
-bv.plot_usage_values()
-bv.plot_usage_values_heatmap()
+# bv.plot_trajectories()
+# bv.export_controls()
+# bv.export_trajectories()
+# bv.plot_bellman_value(51)
+# bv.plot_usage_values()
+# bv.plot_usage_values_heatmap()

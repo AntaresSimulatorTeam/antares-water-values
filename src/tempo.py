@@ -61,7 +61,7 @@ class BellmanValuesTempo:
 
     def penalty(self)->Callable:
         penalty=interp1d([-1,0,self.capacity,self.capacity+1],
-                         [-1e9,0,0,-1e9], kind='linear',fill_value='extrapolate')
+                         [-1e9,0,0,-1e9], kind='linear',bounds_error=False,fill_value=-1e9)
         # penalty=lambda x:0
         return penalty
 

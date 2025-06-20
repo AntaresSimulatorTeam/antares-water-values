@@ -10,69 +10,193 @@ import plotly.express as px
 from type_definition import Callable
 import pandas as pd
 import os
-
+import logging
+from logging.handlers import RotatingFileHandler
 
 rcParams['font.family'] = 'Cambria'
 
 class BellmanValuesHydro:
-    def __init__(self, gain_function: GainFunctionHydro,
-                ):
+    def __init__(self, gain_function: GainFunctionHydro,alpha:float,coeff:float,enable_logging: bool):
+        
         self.gain_function=gain_function
         self.reservoir = gain_function.reservoir
         self.reservoir_capacity = self.reservoir.capacity
+        self.initial_level=self.reservoir.initial_level
 
         self.bottom_rule_curve=gain_function.reservoir.bottom_rule_curve
         self.upper_rule_curve=gain_function.reservoir.upper_rule_curve
+        self.daily_bottom_rule_curve=self.gain_function.reservoir.daily_bottom_rule_curve
+        self.daily_upper_rule_curve=self.gain_function.reservoir.daily_upper_rule_curve
 
         self.inflow=gain_function.reservoir.inflow
+        self.daily_inflow=gain_function.reservoir.daily_inflow
         
         self.nb_weeks=self.gain_function.nb_weeks
         self.scenarios=self.gain_function.scenarios
         
-        self.gain_functions_turb_and_pump=self.gain_function.compute_gain_functions(2)
+        self.gain_functions_turb_and_pump=self.gain_function.compute_gain_functions(alpha,coeff)
         self.gain_functions=self.gain_functions_turb_and_pump[:,:,0]
         self.turb_functions=self.gain_functions_turb_and_pump[:,:,1]
         self.pump_functions=self.gain_functions_turb_and_pump[:,:,2]
-
         self.bv=np.zeros((self.nb_weeks,51,len(self.scenarios)))
         self.mean_bv=np.zeros((self.nb_weeks,51))
-
+        
+        self.export_dir = self.make_unique_export_dir()
+        self.logger = self.setup_logger() if enable_logging else self.get_null_logger()
         self.compute_bellman_values()
+        # self.compute_bellman_init()
         self.compute_usage_values()
         self.compute_trajectories()
-        self.export_dir = self.make_unique_export_dir()
+        
+    def log_section_title(self, title: str)->None:
+        self.logger.debug("\n" + "=" * 70)
+        self.logger.debug(f"{title.center(70)}")
+        self.logger.debug("=" * 70 + "\n")
+
+    def get_null_logger(self) -> logging.Logger:
+        null_logger = logging.getLogger("NullLogger")
+        null_logger.setLevel(logging.CRITICAL + 1)  # Ignore tout message
+        if not null_logger.hasHandlers():
+            null_logger.addHandler(logging.NullHandler())
+        return null_logger
+    
+
+    def setup_logger(self, log_filename: str = "log", max_bytes: int = 10_000_000, backup_count: int = 5)->logging.Logger:
+        logger = logging.getLogger("BellmanLogger")
+        logger.setLevel(logging.DEBUG)
+        logger.propagate = False  # évite les doublons
+
+        # Supprimer les handlers existants si redéfini plusieurs fois
+        if logger.hasHandlers():
+            logger.handlers.clear()
+
+        log_path = os.path.join(self.export_dir, log_filename)
+        handler = RotatingFileHandler(log_path, maxBytes=max_bytes, backupCount=backup_count,encoding='utf-8')
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+        return logger
 
     def penalty_final_stock(self)->Callable:
-        penalty = lambda x: abs(x-self.reservoir.initial_level)/1e3
+        penalty = lambda x: abs(x-self.initial_level)/1e3
         return penalty
     
     def penalty_rule_curves(self,week_idx:int)->Callable:
         # penalty=interp1d(np.array([-0.05,0,1,1.05])*self.reservoir_capacity,[1e3,0,0,1e3],kind='linear',fill_value='extrapolate')
         penalty = interp1d(
             [
-                self.reservoir.bottom_rule_curve[week_idx]*(1-1e-9),
+                self.reservoir.bottom_rule_curve[week_idx]-1e-9,
                 self.reservoir.bottom_rule_curve[week_idx],
                 self.reservoir.upper_rule_curve[week_idx],
-                self.reservoir.upper_rule_curve[week_idx]*(1+1e-9)],
-            [1e3,0,0,1e3],
-            kind="linear",fill_value="extrapolate")
+                self.reservoir.upper_rule_curve[week_idx]+1e-9],
+            [1000,0,0,1000],
+            kind="linear",bounds_error=False,fill_value=1000)
         # penalty=lambda x:0
         return penalty
 
     def compute_bellman_values(self) -> None:
-        penalty_final_stock=self.penalty_final_stock()
-        self.mean_bv[self.nb_weeks-1]=np.array([penalty_final_stock((c/100)*self.reservoir_capacity) for c in range(0,101,2)])
-        for w in reversed(range(self.nb_weeks-1)):
-            penalty_function=self.penalty_rule_curves(w+1)
+        self.log_section_title("CALCUL DES VALEURS DE BELLMAN")
+        self.logger.debug(">>> Initialisation des valeurs de Bellman finales")
+        penalty_final_stock = self.penalty_final_stock()
+        self.mean_bv[self.nb_weeks - 1] = np.array([
+            penalty_final_stock((c / 100) * self.reservoir_capacity) for c in range(0, 101, 2)
+        ])
+        self.logger.debug(f"Valeurs de pénalité finales (semaine {self.nb_weeks}): {self.mean_bv[self.nb_weeks - 1]}")
+
+        for w in reversed(range(self.nb_weeks - 1)):
+            self.logger.debug("\n" + "-" * 60)
+            self.logger.debug(f"---- Traitement de la semaine {w+1} ----")
+            self.logger.debug("-" * 60 + "\n")
+            penalty_function = self.penalty_rule_curves(w + 1)
+
+            for c in range(0, 101, 2):
+                current_stock = (c / 100) * self.reservoir_capacity
+
+                for s in self.scenarios:
+                    
+                    inflows_for_week = self.inflow[w + 1, s]
+                    gain_function = self.gain_functions[w + 1, s]
+                    controls = gain_function.x
+
+                    future_bellman_function = interp1d(
+                        np.linspace(0, self.reservoir_capacity, 51),
+                        self.mean_bv[w + 1],
+                        kind="linear",
+                        fill_value="extrapolate",
+                    )
+
+                    best_value = np.inf
+                    self.logger.debug(f"\n[Semaine {w+1} | Scénario {s+1} | Stock {current_stock:.2f} MWh]")
+
+                    # Contrôles libres
+                    for control in controls:
+                        next_stock = current_stock - control + inflows_for_week
+                        gain = gain_function(control)
+                        future_value = future_bellman_function(next_stock)
+                        penalty = penalty_function(next_stock)
+                        total_value = gain + future_value + penalty
+
+                        self.logger.debug(
+                            f"Test contrôle (libre): {control:.2f}, stock suivant: {next_stock:.2f}, "
+                            f"gain: {gain:.2f}, BV futur: {future_value:.2f}, pénalité: {penalty:.2f}, total: {total_value:.2f}"
+                        )
+
+                        if total_value < best_value:
+                            best_value = total_value
+                            self.logger.debug(
+                                f"→ Nouveau meilleur contrôle retenu (libre): {control:.2f}, total: {total_value:.2f}"
+                            )
+
+                    # Contrôles forcés
+                    for c_new in range(0, 101, 2):
+                        max_week_turb = np.sum(self.gain_function.max_daily_generating[(w + 1) * 7:(w + 2) * 7])
+                        max_week_pump = np.sum(self.gain_function.max_daily_pumping[(w + 1) * 7:(w + 2) * 7])
+                        new_level = (c_new / 100) * self.reservoir_capacity
+                        week_energy_var = current_stock - new_level
+
+                        if week_energy_var < -max_week_pump * self.gain_function.efficiency or \
+                        week_energy_var > max_week_turb * self.gain_function.turb_efficiency:
+                            continue
+
+                        control = current_stock - new_level
+                        next_stock = current_stock - control + inflows_for_week
+                        gain = gain_function(control)
+                        future_value = future_bellman_function(next_stock)
+                        penalty = penalty_function(next_stock)
+                        total_value = gain + future_value + penalty
+
+                        self.logger.debug(
+                            f"Test contrôle (forcé): {control:.2f}, stock suivant: {next_stock:.2f}, "
+                            f"gain: {gain:.2f}, BV futur: {future_value:.2f}, pénalité: {penalty:.2f}, total: {total_value:.2f}"
+                        )
+
+                        if total_value < best_value:
+                            best_value = total_value
+                            self.logger.debug(
+                                f"→ Nouveau meilleur contrôle retenu (forcé): {control:.2f}, total: {total_value:.2f}"
+                            )
+
+                    self.bv[w, c // 2, s] = best_value
+                    self.logger.debug(f"Valeur de Bellman enregistrée pour stock {current_stock:.2f} MWh : {best_value:.2f}")
+
+                self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2])
+            self.logger.debug(f"→ Moyenne BV semaine {w+1} : {self.mean_bv[w]}")
+
+
+    def compute_bellman_init(self)->None:
+            self.bv_init=np.zeros((51,len(self.scenarios)))
+            self.mean_bv_init=np.zeros(51)
+            penalty_function=self.penalty_rule_curves(0)
             for c in range(0, 101, 2):
                 for s in self.scenarios:
-                    inflows_for_week = self.inflow[w+1, s]
+                    inflows_for_week = self.inflow[0, s]
                     current_stock = (c /100) * self.reservoir_capacity
-                    gain_function=self.gain_functions[w+1,s]
+                    gain_function=self.gain_functions[0,s]
                     controls=gain_function.x
                     future_bellman_function = interp1d(
                         np.linspace(0, self.reservoir_capacity, 51),
-                        self.mean_bv[w + 1], 
+                        self.mean_bv[0], 
                         kind="linear",
                         fill_value="extrapolate", 
                         )
@@ -88,8 +212,8 @@ class BellmanValuesHydro:
                             best_value = total_value
                             
                     for c_new in range(0,101,2):
-                        max_week_turb=np.sum(self.gain_function.max_daily_generating[(w+1) * 7:(w + 2) * 7])
-                        max_week_pump=np.sum(self.gain_function.max_daily_pumping[(w+1) * 7:(w + 2) * 7])
+                        max_week_turb=np.sum(self.gain_function.max_daily_generating[:7])
+                        max_week_pump=np.sum(self.gain_function.max_daily_pumping[:7])
                         week_energy_var=current_stock-c_new/100 * self.reservoir_capacity
                         if week_energy_var<-max_week_pump*self.gain_function.efficiency or week_energy_var>max_week_turb*self.gain_function.turb_efficiency:
                             continue
@@ -104,9 +228,10 @@ class BellmanValuesHydro:
                             best_value = total_value
 
 
-                    self.bv[w, c // 2, s] = best_value
+                    self.bv_init[c // 2, s] = best_value
 
-                self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2])
+                self.mean_bv_init[ c // 2] = np.mean(self.bv_init[ c // 2])
+    
 
     def compute_usage_values(self) -> None:
         self.usage_values=np.zeros((self.nb_weeks,50))
@@ -115,14 +240,21 @@ class BellmanValuesHydro:
                 self.usage_values[w,(c//2)-1]=self.mean_bv[w,c//2]-self.mean_bv[w,(c//2)-1]
 
     def compute_trajectories(self) -> None:
+        self.log_section_title("CALCUL DES TRAJECTOIRES")
         self.trajectories = np.zeros((len(self.scenarios),self.nb_weeks))
         self.optimal_controls = np.zeros((len(self.scenarios),self.nb_weeks))
         self.optimal_turb = np.zeros((len(self.scenarios),self.nb_weeks))
         self.optimal_pump = np.zeros((len(self.scenarios),self.nb_weeks))
         for s in self.scenarios:
-            previous_stock=self.reservoir.initial_level
+            previous_stock=self.initial_level
             for w in range(self.nb_weeks):
+                self.logger.debug("\n" + "-" * 60)
+                self.logger.debug(f"---- Semaine {w+1}, scénario {s+1} ----")
+                self.logger.debug("-" * 60)
+                self.logger.debug(f"Stock précédent : {previous_stock:.2f} MWh")
+
                 inflows_for_week = self.inflow[w,s]
+                self.logger.debug(f"Inflow : {inflows_for_week:.2f} MWh")
                 gain_function = self.gain_functions[w,s]
                 penalty_function=self.penalty_rule_curves(w)
                 controls = gain_function.x
@@ -142,10 +274,14 @@ class BellmanValuesHydro:
                     future_value = future_bellman_function(new_stock)
                     penalty=penalty_function(new_stock)
                     total_value = gain + future_value +penalty
+                    self.logger.debug(f"Test contrôle (libre): {control:.2f}, stock suivant: {new_stock:.2f}, gain: {gain:.2f}, future_value: {future_value:.2f}, pénalité: {penalty:.2f}, total: {total_value:.2f}")
+
                     if total_value < best_value:
                         best_value = total_value
                         best_new_stock = new_stock
                         optimal_control=control
+                        self.logger.debug(f"→ Nouveau meilleur contrôle retenu (libre) : {control:.2f}, stock suivant: {new_stock:.2f}, total: {total_value:.2f}")
+
                        
                 for c_new in range(0,101,2):
                     max_week_turb=np.sum(self.gain_function.max_daily_generating[w * 7:(w + 1) * 7])
@@ -159,11 +295,15 @@ class BellmanValuesHydro:
                     future_value = future_bellman_function(new_stock)
                     penalty=penalty_function(new_stock)
                     total_value = gain + future_value + penalty
+                    self.logger.debug(f"Test contrôle (forcé): {control:.2f}, stock suivant: {new_stock:.2f}, gain: {gain:.2f}, future_value: {future_value:.2f}, pénalité: {penalty:.2f}, total: {total_value:.2f}")
+
                     if total_value < best_value:
                         best_value = total_value
                         best_new_stock = new_stock
                         optimal_control=control
-                       
+                        self.logger.debug(f"→ Nouveau meilleur contrôle retenu (forcé) : {control:.2f}, stock suivant: {new_stock:.2f}, total: {total_value:.2f}")
+
+                self.logger.debug(f"==> Stock retenu pour la semaine {w+1} : {best_new_stock:.2f} MWh\n")
 
                 if best_new_stock is not None:
                     self.trajectories[s,w] =best_new_stock
@@ -177,13 +317,14 @@ class BellmanValuesHydro:
                             f"⚠️ Stock hors courbes guides - Semaine {w+1}, scénario {s+1} : "
                             f"{best_new_stock:.2f} ∉ [{lower_bound:.2f}, {upper_bound:.2f}]"
                         )
+                    previous_stock=best_new_stock
                 else:
                     self.trajectories[s,w]=None
                     self.optimal_controls[s,w]=None
                     self.optimal_pump[s,w]=None
                     self.optimal_turb[s,w]=None
                 
-                previous_stock=best_new_stock
+                # previous_stock=best_new_stock
                 
 
     # affichages
@@ -201,6 +342,22 @@ class BellmanValuesHydro:
         plt.xlabel("Stock (%)")
         plt.ylabel("Valeur de Bellman")
         plt.title(f"Valeur de Bellman en fonction du stock - Semaine {week_index + 1}")
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+
+    def plot_bellman_init_value(self)->None:
+
+        stock_levels = np.linspace(0, 100, 51)
+        bellman_values = self.mean_bv_init
+
+        plt.figure(figsize=(10, 5))
+        plt.plot(stock_levels, bellman_values, label=f"Semaine 0", color='tab:blue')
+
+        plt.xlabel("Stock (%)")
+        plt.ylabel("Valeur de Bellman")
+        plt.title(f"Valeur de Bellman en fonction du stock - Semaine 0")
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
@@ -236,8 +393,8 @@ class BellmanValuesHydro:
 
         fig, ax = plt.subplots(figsize=(14, 6))
 
-        # norm = colors.Normalize(np.min(self.usage_values[:-1]), np.max(self.usage_values[:-1]))
-        norm = colors.Normalize(vmin=-30, vmax=0)
+        norm = colors.Normalize(np.min(self.usage_values[:-1]), np.max(self.usage_values[:-1]))
+        # norm = colors.Normalize(vmin=-30, vmax=0)
 
 
         im = ax.imshow(
@@ -250,8 +407,8 @@ class BellmanValuesHydro:
         interpolation='bilinear'  # lissage
     )
 
-        # cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(np.min(self.usage_values[:-1]), np.max(self.usage_values[:-1]), 10))
-        cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(-30, 0, 10))
+        cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(np.min(self.usage_values[:-1]), np.max(self.usage_values[:-1]), 10))
+        # cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(-30, 0, 10))
         cbar.set_label("Valeur d’usage (MWh)")
 
         ax.set_xlabel("Semaine")
@@ -403,6 +560,85 @@ class BellmanValuesHydro:
         df.to_csv(output_path,index=False)
         print(f"Control trajectories export succeeded : {output_path}")
 
+    def export_balance_file(self, filename: str = "stock_balance.txt")->None:
+        balance=np.zeros((168*self.nb_weeks,len(self.scenarios)))
+        for s in self.scenarios:
+            for w in range(self.nb_weeks):
+                hour_start=w*168
+                if w==0:
+                    hlevel_start=self.initial_level
+                else:
+                    hlevel_start=self.trajectories[s,w-1]
+                hlevel_end=self.trajectories[s,w]
+                balance[hour_start,s]=hlevel_start-self.reservoir_capacity/2
+                balance[hour_start+167,s]=self.reservoir_capacity/2-hlevel_end
+                balance[hour_start:hour_start+168,s]+=np.repeat(self.daily_inflow[w*7:(w+1)*7,s],24)/24
+        
+        balance=np.vstack([balance,np.zeros((24,len(self.scenarios)))])
+
+        filepath = os.path.join(self.export_dir, filename)
+
+        np.savetxt(filepath, balance, fmt="%.6f", delimiter="\t")
+
+        print(f"Balance export succedeed : {filepath}")
+    
+    def export_bellman_values(self, filename: str = "bellman_values.csv") -> None:
+        data = []
+        for w in range(self.nb_weeks):
+            for c_index, c in enumerate(range(0, 101, 2)):
+                stock_percent = c  # stock exprimé en %
+                for s in self.scenarios:
+                    value = self.bv[w, c_index, s]
+                    data.append({
+                        "week": w + 1,
+                        "stock_percent": stock_percent,
+                        "mcYear": s + 1,
+                        "bellman_value": value
+                    })
+
+        df = pd.DataFrame(data)
+        output_path = os.path.join(self.export_dir, filename)
+        df.to_csv(output_path, index=False)
+        print(f"Bellman values export succeeded: {output_path}")
+
+
+    def export_hourly_upper_rule_curves(self, filename: str = "hourly_upper_rule_curve.txt") -> None:
+        n_days = 365
+
+        daily_indices = np.arange(n_days)
+        interpolator = interp1d(daily_indices, self.daily_upper_rule_curve/self.reservoir_capacity, kind='linear')
+
+        hourly_indices = np.linspace(0, n_days - 1, n_days * 24)
+
+
+        hourly_upper_rule_curve = interpolator(hourly_indices)
+
+
+        filepath = os.path.join(self.export_dir, filename)
+
+        np.savetxt(filepath, hourly_upper_rule_curve, fmt="%.6f")
+
+        print(f"Hourly upper rule curve export succeeded: {filepath}")
+
+    def export_hourly_bottom_rule_curves(self, filename: str = "hourly_bottom_rule_curve.txt") -> None:
+        n_days = 365
+
+        daily_indices = np.arange(n_days)
+        interpolator = interp1d(daily_indices, self.daily_bottom_rule_curve/self.reservoir_capacity, kind='linear')
+
+        hourly_indices = np.linspace(0, n_days - 1, n_days * 24)
+
+
+        hourly_upper_rule_curve = interpolator(hourly_indices)
+
+
+        filepath = os.path.join(self.export_dir, filename)
+
+        np.savetxt(filepath, hourly_upper_rule_curve, fmt="%.6f")
+
+        print(f"Hourly bottom rule curve export succeeded: {filepath}")
+
+
     def export_trajectories(self,filename:str="trajectories.csv") ->None:
         data = []
 
@@ -423,16 +659,66 @@ class BellmanValuesHydro:
     
 
 # start=time.time()
-# gain=GainFunctionHydro("/test_data/one_node_(1)", "area")
-# bv=BellmanValuesHydro(gain)
+# gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france_pour_module_py", "fr",200)
+# bv=BellmanValuesHydro(gain,1.8,1e8,enable_logging=False)
 # end=time.time()
 
 # print("Execution time: ", end-start)
 
-
+# bv.export_bellman_values()
 # bv.plot_trajectories()
 # bv.export_controls()
+# bv.export_balance_file()
 # bv.export_trajectories()
-# bv.plot_bellman_value(51)
+# # bv.export_hourly_upper_rule_curves()
+# # bv.export_hourly_bottom_rule_curves()
+# # bv.plot_bellman_value(16)
 # bv.plot_usage_values()
 # bv.plot_usage_values_heatmap()
+
+
+
+
+
+# def compute_bv_init(c: int) -> tuple[int, float]:
+#     # Recrée gain dans le sous-processus pour éviter le pickling
+#     gain = GainFunctionHydro("C:/Users/brescianomat/Documents/Calculs de trajectoires de cibles et contraintes LT/Heuristique hydro/stockage H2/stockage_h2", "fr")
+#     bv = BellmanValuesHydro(gain, c / 100 * gain.reservoir.capacity)
+#     bv_init = bv.mean_bv_init[c // 2]
+#     return (c, bv_init)
+
+# if __name__ == "__main__":
+#     start=time.time()
+#     results = []
+#     with concurrent.futures.ProcessPoolExecutor(max_workers=os.cpu_count() - 1) as executor:
+#         results = list(executor.map(compute_bv_init, range(0, 101, 2)))
+
+#     # Tri (au cas où les résultats arrivent dans le désordre)
+#     results.sort(key=lambda x: x[0])
+
+#     vb_init_list = []
+#     best_bv_init = np.inf
+#     best_init_stock = 0
+
+#     for c, bv_init in results:
+#         vb_init_list.append(bv_init)
+#         if bv_init < best_bv_init:
+#             best_bv_init = bv_init
+#             best_init_stock = c
+
+#     print(f"Best initial stock: {best_init_stock}, best BV init: {best_bv_init:.3f}")
+#     end=time.time()
+#     print(f"Execution time : {end-start}")
+#     # Affichage
+#     plt.figure(figsize=(10, 6))
+#     plt.plot(range(0, 101, 2), vb_init_list, label="Valeur de Bellman initiale", color="royalblue", linewidth=2)
+#     plt.axvline(float(best_init_stock), color="red", linestyle="--", label=f"Stock initial optimal: {best_init_stock}%\nBV: {best_bv_init:.3f}")
+#     plt.title("Évaluation de la valeur de Bellman initiale\nselon le stock initial", fontsize=14, fontname="Cambria")
+#     plt.xlabel("Stock initial (% de la capacité)", fontsize=12, fontname="Cambria")
+#     plt.ylabel("Valeur de Bellman initiale", fontsize=12, fontname="Cambria")
+#     plt.xticks(fontsize=10, fontname="Cambria")
+#     plt.yticks(fontsize=10, fontname="Cambria")
+#     plt.legend(fontsize=10, loc="best", frameon=True)
+#     plt.grid(True, linestyle="--", alpha=0.5)
+#     plt.tight_layout()
+#     plt.show()

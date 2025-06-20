@@ -76,9 +76,9 @@ class Reservoir:
 
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
-        daily_inflow = daily_inflow[: self.days_in_year]
-        nb_scenarios = daily_inflow.shape[1]
-        weekly_inflow = daily_inflow.reshape(
+        self.daily_inflow = daily_inflow[: self.days_in_year]
+        nb_scenarios = self.daily_inflow.shape[1]
+        weekly_inflow = self.daily_inflow.reshape(
             (self.weeks_in_year, self.days_in_week, nb_scenarios)
         ).sum(axis=1)
         self.inflow = weekly_inflow
@@ -96,6 +96,8 @@ class Reservoir:
         self.initial_level = rule_curves[0, 0]
         bottom_rule_curve = rule_curves[7::7, 0]
         upper_rule_curve = rule_curves[7::7, 1]
+        self.daily_bottom_rule_curve = np.concatenate([[rule_curves[1,0]],rule_curves[1:,0]])
+        self.daily_upper_rule_curve = np.concatenate([[rule_curves[1,1]],rule_curves[1:,1]])
         self.bottom_rule_curve = bottom_rule_curve
         self.upper_rule_curve = upper_rule_curve
 

@@ -4,11 +4,13 @@ import numpy as np
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
+from concurrent.futures import ProcessPoolExecutor
+import itertools
 
 rcParams['font.family'] = 'Cambria'
 
 class GainFunctionHydro:
-    def __init__(self, dir_study: str, name_area: str) -> None:
+    def __init__(self, dir_study: str, name_area: str,nb_scenarios:int) -> None:
         self.dir_study=dir_study
         self.name_area=name_area
         self.reservoir = Reservoir(self.dir_study, self.name_area)
@@ -16,13 +18,12 @@ class GainFunctionHydro:
         self.max_daily_generating=self.reservoir.max_daily_generating
         self.max_daily_pumping=self.reservoir.max_daily_pumping
         self.efficiency=self.reservoir.efficiency
-        self.turb_efficiency=1.67
+        self.turb_efficiency=1
 
         self.nb_weeks=self.reservoir.inflow.shape[0]
-        # self.scenarios=range(self.net_load.shape[1])
-        self.scenarios=range(5)
+        self.scenarios=range(self.net_load.shape[1])[:nb_scenarios]
 
-    def gain_function(self, week_index: int, scenario: int, alpha: float) -> np.ndarray:
+    def gain_function(self, week_index: int, scenario: int, alpha: float,coeff:float) -> np.ndarray:
         net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
         max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
         max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
@@ -62,7 +63,7 @@ class GainFunctionHydro:
             pump_list.append(np.sum(actual_pump*self.efficiency))
             # print(f"controle total effectué : {control}")
 
-            gain = np.sum(curtailed_energy ** alpha / 1e9)
+            gain = np.sum(np.abs(curtailed_energy) ** alpha / coeff)
             # print(f"gain associé au controle {control} : {gain}")
             control_list.append(control)
             gain_list.append(gain)
@@ -73,15 +74,16 @@ class GainFunctionHydro:
                         interp1d(control_list,pump_list,fill_value='extrapolate')])
 
 
-    def compute_gain_functions(self,alpha:float)->np.ndarray:
-        gain_functions=np.array([[self.gain_function(w,s,alpha) for s in self.scenarios] for w in range(self.nb_weeks)])
+    def compute_gain_functions(self,alpha:float,coeff:float)->np.ndarray:
+        gain_functions=np.array([[self.gain_function(w,s,alpha,coeff) for s in self.scenarios] for w in range(self.nb_weeks)])
         return gain_functions
+
     
    
     # affichages
 
-    def plot_gain_function(self,week_index:int,scenario:int,alpha:float)->None:
-        gain_func = self.gain_function(week_index, scenario, alpha)[0]
+    def plot_gain_function(self,week_index:int,scenario:int,alpha:float,coeff:float)->None:
+        gain_func = self.gain_function(week_index, scenario, alpha,coeff)[0]
         control_values = gain_func.x
         gain_values = gain_func(control_values)
         # print(f"control values : {control_values}, gain_values : {gain_values}")
@@ -94,7 +96,7 @@ class GainFunctionHydro:
         plt.tight_layout()
         plt.show()
 
-    def plot_load(self, week_index: int, scenario: int, alpha: float, index_ecretement: int) -> None:
+    def plot_load(self, week_index: int, scenario: int, alpha: float, index_ecretement: int,coeff:float) -> None:
         original_load = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
         max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
         max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
@@ -121,7 +123,7 @@ class GainFunctionHydro:
         control_hourly = curtail * self.turb_efficiency - actual_pump * self.efficiency
         control_total = np.sum(control_hourly)
 
-        gain_total = np.sum(curtailed_energy ** alpha / 1e9)
+        gain_total = np.sum(np.abs(curtailed_energy) ** alpha / coeff)
 
         hours = np.arange(len(original_load))
         width = 0.4
@@ -152,6 +154,6 @@ class GainFunctionHydro:
 
 
 
-# gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Calculs de trajectoires de cibles et contraintes LT/Heuristique hydro/stockage H2/stockage_h2", "fr")
-# gain.plot_gain_function(50,0,2)
-# gain.plot_load(15,134,2,20)
+# gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france_pour_module_py", "fr",200)
+# gain.plot_gain_function(10,0,1.8,1e8)
+# gain.plot_load(16,50,2,50,1e9)

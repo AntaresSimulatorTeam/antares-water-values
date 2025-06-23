@@ -4,12 +4,10 @@ import numpy as np
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
-from concurrent.futures import ProcessPoolExecutor
-import itertools
 
 rcParams['font.family'] = 'Cambria'
 
-class GainFunctionHydro:
+class Proxy:
     def __init__(self, dir_study: str, name_area: str,nb_scenarios:int) -> None:
         self.dir_study=dir_study
         self.name_area=name_area
@@ -23,13 +21,13 @@ class GainFunctionHydro:
         self.nb_weeks=self.reservoir.inflow.shape[0]
         self.scenarios=range(self.net_load.shape[1])[:nb_scenarios]
 
-    def gain_function(self, week_index: int, scenario: int, alpha: float,coeff:float) -> np.ndarray:
+    def stage_cost_function(self, week_index: int, scenario: int, alpha: float,coeff:float) -> np.ndarray:
         net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
         max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
         max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
         
         control_list = []
-        gain_list = []
+        cost_list = []
         turb_list = []
         pump_list = []
 
@@ -63,35 +61,35 @@ class GainFunctionHydro:
             pump_list.append(np.sum(actual_pump*self.efficiency))
             # print(f"controle total effectué : {control}")
 
-            gain = np.sum(np.abs(curtailed_energy) ** alpha / coeff)
-            # print(f"gain associé au controle {control} : {gain}")
+            cost = np.sum(np.abs(curtailed_energy) ** alpha / coeff)
+            # print(f"Coût associé au controle {control} : {cost}")
             control_list.append(control)
-            gain_list.append(gain)
+            cost_list.append(cost)
 
 
-        return np.array([interp1d(control_list, gain_list, fill_value="extrapolate"),
+        return np.array([interp1d(control_list, cost_list, fill_value="extrapolate"),
                         interp1d(control_list,turb_list,fill_value='extrapolate'),
                         interp1d(control_list,pump_list,fill_value='extrapolate')])
 
 
-    def compute_gain_functions(self,alpha:float,coeff:float)->np.ndarray:
-        gain_functions=np.array([[self.gain_function(w,s,alpha,coeff) for s in self.scenarios] for w in range(self.nb_weeks)])
-        return gain_functions
+    def compute_stage_cost_functions(self,alpha:float,coeff:float)->np.ndarray:
+        cost_functions=np.array([[self.stage_cost_function(w,s,alpha,coeff) for s in self.scenarios] for w in range(self.nb_weeks)])
+        return cost_functions
 
     
    
     # affichages
 
-    def plot_gain_function(self,week_index:int,scenario:int,alpha:float,coeff:float)->None:
-        gain_func = self.gain_function(week_index, scenario, alpha,coeff)[0]
-        control_values = gain_func.x
-        gain_values = gain_func(control_values)
-        # print(f"control values : {control_values}, gain_values : {gain_values}")
+    def plot_stage_cost_function(self,week_index:int,scenario:int,alpha:float,coeff:float)->None:
+        cost_func = self.stage_cost_function(week_index, scenario, alpha,coeff)[0]
+        control_values = cost_func.x
+        cost_values = cost_func(control_values)
+        # print(f"control values : {control_values}, cost_values : {cost_values}")
         plt.figure(figsize=(8, 5))
-        plt.plot(control_values, gain_values, marker='o')
+        plt.plot(control_values, cost_values, marker='o')
         plt.xlabel("Contrôle hebdomadaire [MWh]")
-        plt.ylabel(f"Gain, α={alpha})")
-        plt.title(f"Courbe de gain - Semaine {week_index+1}, MC {scenario+1}")
+        plt.ylabel(f"Coût, α={alpha})")
+        plt.title(f"Courbe de coût - Semaine {week_index+1}, MC {scenario+1}")
         plt.grid(True)
         plt.tight_layout()
         plt.show()
@@ -123,7 +121,7 @@ class GainFunctionHydro:
         control_hourly = curtail * self.turb_efficiency - actual_pump * self.efficiency
         control_total = np.sum(control_hourly)
 
-        gain_total = np.sum(np.abs(curtailed_energy) ** alpha / coeff)
+        cost_total = np.sum(np.abs(curtailed_energy) ** alpha / coeff)
 
         hours = np.arange(len(original_load))
         width = 0.4
@@ -143,7 +141,7 @@ class GainFunctionHydro:
 
         plt.title(
             f"Turbinage = {np.sum(curtail):.1f} MWh | Pompage = {np.sum(actual_pump):.1f} MWh | "
-            f"Contrôle = {control_total:.1f} MWh | Gain = {gain_total:.2f}"
+            f"Contrôle = {control_total:.1f} MWh | Coût = {cost_total:.2f}"
         )
         plt.xlabel("Heures")
         plt.ylabel("Énergie (MW)")
@@ -154,6 +152,6 @@ class GainFunctionHydro:
 
 
 
-# gain=GainFunctionHydro("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france_pour_module_py", "fr",200)
-# gain.plot_gain_function(10,0,1.8,1e8)
-# gain.plot_load(16,50,2,50,1e9)
+# proxy=Proxy("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france_pour_module_py", "fr",200)
+# proxy.plot_stage_cost_function(16,50,2,1e9)
+# proxy.plot_load(16,50,2,167,1e9)

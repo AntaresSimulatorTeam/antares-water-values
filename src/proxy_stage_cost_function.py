@@ -13,8 +13,9 @@ class Proxy:
         self.name_area=name_area
         self.reservoir = Reservoir(self.dir_study, self.name_area)
         self.net_load=NetLoad(dir_study,name_area).net_load
-        self.max_daily_generating=self.reservoir.max_daily_generating
-        self.max_daily_pumping=self.reservoir.max_daily_pumping
+        # pour éviter les infaisabilités dues aux arrondis on diminue la capacité de pompage et turbinage
+        self.max_daily_generating=self.reservoir.max_daily_generating-1
+        self.max_daily_pumping=self.reservoir.max_daily_pumping-1
         self.efficiency=self.reservoir.efficiency
         self.turb_efficiency=1
 

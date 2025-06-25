@@ -12,11 +12,13 @@ import pandas as pd
 import os
 import logging
 from logging.handlers import RotatingFileHandler
+from configparser import ConfigParser
 import argparse
+import shutil
 
 rcParams['font.family'] = 'Cambria'
 
-class BellmanValuesHydro:
+class BellmanValuesProxy:
     def __init__(self, cost_function: Proxy,alpha:float,coeff:float,enable_logging: bool):
         
         self.cost_function=cost_function
@@ -44,9 +46,12 @@ class BellmanValuesHydro:
         
         self.export_dir = self.make_unique_export_dir()
         self.logger = self.setup_logger() if enable_logging else self.get_null_logger()
+        self.setup_rule_curve_logger()
         self.compute_bellman_values()
         self.compute_usage_values()
         self.compute_trajectories()
+        self.new_lower_rule_curve()
+        self.new_upper_rule_curve()
         
     def log_section_title(self, title: str)->None:
         self.logger.debug("\n" + "=" * 70)
@@ -188,8 +193,6 @@ class BellmanValuesHydro:
                 self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2])
             self.logger.debug(f"→ Moyenne BV semaine {w+1} : {self.mean_bv[w]}")
 
-
-
     def compute_usage_values(self) -> None:
         self.usage_values=np.zeros((self.nb_weeks,50))
         for w in range(self.nb_weeks):
@@ -282,7 +285,151 @@ class BellmanValuesHydro:
                     self.optimal_turb[s,w]=None
                 
                 # previous_stock=best_new_stock
+
+
+    def setup_rule_curve_logger(self) -> None:
+        log_dir=os.path.join(self.export_dir, "log_rule_curves")
+        os.makedirs(log_dir, exist_ok=True)
+        self.rule_curve_logger = logging.getLogger("rule_curve_logger")
+        self.rule_curve_logger.setLevel(logging.INFO)
+
+        file_handler = logging.FileHandler(os.path.join(log_dir, "rule_curves_differences.log"), mode='w')
+        file_handler.setLevel(logging.INFO)
+
+        formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+        file_handler.setFormatter(formatter)
+
+        # Pour éviter les logs dupliqués si déjà attaché
+        if not self.rule_curve_logger.handlers:
+            self.rule_curve_logger.addHandler(file_handler)
+            self.rule_curve_logger.propagate = False  # éviter que ça se répercute dans root logger
+
+    def new_lower_rule_curve(self)->None:
+        upper_curves=np.zeros((len(self.scenarios),self.nb_weeks,168))
+        for s in self.scenarios:
+            for w in range(self.nb_weeks):
+                stock_init=self.trajectories[s,w-1] if w>0 else self.initial_level
+                stock_final = self.trajectories[s,w]
+
+                pump_max = np.repeat(self.reservoir.max_daily_pumping[w * 7:(w + 1) * 7], 24) / 24
+                turb_max = np.repeat(self.reservoir.max_daily_generating[w * 7:(w + 1) * 7], 24) / 24
+                inflows = np.repeat(self.daily_inflow[w * 7:(w + 1) * 7,s],24)/24
+
+                cumsum_pump = np.cumsum(pump_max * self.cost_function.efficiency+inflows)
+                cumsum_turb = np.cumsum(turb_max[::-1]*self.cost_function.turb_efficiency+inflows[::-1])[::-1]
+
+                diff= cumsum_pump - cumsum_turb -(stock_final - stock_init)
+                hourly_curve = np.zeros(168)
+                if len(np.where(diff >= 0)[0])==0:
+                    print((s,w))
+                    
+                    if stock_final>stock_init:
+                        pump = np.cumsum(pump_max*self.cost_function.efficiency)
+                        hourly_curve = stock_init + pump + inflows
+                    else:
+                        turb = np.cumsum(turb_max*self.cost_function.turb_efficiency)
+                        hourly_curve = stock_init - turb + inflows
+
+                else:     
+                    idx = np.where(diff >= 0)[0]
+                    intersection_idx = idx[0]
+
+                    pump = np.cumsum(pump_max[:intersection_idx + 1] * self.cost_function.efficiency)
+                    turb = np.cumsum(turb_max[intersection_idx + 1:][::-1] * self.cost_function.turb_efficiency)[::-1]
+                    hourly_curve = np.zeros(168)
+                    hourly_curve[:intersection_idx + 1] = stock_init + pump + inflows[:intersection_idx+1]
+                    hourly_curve[intersection_idx + 1:] = stock_final + turb + inflows[intersection_idx+1:]
                 
+                upper_curves[s,w]=hourly_curve
+
+        weekly_envelope=np.min(upper_curves,axis=0)
+        hourly_envelope=weekly_envelope.flatten()
+        hourly_envelope=np.concatenate([hourly_envelope, hourly_envelope[-24:]])
+        days = np.arange(364)
+        hours = np.linspace(0, 363, 8760)
+
+        interpolator = interp1d(days, self.daily_bottom_rule_curve, kind='linear')
+        self.hourly_interpolated_lower_rule_curve = interpolator(hours)
+        self.final_lower_rule_curve=np.minimum(hourly_envelope,self.hourly_interpolated_lower_rule_curve)
+
+        difference = np.abs(self.final_lower_rule_curve - self.hourly_interpolated_lower_rule_curve)
+        threshold = 1e-3
+        hours_with_diff = np.where(difference > threshold)[0]
+
+        if hours_with_diff.size > 0:
+            self.rule_curve_logger.warning(
+                f"{len(hours_with_diff)} heure(s) avec un écart > {threshold} entre la courbe guide inférieure ajustée et interpolée."
+            )
+            for hour in hours_with_diff:
+                diff_value = difference[hour]
+                self.rule_curve_logger.warning(f"Heure {hour} : écart = {diff_value:.6f}")
+
+
+      
+
+    def new_upper_rule_curve(self) -> None:
+        lower_curves = np.zeros((len(self.scenarios), self.nb_weeks, 168))
+        
+        for s in self.scenarios:
+            for w in range(self.nb_weeks):
+                stock_init = self.trajectories[s, w - 1] if w > 0 else self.initial_level
+                stock_final = self.trajectories[s, w]
+
+                turb_max = np.repeat(self.reservoir.max_daily_generating[w * 7:(w + 1) * 7], 24) / 24
+                pump_max = np.repeat(self.reservoir.max_daily_pumping[w * 7:(w + 1) * 7], 24) / 24
+                inflows = np.repeat(self.daily_inflow[w * 7:(w + 1) * 7, s], 24) / 24
+
+                cumsum_turb = np.cumsum(turb_max * self.cost_function.turb_efficiency + inflows)
+                cumsum_pump = np.cumsum(pump_max[::-1] * self.cost_function.efficiency + inflows[::-1])[::-1]
+
+                diff = cumsum_pump - cumsum_turb - (stock_final-stock_init)
+
+                hourly_curve = np.zeros(168)
+                if len(np.where(diff >= 0)[0])==0:
+                    print((s,w))
+
+                    if stock_final>stock_init:
+                        pump = np.cumsum(pump_max*self.cost_function.efficiency)
+                        hourly_curve = stock_init + pump + inflows
+                    else:
+                        turb = np.cumsum(turb_max*self.cost_function.turb_efficiency)
+                        hourly_curve = stock_init - turb + inflows
+
+                else:     
+                    idx = np.where(diff >= 0)[0]
+                    intersection_idx = idx[0]
+
+                    turb = np.cumsum(turb_max[:intersection_idx + 1] * self.cost_function.turb_efficiency)
+                    pump = np.cumsum((pump_max[intersection_idx + 1:][::-1] * self.cost_function.efficiency))[::-1]
+                    hourly_curve[:intersection_idx + 1] = stock_init - turb  + inflows[:intersection_idx + 1]
+                    hourly_curve[intersection_idx + 1:] = stock_final - pump + inflows[intersection_idx+1:]
+                    
+                lower_curves[s, w] = hourly_curve
+
+        weekly_envelope = np.max(lower_curves, axis=0)
+        hourly_envelope = weekly_envelope.flatten()
+        hourly_envelope = np.concatenate([hourly_envelope, hourly_envelope[-24:]])
+
+        days = np.arange(364)
+        hours = np.linspace(0, 363, 8760)
+        interpolator = interp1d(days, self.daily_upper_rule_curve, kind='linear')
+        self.hourly_interpolated_upper_rule_curve = interpolator(hours)
+
+        self.final_upper_rule_curve = np.maximum(hourly_envelope, self.hourly_interpolated_upper_rule_curve)
+        
+        difference = np.abs(self.final_upper_rule_curve - self.hourly_interpolated_upper_rule_curve)
+        threshold = 1e-3
+        hours_with_diff = np.where(difference > threshold)[0]
+
+        if hours_with_diff.size > 0:
+            self.rule_curve_logger.warning(
+                f"{len(hours_with_diff)} heure(s) avec un écart > {threshold} entre la courbe guide supérieure ajustée et interpolée."
+            )
+            for hour in hours_with_diff:
+                diff_value = difference[hour]
+                self.rule_curve_logger.warning(f"Heure {hour} : écart = {diff_value:.6f}")
+
+
 
     # affichages
 
@@ -322,9 +469,9 @@ class BellmanValuesHydro:
         plt.legend(
         loc='lower right',
         bbox_to_anchor=(1, -0.15),
-        ncol=6  # Ajustez selon la place disponible
+        ncol=6
     )
-        plt.tight_layout(rect=(0, 0.1, 1, 1))  # Laisse de la place en bas pour la légende
+        plt.tight_layout(rect=(0, 0.1, 1, 1))
         plt.grid(True)
         plt.tight_layout()
         plt.show()
@@ -462,8 +609,24 @@ class BellmanValuesHydro:
         fig.write_html(html_path)
         print(f"Interactive plot saved at: {html_path}")
 
+    def plot_adjusted_rule_curves(self) -> None:
+        plt.figure(figsize=(16, 6))
 
-    # exports
+        plt.plot(self.final_lower_rule_curve / self.reservoir_capacity * 100, label="Inférieure ajustée", color="blue", linewidth=2)
+        plt.plot(self.hourly_interpolated_lower_rule_curve / self.reservoir_capacity * 100, label="Inférieure interpolée", color="cyan", linestyle="--", linewidth=1.5)
+
+        plt.plot(self.final_upper_rule_curve / self.reservoir_capacity * 100, label="Supérieure ajustée", color="darkred", linewidth=2)
+        plt.plot(self.hourly_interpolated_upper_rule_curve / self.reservoir_capacity * 100, label="Supérieure interpolée", color="orange", linestyle="--", linewidth=1.5)
+
+        plt.xlabel("Heure de l'année")
+        plt.ylabel("Stock (%)")
+        plt.title("Courbes guides horaires : ajustées vs interpolées")
+        plt.legend()
+        plt.grid(True)
+        plt.tight_layout()
+        plt.show()
+
+
     def make_unique_export_dir(self) -> str:
         base_path = os.path.join(self.cost_function.dir_study, "exports_hydro_trajectories")
         if not os.path.exists(base_path):
@@ -500,28 +663,6 @@ class BellmanValuesHydro:
         df.to_csv(output_path,index=False)
         print(f"Control trajectories export succeeded : {output_path}")
 
-    def export_sts_inflows(self, filename: str = "sts_inflows.txt")->None:
-        balance=np.zeros((168*self.nb_weeks,len(self.scenarios)))
-        for s in self.scenarios:
-            for w in range(self.nb_weeks):
-                hour_start=w*168
-                if w==0:
-                    hlevel_start=self.initial_level
-                else:
-                    hlevel_start=self.trajectories[s,w-1]
-                hlevel_end=self.trajectories[s,w]
-                balance[hour_start,s]=hlevel_start-self.reservoir_capacity/2
-                balance[hour_start+167,s]=self.reservoir_capacity/2-hlevel_end
-                balance[hour_start:hour_start+168,s]+=np.repeat(self.daily_inflow[w*7:(w+1)*7,s],24)/24
-        
-        balance=np.vstack([balance,np.zeros((24,len(self.scenarios)))])
-
-        filepath = os.path.join(self.export_dir, filename)
-
-        np.savetxt(filepath, balance, fmt="%.6f", delimiter="\t")
-
-        print(f"Balance export succedeed : {filepath}")
-    
     def export_bellman_values(self, filename: str = "bellman_values.csv") -> None:
         data = []
         for w in range(self.nb_weeks):
@@ -541,43 +682,6 @@ class BellmanValuesHydro:
         df.to_csv(output_path, index=False)
         print(f"Bellman values export succeeded: {output_path}")
 
-
-    def export_hourly_upper_rule_curves(self, filename: str = "hourly_upper_rule_curve.txt") -> None:
-        n_days = 365
-        daily_indices = np.arange(n_days)
-        interpolator = interp1d(daily_indices, self.daily_upper_rule_curve/self.reservoir_capacity, kind='linear')
-
-        hourly_indices = np.linspace(0, n_days - 1, n_days * 24)
-
-
-        hourly_upper_rule_curve = interpolator(hourly_indices)
-
-
-        filepath = os.path.join(self.export_dir, filename)
-
-        np.savetxt(filepath, hourly_upper_rule_curve, fmt="%.6f")
-
-        print(f"Hourly upper rule curve export succeeded: {filepath}")
-
-    def export_hourly_bottom_rule_curves(self, filename: str = "hourly_bottom_rule_curve.txt") -> None:
-        n_days = 365
-
-        daily_indices = np.arange(n_days)
-        interpolator = interp1d(daily_indices, self.daily_bottom_rule_curve/self.reservoir_capacity, kind='linear')
-
-        hourly_indices = np.linspace(0, n_days - 1, n_days * 24)
-
-
-        hourly_upper_rule_curve = interpolator(hourly_indices)
-
-
-        filepath = os.path.join(self.export_dir, filename)
-
-        np.savetxt(filepath, hourly_upper_rule_curve, fmt="%.6f")
-
-        print(f"Hourly bottom rule curve export succeeded: {filepath}")
-
-
     def export_trajectories(self,filename:str="trajectories.csv") ->None:
         data = []
 
@@ -596,6 +700,189 @@ class BellmanValuesHydro:
         df.to_csv(output_path,index=False)
         print(f"Stock trajectories export succeeded : {output_path}")
     
+    def export_sts_inflows(self, filename: str = "inflows.txt")->None:
+        balance=np.zeros((168*self.nb_weeks,len(self.scenarios)))
+        for s in self.scenarios:
+            for w in range(self.nb_weeks):
+                hour_start=w*168
+                if w==0:
+                    hlevel_start=self.initial_level
+                else:
+                    hlevel_start=self.trajectories[s,w-1]
+                hlevel_end=self.trajectories[s,w]
+                balance[hour_start,s]=hlevel_start-self.reservoir_capacity/2
+                balance[hour_start+167,s]=self.reservoir_capacity/2-hlevel_end
+                balance[hour_start:hour_start+168,s]+=np.repeat(self.daily_inflow[w*7:(w+1)*7,s],24)/24
+        
+        balance=np.vstack([balance,np.zeros((24,len(self.scenarios)))])
+
+        filepath = os.path.join(self.export_dir, filename)
+
+        np.savetxt(filepath, balance, fmt="%.6f", delimiter="\t")
+
+    def overwrite_inflows(self) -> None:
+        inflow_path = f"{self.cost_function.dir_study}/input/hydro/series/{self.cost_function.name_area}/mod.txt"
+        inflow_backup_path = inflow_path.replace(".txt", "_old.txt")
+
+        if os.path.exists(inflow_path):
+            os.rename(inflow_path, inflow_backup_path)
+
+        inflows = np.loadtxt(inflow_backup_path)
+        inflows[:, :] = 0
+
+        np.savetxt(inflow_path, inflows, fmt="%.6f", delimiter="\t")
+
+    def overwrite_hydro_ini_file(self)->None:
+        config = ConfigParser()
+
+        config.read(f"{self.cost_function.dir_study}/input/hydro/hydro.ini")
+        config["reservoir"]["fr"] = "false"
+
+        with open(f"{self.cost_function.dir_study}/input/hydro/hydro.ini", "w") as configfile:
+            config.write(configfile)
+
+    def create_st_cluster(self)->None:
+        contenu = f"""[lt_stock_proxy_{self.cost_function.name_area}]
+name = lt_stock_proxy_{self.cost_function.name_area}
+group = PSP_open
+reservoircapacity = {self.reservoir_capacity}
+initiallevel = 0.500000
+injectionnominalcapacity = {np.max(self.reservoir.max_daily_pumping/24)}
+withdrawalnominalcapacity = {np.max(self.reservoir.max_daily_generating/24)}
+efficiency = {self.cost_function.efficiency}
+efficiencywithdrawal = {self.cost_function.turb_efficiency}
+initialleveloptim = false
+enabled = true
+"""
+        with open(f"{self.cost_function.dir_study}/input/st-storage/clusters/{self.cost_function.name_area}/list.ini", "a") as f:
+            f.write(contenu)
+
+    def create_pmax_file(self)->None:
+        pmax_injection_hourly=np.repeat(self.reservoir.max_daily_pumping,24)/24
+        pmax_withdrawal_hourly=np.repeat(self.reservoir.max_daily_generating,24)/24
+        modulation_injection = np.clip(pmax_injection_hourly/np.max(self.reservoir.max_daily_pumping/24),0,1)
+        modulation_withdrawal = np.clip(pmax_withdrawal_hourly/np.max(self.reservoir.max_daily_generating/24),0,1)
+
+        modulation_injection = np.concatenate([modulation_injection, np.full(24, modulation_injection[-1])])
+        modulation_withdrawal = np.concatenate([modulation_withdrawal, np.full(24, modulation_withdrawal[-1])])
+
+        folder_path = os.path.join(
+            self.cost_function.dir_study,
+            "input", "st-storage", "series",
+            self.cost_function.name_area,
+            f"lt_stock_proxy_{self.cost_function.name_area}"
+        )
+        os.makedirs(folder_path, exist_ok=True)
+        np.savetxt(os.path.join(folder_path, "PMAX-injection.txt"), modulation_injection, fmt="%.6f")
+        np.savetxt(os.path.join(folder_path, "PMAX-withdrawal.txt"), modulation_withdrawal, fmt="%.6f")
+
+    def create_rule_curve_file(self) -> None:
+        folder_path = os.path.join(
+            self.cost_function.dir_study,
+            "input", "st-storage", "series",
+            self.cost_function.name_area,
+            f"lt_stock_proxy_{self.cost_function.name_area}"
+        )
+        os.makedirs(folder_path, exist_ok=True)
+
+        # Sauvegarde des fichiers
+        lower_path = os.path.join(folder_path, "lower-rule-curve.txt")
+        upper_path = os.path.join(folder_path, "upper-rule-curve.txt")
+
+        np.savetxt(lower_path, self.final_lower_rule_curve/self.reservoir_capacity, fmt="%.6f")
+        np.savetxt(upper_path, self.final_upper_rule_curve/self.reservoir_capacity, fmt="%.6f")
+
+    def modify_scenario_builder(self)->None:
+        config = ConfigParser(strict=False)
+        config.read(f"{self.cost_function.dir_study}/settings/generaldata.ini")
+        nbyears = int(config["general"]["nbyears"])
+        lines = []
+        for mc in range(nbyears):
+            trajectory = (mc % self.cost_function.net_load.shape[1]) + 1
+            lines.append(f"\nsts,{self.cost_function.name_area},{mc},lt_stock_proxy_{self.cost_function.name_area}={trajectory}")
+
+        scenariobuilder_path = os.path.join(self.cost_function.dir_study, "settings/scenariobuilder.dat")
+        with open(scenariobuilder_path, "a") as f:
+            f.writelines(lines)
+
+    def modify_antares_data(self)->None:
+        self.overwrite_inflows()
+        self.overwrite_hydro_ini_file()
+        self.create_st_cluster()
+        self.create_pmax_file()
+        self.create_rule_curve_file()
+        self.modify_scenario_builder()
+        self.export_sts_inflows(filename = f"{self.cost_function.dir_study}/input/st-storage/series/{self.cost_function.name_area}/lt_stock_proxy_{self.cost_function.name_area}/inflows.txt")
+        print(f"Antares study modified successfully : {self.cost_function.dir_study}")
+
+    def undo_modifications(self) -> None:
+        
+        inflow_path = os.path.join(
+            self.cost_function.dir_study,
+            "input", "hydro", "series",
+            self.cost_function.name_area,
+            "mod.txt"
+        )
+        inflow_backup_path = inflow_path.replace(".txt", "_old.txt")
+        if os.path.exists(inflow_backup_path):
+            os.remove(inflow_path)
+            os.rename(inflow_backup_path, inflow_path)
+        
+        hydro_ini_path = os.path.join(
+            self.cost_function.dir_study,
+            "input", "hydro", "hydro.ini"
+        )
+        config = ConfigParser()
+        config.read(hydro_ini_path)
+        if "reservoir" in config and "fr" in config["reservoir"]:
+            config["reservoir"]["fr"] = "true"
+            with open(hydro_ini_path, "w") as configfile:
+                config.write(configfile)
+
+        st_folder = os.path.join(
+            self.cost_function.dir_study,
+            "input", "st-storage", "series",
+            self.cost_function.name_area,
+            f"lt_stock_proxy_{self.cost_function.name_area}"
+        )
+        if os.path.exists(st_folder):
+            shutil.rmtree(st_folder)
+
+        list_ini_path = os.path.join(
+            self.cost_function.dir_study,
+            "input", "st-storage", "clusters",
+            self.cost_function.name_area,
+            "list.ini"
+        )
+        if os.path.exists(list_ini_path):
+            with open(list_ini_path, "r") as f:
+                lines = f.readlines()
+            new_lines = []
+            skip_block = False
+            for line in lines:
+                if line.strip().startswith(f"[lt_stock_proxy_{self.cost_function.name_area}]"):
+                    skip_block = True
+                elif skip_block and line.strip().startswith("["):
+                    skip_block = False
+                if not skip_block:
+                    new_lines.append(line)
+            with open(list_ini_path, "w") as f:
+                f.writelines(new_lines)
+
+        scenariobuilder_path = os.path.join(
+            self.cost_function.dir_study,
+            "settings", "scenariobuilder.dat"
+        )
+        if os.path.exists(scenariobuilder_path):
+            with open(scenariobuilder_path, "r") as f:
+                lines = f.readlines()
+            filtered = [l for l in lines if f"lt_stock_proxy_{self.cost_function.name_area}" not in l]
+            with open(scenariobuilder_path, "w") as f:
+                f.writelines(filtered)
+
+        print("🔁 Antares study restored to original state.")
+
+
 # launcher
 class Launch:
     def __init__(self, dir_study:str, area :str, MC_years : int, alpha :float, coeff_cost :int, enable_logging:bool):
@@ -609,18 +896,19 @@ class Launch:
     def run(self)->None:
         start=time.time()
         self.proxy=Proxy(dir_study=self.dir_study,name_area=self.name_area,nb_scenarios=self.nb_scenarios)
-        self.bv=BellmanValuesHydro(self.proxy,alpha=self.alpha,coeff=self.coeff,enable_logging=self.enable_logging)
+        self.bv=BellmanValuesProxy(self.proxy,alpha=self.alpha,coeff=self.coeff,enable_logging=self.enable_logging)
         end=time.time()
         print(f"Stage cost functions, Bellman values and trajectories computed in : {end-start} s.")
         self.bv.export_bellman_values()
         self.bv.plot_trajectories()
         self.bv.export_controls()
-        self.bv.export_sts_inflows()
         self.bv.export_trajectories()
-        # self.bv.export_hourly_upper_rule_curves()
-        # self.bv.export_hourly_bottom_rule_curves()
+        self.bv.modify_antares_data()
+        self.bv.plot_adjusted_rule_curves()
         self.bv.plot_usage_values()
         self.bv.plot_usage_values_heatmap()
+        self.bv.undo_modifications()
+        
 
 def main()->None:
     parser = argparse.ArgumentParser(description="Lancer la génération des trajectoires.")

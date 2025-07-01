@@ -25,6 +25,7 @@ class BellmanValuesProxy:
         self.reservoir = cost_function.reservoir
         self.reservoir_capacity = self.reservoir.capacity
         self.initial_level=self.reservoir.initial_level
+        self.alpha=alpha
 
         self.bottom_rule_curve=cost_function.reservoir.bottom_rule_curve
         self.upper_rule_curve=cost_function.reservoir.upper_rule_curve
@@ -328,9 +329,8 @@ class BellmanValuesProxy:
                 turb_max = np.repeat(self.reservoir.max_daily_generating[w * 7:(w + 1) * 7], 24) / 24
                 inflows = np.repeat(self.daily_inflow[w * 7:(w + 1) * 7,s],24)/24
 
-                cumsum_pump = np.cumsum(pump_max * self.cost_function.efficiency+inflows) + stock_init
-                delta = turb_max * self.cost_function.turb_efficiency + inflows
-                cumsum_turb = stock_final + np.concatenate([[0], np.cumsum(delta[::-1])[:-1]])[::-1]
+                cumsum_pump = np.concatenate([[0],np.cumsum(pump_max * self.cost_function.efficiency+inflows)])[:-1] + stock_init
+                cumsum_turb = stock_final + np.cumsum(self.cost_function.turb_efficiency*turb_max[::-1] + inflows[::-1])[::-1]
 
                 hourly_curve = np.minimum(cumsum_pump, cumsum_turb)
                 upper_curves[s,w]=hourly_curve
@@ -366,9 +366,8 @@ class BellmanValuesProxy:
                 pump_max = np.repeat(self.reservoir.max_daily_pumping[w * 7:(w + 1) * 7], 24) / 24
                 inflows = np.repeat(self.daily_inflow[w * 7:(w + 1) * 7, s], 24) / 24
 
-                cumsum_turb = np.cumsum(-turb_max * self.cost_function.turb_efficiency + inflows)+stock_init
-                delta = pump_max * self.cost_function.efficiency + inflows
-                cumsum_pump = stock_final - np.concatenate([[0], np.cumsum(delta[::-1])[:-1]])[::-1]
+                cumsum_turb = np.concatenate([[0],np.cumsum(-turb_max * self.cost_function.turb_efficiency + inflows)])[:-1] +stock_init
+                cumsum_pump = stock_final - np.cumsum(self.cost_function.efficiency*pump_max[::-1]  + inflows[::-1])[::-1]
 
                 hourly_curve = np.maximum(cumsum_turb, cumsum_pump)
                 lower_curves[s, w] = hourly_curve
@@ -442,8 +441,8 @@ class BellmanValuesProxy:
 
         fig, ax = plt.subplots(figsize=(14, 6))
 
-        # norm = colors.Normalize(np.min(self.usage_values[:-1]), np.max(self.usage_values[:-1]))
-        norm = colors.Normalize(vmin=-5, vmax=140)
+        norm = colors.Normalize(np.min(self.usage_values[:-1]), np.max(self.usage_values[:-1]))
+        # norm = colors.Normalize(vmin=-30, vmax=0)
 
 
         im = ax.imshow(
@@ -456,13 +455,13 @@ class BellmanValuesProxy:
         interpolation='bilinear'  # lissage
     )
 
-        # cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(np.min(self.usage_values[:-1]), np.max(self.usage_values[:-1]), 10))
-        cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(-5, 140, 10))
+        cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(np.min(self.usage_values[:-1]), np.max(self.usage_values[:-1]), 10))
+        # cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(-30, 0, 10))
         cbar.set_label("Valeur d’usage (MWh)")
 
         ax.set_xlabel("Semaine")
         ax.set_ylabel("Stock (%)")
-        ax.set_title("Nappes de valeurs d’usage (Bellman)")
+        ax.set_title(f"Nappes de valeurs d’usage (α={self.alpha})")
 
         plt.grid(False)
         plt.tight_layout()
@@ -609,7 +608,7 @@ class BellmanValuesProxy:
 
         plt.xlabel("Semaine", fontsize=14)
         plt.ylabel("Stock (%)", fontsize=14)
-        plt.title("Trajectoires de stock avec courbes guides - Tous scénarios", fontsize=16)
+        plt.title(f"Trajectoires de stock avec courbes guides - Tous scénarios (α={self.alpha})", fontsize=16)
         plt.grid(True, linestyle='--', alpha=0.5)
         plt.legend(fontsize=12, loc='upper right')
         plt.tight_layout()
@@ -912,15 +911,15 @@ class Launch:
         self.bv=BellmanValuesProxy(self.proxy,alpha=self.alpha,coeff=self.coeff,enable_logging=self.enable_logging)
         end=time.time()
         print(f"Stage cost functions, Bellman values and trajectories computed in : {end-start} s.")
-        # self.bv.export_bellman_values()
-        # self.bv.plot_trajectories()
-        # self.bv.export_controls()
-        # self.bv.export_trajectories()
-        # self.bv.modify_antares_data()
-        # self.bv.plot_adjusted_rule_curves()
-        # self.bv.plot_usage_values()
+        self.bv.export_bellman_values()
+        self.bv.plot_trajectories()
+        self.bv.export_controls()
+        self.bv.export_trajectories()
+        self.bv.modify_antares_data()
+        self.bv.plot_adjusted_rule_curves()
+        self.bv.plot_usage_values()
         self.bv.plot_usage_values_heatmap()
-        # self.bv.plot_all_trajectories_pyplot()
+        self.bv.plot_all_trajectories_pyplot()
         # self.bv.undo_modifications()
         
 

@@ -38,9 +38,8 @@ def new_lower_rule_curve()->np.ndarray:
             turb_max = np.repeat(reservoir.max_daily_generating[w * 7:(w + 1) * 7], 24) / 24
             inflows = np.repeat(reservoir.daily_inflow[w * 7:(w + 1) * 7,s],24)/24
 
-            cumsum_pump = np.cumsum(pump_max * cost_function.efficiency+inflows) + stock_init
-            delta = turb_max * cost_function.turb_efficiency + inflows
-            cumsum_turb = stock_final + np.concatenate([[0], np.cumsum(delta[::-1])[:-1]])[::-1]
+            cumsum_pump = np.concatenate([[0],np.cumsum(pump_max * cost_function.efficiency+inflows)])[:-1] + stock_init
+            cumsum_turb = stock_final + np.cumsum(cost_function.turb_efficiency*turb_max[::-1] + inflows[::-1])[::-1]
 
             if s==57 and w==37:
                 print(cumsum_pump)
@@ -78,18 +77,17 @@ def new_upper_rule_curve() -> np.ndarray:
             pump_max = np.repeat(reservoir.max_daily_pumping[w * 7:(w + 1) * 7], 24) / 24
             inflows = np.repeat(reservoir.daily_inflow[w * 7:(w + 1) * 7, s], 24) / 24
 
-            cumsum_turb = np.cumsum(-turb_max * cost_function.turb_efficiency + inflows) +stock_init
-            delta = pump_max * cost_function.efficiency + inflows
-            cumsum_pump = stock_final - np.concatenate([[0], np.cumsum(delta[::-1])[:-1]])[::-1]
-            if s==57 and w==37:
-                print(cumsum_turb)
-                print(cumsum_pump)
-                print(np.maximum(cumsum_turb,cumsum_pump))
-                plt.plot(cumsum_turb, label='Cumsum Turb')
-                plt.plot(cumsum_pump, label='Cumsum Pump')
-                plt.plot(daily_to_hourly_curve(reservoir.daily_upper_rule_curve)[w*168:(w+1)*168],linestyle = "--", label='Upper Rule Curve')
-                plt.plot(np.maximum(cumsum_turb,cumsum_pump), label='Hourly Curve')
-                plt.show()
+            cumsum_turb = np.concatenate([[0],np.cumsum(-turb_max * cost_function.turb_efficiency + inflows)])[:-1] +stock_init
+            cumsum_pump = stock_final - np.cumsum(cost_function.efficiency*pump_max[::-1]  + inflows[::-1])[::-1]
+            # if s==57 and w==37:
+            #     print(cumsum_turb)
+            #     print(cumsum_pump)
+            #     print(np.maximum(cumsum_turb,cumsum_pump))
+            #     plt.plot(cumsum_turb, label='Cumsum Turb')
+            #     plt.plot(cumsum_pump, label='Cumsum Pump')
+            #     plt.plot(daily_to_hourly_curve(reservoir.daily_upper_rule_curve)[w*168:(w+1)*168],linestyle = "--", label='Upper Rule Curve')
+            #     plt.plot(np.maximum(cumsum_turb,cumsum_pump), label='Hourly Curve')
+            #     plt.show()
             hourly_curve = np.maximum(cumsum_turb,cumsum_pump)
                 
             lower_curves[s, w] = hourly_curve
@@ -99,12 +97,12 @@ def new_upper_rule_curve() -> np.ndarray:
     hourly_envelope = np.concatenate([hourly_envelope, hourly_envelope[-24:]])
     hourly_upper_rule_curve = daily_to_hourly_curve(reservoir.daily_upper_rule_curve)
     final_upper_rule_curve=np.maximum(hourly_envelope,hourly_upper_rule_curve)
-    plt.plot(final_upper_rule_curve, label='Final Upper Rule Curve')
-    plt.plot(daily_to_hourly_curve(reservoir.daily_upper_rule_curve), linestyle='--', label='Original Upper Rule Curve')
-    plt.show()
+    # plt.plot(final_upper_rule_curve, label='Final Upper Rule Curve')
+    # plt.plot(daily_to_hourly_curve(reservoir.daily_upper_rule_curve), linestyle='--', label='Original Upper Rule Curve')
+    # plt.show()
     return final_upper_rule_curve
 
 # np.savetxt("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france_sts/exports_hydro_trajectories/interpolated_bottom_dule_curve.csv", daily_to_hourly_curve(reservoir.daily_bottom_rule_curve), delimiter=",")
-np.savetxt("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france_sts/exports_hydro_trajectories/pmax_hourly.csv", np.repeat(reservoir.max_daily_generating, 24) / 24, delimiter=",")
-new_lower_curve = new_lower_rule_curve()
-new_upper_curve = new_upper_rule_curve()
+# np.savetxt("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france_sts/exports_hydro_trajectories/pmax_hourly.csv", np.repeat(reservoir.max_daily_generating, 24) / 24, delimiter=",")
+# new_lower_curve = new_lower_rule_curve()
+# new_upper_curve = new_upper_rule_curve()

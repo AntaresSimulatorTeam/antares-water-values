@@ -96,8 +96,8 @@ class Reservoir:
         self.initial_level = rule_curves[0, 0]
         bottom_rule_curve = rule_curves[7::7, 0]
         upper_rule_curve = rule_curves[7::7, 1]
-        self.daily_bottom_rule_curve = rule_curves[1:,0]
-        self.daily_upper_rule_curve = rule_curves[1:,1]
+        self.daily_bottom_rule_curve = rule_curves[:,0]
+        self.daily_upper_rule_curve = rule_curves[:,1]
         self.bottom_rule_curve = bottom_rule_curve
         self.upper_rule_curve = upper_rule_curve
 

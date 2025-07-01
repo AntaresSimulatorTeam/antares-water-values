@@ -1,9 +1,11 @@
+from tkinter import font
 from read_antares_data import Reservoir
 from read_antares_data import NetLoad
 import numpy as np
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
+from scipy.ndimage import binary_dilation
 
 rcParams['font.family'] = 'Cambria'
 
@@ -88,22 +90,29 @@ class Proxy:
         # print(f"control values : {control_values}, cost_values : {cost_values}")
         plt.figure(figsize=(8, 5))
         plt.plot(control_values, cost_values, marker='o')
-        plt.xlabel("Contrôle hebdomadaire [MWh]")
-        plt.ylabel(f"Coût, α={alpha})")
-        plt.title(f"Courbe de coût - Semaine {week_index+1}, MC {scenario+1}")
+        plt.xlabel("Contrôle hebdomadaire [MWh]", fontsize=14)
+        plt.ylabel(f"Coût, (α={alpha})",fontsize=14)
+        plt.title(f"Fonction de coût - Scénario {scenario+1}, Semaine {week_index+1}",fontsize=14)
         plt.grid(True)
         plt.tight_layout()
         plt.show()
 
-    def plot_load(self, week_index: int, scenario: int, alpha: float, index_ecretement: int,coeff:float) -> None:
+
+
+
+    def plot_load(self, week_index: int, scenario: int, alpha: float, index_ecretement: int, coeff: float) -> None:
         original_load = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
         max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
         max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
 
         n_thresholds = 168
-        turb_thresholds = np.quantile(np.linspace(np.min(original_load-max_energy_hour),
-                                                  np.max(original_load+max_pumping_hour)*(self.turb_efficiency/self.efficiency)**(1/(alpha-1))), 
-                                                  np.linspace(0, 1, n_thresholds))
+        turb_thresholds = np.quantile(
+            np.linspace(
+                np.min(original_load - max_energy_hour),
+                np.max(original_load + max_pumping_hour) * (self.turb_efficiency / self.efficiency) ** (1 / (alpha - 1))
+            ),
+            np.linspace(0, 1, n_thresholds)
+        )
 
         threshold = turb_thresholds[index_ecretement]
         curtailed_energy = np.minimum(original_load, np.maximum(threshold, original_load - max_energy_hour))
@@ -112,40 +121,54 @@ class Proxy:
         if threshold < 0:
             pump_threshold = threshold
         else:
-            pump_threshold = ((self.efficiency / self.turb_efficiency)**(1/(alpha-1))) * threshold
+            pump_threshold = (self.efficiency / self.turb_efficiency) ** (1 / (alpha - 1)) * threshold
 
         potential_pump = pump_threshold - curtailed_energy
         mask = curtailed_energy < pump_threshold
         actual_pump = np.minimum(potential_pump, max_pumping_hour) * mask
         curtailed_energy += actual_pump
 
+        # Étapes intermédiaires
+        turb_curve = original_load - curtail
+        final_curve = turb_curve + actual_pump
+
+        # Contrôle et coût
         control_hourly = curtail * self.turb_efficiency - actual_pump * self.efficiency
         control_total = np.sum(control_hourly)
-
         cost_total = np.sum(np.abs(curtailed_energy) ** alpha / coeff)
 
+        # Affichage des valeurs
+        print(f"Semaine {week_index}, scénario {scenario}")
+        print(f"  Turbinage total : {np.sum(curtail):.1f} MWh")
+        print(f"  Pompage total   : {np.sum(actual_pump):.1f} MWh")
+        print(f"  Contrôle total  : {control_total:.1f} MWh")
+        print(f"  Coût            : {cost_total:.2f}")
+
         hours = np.arange(len(original_load))
-        width = 0.4
 
         plt.figure(figsize=(15, 6))
-        plt.bar(hours, original_load, width=width, label='Consommation résiduelle initiale', color='lightgray')
-        plt.bar(hours, -curtail, width=width, label='Énergie turbinée', color='firebrick')  # négatif = turbinage
-        plt.bar(hours, actual_pump, width=width, label='Énergie pompée', color='royalblue')
-        plt.plot(hours, curtailed_energy, label='Consommation résiduelle écrêtée', color='black', linewidth=1.5)
+        plt.plot(hours, original_load, label='Consommation initiale', color='gray', linewidth=1.2)
+        plt.plot(hours, final_curve, label='Consommation écrétée', color='black', linewidth=1.5)
 
-        # Affichage des seuils
+        # Remplissages
+        turb_mask = binary_dilation(curtail > 1e-6, iterations=1)
+        plt.fill_between(hours, original_load, turb_curve, where=turb_mask,
+                        color='firebrick', alpha=0.5, label='Énergie turbinée')
+
+        pump_mask = binary_dilation(actual_pump > 1e-6, iterations=1)
+        plt.fill_between(hours, turb_curve, final_curve, where=pump_mask,
+                        color='royalblue', alpha=0.5, label='Énergie pompée')
+
+        # Seuils
         if index_ecretement < n_thresholds:
-            plt.axhline(y=threshold, color='red', linestyle='--', label=f"Seuil turbinage = {threshold:.2f}")
-            plt.axhline(y=pump_threshold, color='blue', linestyle='--', label=f"Seuil pompage = {pump_threshold:.2f}")
+            plt.axhline(y=threshold, color='red', linestyle='--', label=f"Seuil turbinage = {threshold:.2f} MWh")
+            plt.axhline(y=pump_threshold, color='blue', linestyle='--', label=f"Seuil pompage = {pump_threshold:.2f} MWh")
         else:
-            plt.axhline(y=pump_threshold, color='blue', linestyle='--', label=f"Seuil pompage seul = {pump_threshold:.2f}")
+            plt.axhline(y=pump_threshold, color='blue', linestyle='--', label=f"Seuil pompage seul = {pump_threshold:.2f} MWh")
 
-        plt.title(
-            f"Turbinage = {np.sum(curtail):.1f} MWh | Pompage = {np.sum(actual_pump):.1f} MWh | "
-            f"Contrôle = {control_total:.1f} MWh | Coût = {cost_total:.2f}"
-        )
-        plt.xlabel("Heures")
-        plt.ylabel("Énergie (MW)")
+        plt.title(f"Scénario {scenario+1}, Semaine {week_index+1}", fontsize=16)
+        plt.xlabel("Heures", fontsize=16)
+        plt.ylabel("Consommation résiduelle (MWh)", fontsize=16)
         plt.legend()
         plt.grid(True, axis='y')
         plt.tight_layout()
@@ -153,6 +176,72 @@ class Proxy:
 
 
 
-# proxy=Proxy("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france_pour_module_py", "fr",200)
-# proxy.plot_stage_cost_function(16,50,2,1e9)
-# proxy.plot_load(16,50,2,167,1e9)
+
+    def plot_load_simple(self, week_index: int, scenario: int, alpha: float, index_ecretement: int, coeff: float) -> None:
+        original_load = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
+        max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
+        max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
+
+        n_thresholds = 168
+        turb_thresholds = np.quantile(
+            np.linspace(
+                np.min(original_load - max_energy_hour),
+                np.max(original_load + max_pumping_hour) * (self.turb_efficiency / self.efficiency) ** (1 / (alpha - 1))
+            ),
+            np.linspace(0, 1, n_thresholds)
+        )
+
+        threshold = turb_thresholds[index_ecretement]
+        curtailed_energy = np.minimum(original_load, np.maximum(threshold, original_load - max_energy_hour))
+        curtail = original_load - curtailed_energy  # énergie turbinée
+
+        if threshold < 0:
+            pump_threshold = threshold
+        else:
+            pump_threshold = (self.efficiency / self.turb_efficiency) ** (1 / (alpha - 1)) * threshold
+
+        potential_pump = pump_threshold - curtailed_energy
+        mask = curtailed_energy < pump_threshold
+        actual_pump = np.minimum(potential_pump, max_pumping_hour) * mask
+        curtailed_energy += actual_pump  # consommation après pompage
+
+        # Étapes intermédiaires
+        turb_curve = original_load - curtail  # après turbinage
+        final_curve = turb_curve + actual_pump  # après turbinage + pompage
+
+        hours = np.arange(len(original_load))
+
+        plt.figure(figsize=(15, 6))
+
+        # Courbe initiale
+        plt.plot(hours, original_load, label='Consommation initiale', color='gray', linewidth=1.2)
+
+        # Courbe modifiée
+        plt.plot(hours, final_curve, label='Consommation écrétée', color='black', linewidth=1.5)
+
+        # Remplissage entre courbe initiale et après turbinage
+        turb_mask = binary_dilation(curtail > 1e-6, iterations=1)
+        plt.fill_between(hours, original_load, turb_curve, where=turb_mask,
+                        color='firebrick', alpha=0.5, label='Énergie turbinée')
+
+        # Remplissage entre après turbinage et consommation finale
+        pump_mask = binary_dilation(actual_pump > 1e-6, iterations=1)
+        plt.fill_between(hours, turb_curve, final_curve, where=pump_mask,
+                        color='royalblue', alpha=0.5, label='Énergie pompée')
+
+        plt.title(f"Écrêtement de la consommation résiduelle – Scénario {scenario+1}, Semaine {week_index+1}",fontsize=14)
+        plt.xlabel("Heures",fontsize=14)
+        plt.ylabel("Consommation résiduelle (MWh)",fontsize=14)
+        plt.legend()
+        plt.grid(True, axis='y')
+        plt.tight_layout()
+        plt.show()
+
+
+
+
+
+# proxy=Proxy("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france", "fr",200)
+# proxy.plot_stage_cost_function(34,17,2,1e9)
+# proxy.plot_load(34,17,2,60,1e9)
+# proxy.plot_load_simple(34, 17, 2, 60, 1e9)

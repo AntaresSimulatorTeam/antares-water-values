@@ -9,6 +9,9 @@ from type_definition import Callable
 from scipy.interpolate import interp1d
 import os
 import argparse
+import matplotlib.pyplot as plt
+from matplotlib import rcParams
+rcParams['font.family'] = 'Cambria'
 
 
 """To launch the calculations, export daily contro, stock trajectories and plots:
@@ -57,7 +60,7 @@ class BellmanValuesTempo:
         self.usage_values=np.zeros((61,self.capacity))
         
         self.compute_bellman_values()
-        # self.compute_usage_values()
+        self.compute_usage_values()
 
     def penalty(self)->Callable:
         penalty=interp1d([-1,0,self.capacity,self.capacity+1],
@@ -434,6 +437,153 @@ class LaunchTempo :
         fig.write_html(html_path)
         print(f"Interactive plot saved at: {html_path}")
 
+
+    def plot_stock_trajectory_pyplot(self,trajectories_r:TrajectoriesTempo, trajectories_wr:TrajectoriesTempo, scenario: int) -> None:
+        weeks = np.arange(1, 62)
+        stock_r = trajectories_r.stock_trajectory_for_scenario(scenario)
+        stock_w = trajectories_wr.stock_trajectory_for_scenario_white(scenario)
+        stock_rw = trajectories_wr.stock_trajectory_for_scenario(scenario)
+
+        plt.figure(figsize=(12, 6))
+        plt.plot(weeks, stock_r, color='red', label=f"Stock jours rouges scénario {scenario+1}")
+        plt.plot(weeks, stock_w, color='green', label=f"Stock jours blancs scénario {scenario+1}")
+        plt.plot(weeks, stock_rw, color='blue', linestyle='--', label=f"Stock total rouge+blanc scénario {scenario+1}")
+
+        plt.title(f"Stocks des jours Tempo - Scénario {scenario+1}", fontsize=16)
+        plt.xlabel("Semaine", fontsize=14)
+        plt.ylabel("Stock de jours Tempo restants", fontsize=14)
+        plt.xticks(weeks)
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.legend(fontsize=12)
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_all_red_tempos_pyplot(self,trajectories_r:TrajectoriesTempo) -> None:
+        """
+        Affiche tous les stocks de jours rouges (tous scénarios) sur un même graphe.
+        """
+        weeks = np.arange(1, 62)
+        nb_scenarios = trajectories_r.nb_scenarios
+        color_palette = plt.cm.get_cmap('tab20', nb_scenarios)
+
+        plt.figure(figsize=(12, 6))
+        for s in range(nb_scenarios):
+            stock_r = trajectories_r.stock_trajectory_for_scenario(s)
+            plt.plot(weeks, stock_r, color=color_palette(s), label=f"MC {s+1}")
+
+        plt.title("Stocks des jours rouges - Tous les scénarios", fontsize=16)
+        plt.xlabel("Semaine", fontsize=14)
+        plt.ylabel("Stock de jours Tempo rouges restants", fontsize=14)
+        plt.xticks(weeks)
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_all_white_tempos_pyplot(self,trajectories_wr:TrajectoriesTempo) -> None:
+        """
+        Affiche tous les stocks de jours blancs (tous scénarios) sur un même graphe.
+        """
+        weeks = np.arange(1, 62)
+        nb_scenarios = trajectories_wr.nb_scenarios
+        color_palette = plt.cm.get_cmap('tab20', nb_scenarios)
+
+        plt.figure(figsize=(12, 6))
+        for s in range(nb_scenarios):
+            stock_w = trajectories_wr.stock_trajectory_for_scenario_white(s)
+            plt.plot(weeks, stock_w, color=color_palette(s), label=f"MC {s+1}")
+
+        plt.title("Stocks des jours blancs - Tous les scénarios", fontsize=16)
+        plt.xlabel("Semaine", fontsize=14)
+        plt.ylabel("Stock de jours Tempo blancs restants", fontsize=14)
+        plt.xticks(weeks)
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.tight_layout()
+        plt.show()
+
+    def plot_all_wr_tempos_pyplot(self,trajectories_wr:TrajectoriesTempo) -> None:
+
+        weeks = np.arange(1, 62)
+        nb_scenarios = trajectories_wr.nb_scenarios
+        color_palette = plt.cm.get_cmap('tab20', nb_scenarios)
+
+        plt.figure(figsize=(12, 6))
+        for s in range(nb_scenarios):
+            stock_wr = trajectories_wr.stock_trajectory_for_scenario(s)
+            plt.plot(weeks, stock_wr, color=color_palette(s), label=f"MC {s+1}")
+
+        plt.title("Stocks des jours rouge+blancs - Tous les scénarios", fontsize=16)
+        plt.xlabel("Semaine", fontsize=14)
+        plt.ylabel("Stock de jours Tempo rouge+blancs restants", fontsize=14)
+        plt.xticks(weeks)
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_daily_residual_net_load_pyplot(self,net_load: NetLoad, week: int, scenario: int) -> None:
+
+        # Début et fin de la semaine
+        day_start = week * 7 + 2
+        day_end = day_start + 7
+
+        # Résumé journalier
+        net_load_reshaped = net_load.net_load.reshape(-1, 24, net_load.nb_scenarios)
+        daily_net_load = net_load_reshaped.sum(axis=1)
+        week_values = daily_net_load[day_start:day_end, scenario]
+
+        # Jours et couleurs
+        jours = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+        x = range(1, 8)
+
+        # Couleurs : orange pour Mer-Jeu-Ven (indices 2, 3, 4)
+        # colors = ["steelblue" if i not in [2, 3, 4] else "darkorange" for i in range(7)]
+
+        # Plot
+        plt.figure(figsize=(8, 5))
+        plt.bar(x, week_values, width=0.3)
+        plt.xlabel("Jour de la semaine",fontsize=14)
+        plt.ylabel("Consommation résiduelle (MWh)",fontsize=14)
+        plt.title(f"Scénario {scenario+1}, Semaine {week+1}",fontsize=14)
+        plt.xticks(ticks=x, labels=jours)
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.tight_layout()
+        plt.show()
+
+
+    def plot_usage_values(self,bv: BellmanValuesTempo) -> None:
+        """
+        Affiche les valeurs d’usage en fonction du stock, pour chaque semaine.
+        La légende est placée proprement sous le graphe sans le chevaucher.
+        """
+        stock_levels = np.arange(1, bv.capacity + 1)
+
+        fig, ax = plt.subplots(figsize=(12, 6))
+
+        for w in range(bv.start_week, bv.end_week + 1):
+            ax.plot(
+                stock_levels,
+                bv.usage_values[w],
+                label=f"W{w + 1}"
+            )
+
+        ax.set_xlabel('Stock (jours restants)',fontsize=14)
+        ax.set_ylabel("Valeur d’usage (MWh/effacement)",fontsize=14)
+        ax.set_title("Valeurs d’usage hebdomadaires en fonction du stock",fontsize=14)
+        ax.grid(True)
+
+        ax.legend(
+        loc='center left',
+        bbox_to_anchor=(1.02, 0.5),
+        ncol=1,
+        fontsize=8,
+        frameon=False
+        )
+
+        plt.show()
+
+
     def run(self)->None:
         start=time.time()    
         net_load=NetLoad(dir_study=self.dir_study,name_area=self.area)
@@ -448,9 +598,15 @@ class LaunchTempo :
         trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,stock_trajectories_red=trajectories_r.stock_trajectories)
         end=time.time()
         print("Execution time: ", end-start)
-        self.export_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
-        self.export_daily_control_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
-        self.plot_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+        # self.export_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+        # self.export_daily_control_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+        # self.plot_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+        # self.plot_daily_residual_net_load_pyplot(net_load=net_load, week=34, scenario=17)
+        # self.plot_usage_values(bv=bellman_values_r)
+        # self.plot_stock_trajectory_pyplot(trajectories_r=trajectories_r, trajectories_wr=trajectories_white_and_red, scenario=17)
+        # self.plot_all_red_tempos_pyplot(trajectories_r=trajectories_r)
+        # self.plot_all_white_tempos_pyplot(trajectories_wr=trajectories_white_and_red)
+        # self.plot_all_wr_tempos_pyplot(trajectories_wr=trajectories_white_and_red)
         
 
 def main()->None:

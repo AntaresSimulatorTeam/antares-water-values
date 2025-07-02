@@ -330,7 +330,7 @@ class BellmanValuesProxy:
                 inflows = np.repeat(self.daily_inflow[w * 7:(w + 1) * 7,s],24)/24
 
                 cumsum_pump = np.concatenate([[0],np.cumsum(pump_max * self.cost_function.efficiency+inflows)])[:-1] + stock_init
-                cumsum_turb = stock_final + np.cumsum(self.cost_function.turb_efficiency*turb_max[::-1] + inflows[::-1])[::-1]
+                cumsum_turb = stock_final - np.cumsum(-self.cost_function.turb_efficiency*turb_max[::-1] + inflows[::-1])[::-1]
 
                 hourly_curve = np.minimum(cumsum_pump, cumsum_turb)
                 upper_curves[s,w]=hourly_curve
@@ -339,7 +339,8 @@ class BellmanValuesProxy:
         hourly_envelope=weekly_envelope.flatten()
         hourly_envelope=np.concatenate([hourly_envelope, hourly_envelope[-24:]])
         self.hourly_lower_rule_curve = self.daily_to_hourly_curve(self.daily_bottom_rule_curve)
-        self.final_lower_rule_curve=np.minimum(hourly_envelope,self.hourly_lower_rule_curve)
+        final_lower_rule_curve=np.minimum(hourly_envelope,self.hourly_lower_rule_curve)
+        self.final_lower_rule_curve = np.concatenate([final_lower_rule_curve[1:], [self.initial_level]])
 
         difference = np.abs(self.final_lower_rule_curve - self.hourly_lower_rule_curve)
         threshold = 1e-3
@@ -376,7 +377,8 @@ class BellmanValuesProxy:
         hourly_envelope = weekly_envelope.flatten()
         hourly_envelope = np.concatenate([hourly_envelope, hourly_envelope[-24:]])
         self.hourly_upper_rule_curve = self.daily_to_hourly_curve(self.daily_upper_rule_curve)
-        self.final_upper_rule_curve=np.maximum(hourly_envelope,self.hourly_upper_rule_curve)
+        final_upper_rule_curve=np.maximum(hourly_envelope,self.hourly_upper_rule_curve)
+        self.final_upper_rule_curve = np.concatenate([final_upper_rule_curve[1:], [self.initial_level]])
 
         difference = np.abs(self.final_upper_rule_curve - self.hourly_upper_rule_curve)
         threshold = 1e-3
@@ -792,7 +794,7 @@ enabled = true
         os.makedirs(folder_path, exist_ok=True)
 
         lower_arr = np.clip(self.final_lower_rule_curve / self.reservoir_capacity, 0, 1)
-        lower_arr = np.ceil(lower_arr * 1e6) / 1e6
+        lower_arr = np.floor(lower_arr * 1e6) / 1e6
 
         upper_arr = np.clip(self.final_upper_rule_curve / self.reservoir_capacity, 0, 1)
         upper_arr = np.ceil(upper_arr * 1e6) / 1e6

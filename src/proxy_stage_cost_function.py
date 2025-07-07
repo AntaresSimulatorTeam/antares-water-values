@@ -14,7 +14,7 @@ class Proxy:
         self.dir_study=dir_study
         self.name_area=name_area
         self.reservoir = Reservoir(self.dir_study, self.name_area)
-        self.net_load=NetLoad(dir_study,name_area).net_load
+        self.allocation_dict = self.reservoir.allocation_dict
         # pour éviter les infaisabilités dues aux arrondis on diminue la capacité de pompage et turbinage
         self.max_daily_generating=self.reservoir.max_daily_generating-1
         self.max_daily_pumping=self.reservoir.max_daily_pumping-1
@@ -22,7 +22,14 @@ class Proxy:
         self.turb_efficiency=1
 
         self.nb_weeks=self.reservoir.inflow.shape[0]
-        self.scenarios=range(self.net_load.shape[1])[:nb_scenarios]
+        self.scenarios=range(nb_scenarios)
+        self.compute_weighted_net_load()
+
+    
+    def compute_weighted_net_load(self)-> None:
+        self.net_load = np.zeros((429 * 24, 200))
+        for key, value in self.allocation_dict.items():
+            self.net_load += value * NetLoad(self.dir_study, key).net_load
 
     def stage_cost_function(self, week_index: int, scenario: int, alpha: float,coeff:float) -> np.ndarray:
         net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
@@ -166,7 +173,7 @@ class Proxy:
         else:
             plt.axhline(y=pump_threshold, color='blue', linestyle='--', label=f"Seuil pompage seul = {pump_threshold:.2f} MWh")
 
-        plt.title(f"Scénario {scenario+1}, Semaine {week_index+1}", fontsize=16)
+        plt.title(f"Scénario {scenario+1}, Semaine {week_index+1} (α={alpha})", fontsize=16)
         plt.xlabel("Heures", fontsize=16)
         plt.ylabel("Consommation résiduelle (MWh)", fontsize=16)
         plt.legend()
@@ -241,7 +248,7 @@ class Proxy:
 
 
 
-# proxy=Proxy("C:/Users/brescianomat/Documents/Etudes Antares/BP23_tronquee_france", "fr",200)
+# proxy=Proxy("C:/Users/brescianomat/Documents/5 - Etudes Antares/BP23_A-Reference_2036_modifiee_fr_es", "fr",200)
 # proxy.plot_stage_cost_function(34,17,2,1e9)
 # proxy.plot_load(34,17,2,60,1e9)
 # proxy.plot_load_simple(34, 17, 2, 60, 1e9)

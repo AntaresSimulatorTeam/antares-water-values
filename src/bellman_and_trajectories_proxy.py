@@ -23,7 +23,7 @@ from tqdm import tqdm
 rcParams['font.family'] = 'Cambria'
 
 class LoggerSetup:
-    def __init__(self, export_dir: str, log_name: str = "logger", max_bytes: int = 10_000_000, backup_count: int = 5):
+    def __init__(self, export_dir: str, log_name: str = "logger", max_bytes: int = 500_000_000, backup_count: int = 1000):
         self.export_dir = export_dir
         self.log_name = log_name
         self.max_bytes = max_bytes

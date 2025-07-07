@@ -1,6 +1,7 @@
 import subprocess
 from configparser import ConfigParser
 from dataclasses import dataclass, field
+import os
 
 import numpy as np
 
@@ -58,6 +59,7 @@ class Reservoir:
         self.read_rule_curves(dir_study)
         self.read_inflow(dir_study)
         self.read_max_power(dir_study)
+        self.read_allocation_matrix(dir_study)
 
     def read_max_power(self, dir_study: str) -> None:
         max_power_data = np.loadtxt(
@@ -117,6 +119,16 @@ class Reservoir:
         efficiency = hydro_ini_file.getfloat("pumping efficiency", self.area)
         self.efficiency = efficiency
 
+    def read_allocation_matrix(self, dir_study: str) -> None:
+        allocation_file = os.path.join(dir_study, "input", "hydro", "allocation", f"{self.area}.ini")
+        parser = ConfigParser()
+        parser.read(allocation_file)
+        self.allocation_dict = {}
+        if parser.has_section("[allocation]"):
+            for area in parser.options("[allocation]"):
+                val = float(parser.get("[allocation]", area))
+                self.allocation_dict[area] = val
+        print(f"Allocation matrix read from {allocation_file}: {self.allocation_dict}")
 
 def generate_mps_file(study_path: str, antares_path: str) -> str:
     change_hydro_management_to_heuristic(dir_study=study_path)
@@ -151,7 +163,7 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
     with open(dir_study + "/input/hydro/hydro.ini", "w") as configfile:  # save
         hydro_ini.write(configfile)
 
-
+    
 @dataclass
 class NetLoad:
 

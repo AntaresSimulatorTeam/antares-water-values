@@ -1,6 +1,7 @@
 import subprocess
 from configparser import ConfigParser
 from dataclasses import dataclass, field
+import os
 
 import numpy as np
 
@@ -58,23 +59,28 @@ class Reservoir:
         self.read_rule_curves(dir_study)
         self.read_inflow(dir_study)
         self.read_max_power(dir_study)
+        self.read_allocation_matrix(dir_study)
 
     def read_max_power(self, dir_study: str) -> None:
         max_power_data = np.loadtxt(
             f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
         )
-        weekly_energy = max_power_data[: self.days_in_year] * self.hours_in_day
-        weekly_energy = weekly_energy.reshape(
+        daily_energy = max_power_data [: self.days_in_year] * self.hours_in_day
+        weekly_energy = daily_energy.reshape(
             (self.weeks_in_year, self.days_in_week, 4)
         ).sum(axis=1)
+
+        self.max_daily_generating = daily_energy[:, 0]
+        self.max_daily_pumping = daily_energy[:, 2]
+
         self.max_generating = weekly_energy[:, 0]
         self.max_pumping = weekly_energy[:, 2]
 
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
-        daily_inflow = daily_inflow[: self.days_in_year]
-        nb_scenarios = daily_inflow.shape[1]
-        weekly_inflow = daily_inflow.reshape(
+        self.daily_inflow = daily_inflow[: self.days_in_year]
+        nb_scenarios = self.daily_inflow.shape[1]
+        weekly_inflow = self.daily_inflow.reshape(
             (self.weeks_in_year, self.days_in_week, nb_scenarios)
         ).sum(axis=1)
         self.inflow = weekly_inflow
@@ -92,6 +98,8 @@ class Reservoir:
         self.initial_level = rule_curves[0, 0]
         bottom_rule_curve = rule_curves[7::7, 0]
         upper_rule_curve = rule_curves[7::7, 1]
+        self.daily_bottom_rule_curve = rule_curves[:,0]
+        self.daily_upper_rule_curve = rule_curves[:,1]
         self.bottom_rule_curve = bottom_rule_curve
         self.upper_rule_curve = upper_rule_curve
 
@@ -111,6 +119,15 @@ class Reservoir:
         efficiency = hydro_ini_file.getfloat("pumping efficiency", self.area)
         self.efficiency = efficiency
 
+    def read_allocation_matrix(self, dir_study: str) -> None:
+        allocation_file = os.path.join(dir_study, "input", "hydro", "allocation", f"{self.area}.ini")
+        parser = ConfigParser()
+        parser.read(allocation_file)
+        self.allocation_dict = {}
+        if parser.has_section("[allocation]"):
+            for area in parser.options("[allocation]"):
+                val = float(parser.get("[allocation]", area))
+                self.allocation_dict[area] = val
 
 def generate_mps_file(study_path: str, antares_path: str) -> str:
     change_hydro_management_to_heuristic(dir_study=study_path)
@@ -144,3 +161,47 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
 
     with open(dir_study + "/input/hydro/hydro.ini", "w") as configfile:  # save
         hydro_ini.write(configfile)
+
+    
+@dataclass
+class NetLoad:
+
+    def __init__(self, dir_study: str, name_area: str) -> None:
+        self.area = name_area
+        self.dir_study=dir_study
+        self.read_data()
+        self.compute_net_load()
+        self.compute_solar()
+        self.compute_wind()
+        self.compute_net_load()
+        
+
+    def read_data(self) -> None: 
+        
+        self.load = np.loadtxt(f"{self.dir_study}/input/load/series/load_{self.area}.txt")
+        self.nb_scenarios=self.load.shape[1]
+        self.solar = np.loadtxt(f"{self.dir_study}/input/renewables/series/{self.area}/{self.area}_solar_pv/series.txt")
+        self.wind_offshore = np.loadtxt(f"{self.dir_study}/input/renewables/series/{self.area}/{self.area}_wind_offshore/series.txt")
+        self.wind_onshore = np.loadtxt(f"{self.dir_study}/input/renewables/series/{self.area}/{self.area}_wind_onshore/series.txt")
+        self.ror = np.loadtxt(f"{self.dir_study}/input/hydro/series/{self.area}/ror.txt")
+
+    def compute_renewable(self, data:np.ndarray, capacity_key:str, cluster_file:str) -> np.ndarray:
+        
+        config = ConfigParser()
+        config.read(f"{cluster_file}")
+        capacity = float(config.get(f"{self.area}_{capacity_key}", "nominalcapacity"))
+        data *= capacity
+        return data
+
+    def compute_solar(self) -> None:
+        self.solar = self.compute_renewable(self.solar, "solar_pv", f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini")
+
+    def compute_wind(self) -> None:
+        self.wind_offshore = self.compute_renewable(self.wind_offshore, "wind_offshore", f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini")
+        self.wind_onshore = self.compute_renewable(self.wind_onshore, "wind_onshore", f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini")
+
+    def compute_net_load(self) -> None:
+        self.net_load=self.load-self.solar-self.wind_offshore-self.wind_onshore-self.ror
+        
+        juillet_aout = self.net_load[24:65*24, :]
+        self.net_load = np.concatenate((self.net_load, juillet_aout), axis=0)

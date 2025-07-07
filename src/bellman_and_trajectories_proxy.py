@@ -1,3 +1,4 @@
+from hmac import new
 from proxy_stage_cost_function import Proxy
 import numpy as np
 import matplotlib.pyplot as plt
@@ -153,6 +154,11 @@ class BellmanValuesProxy:
                     # Contrôles libres
                     for control in controls:
                         next_stock = current_stock - control + inflows_for_week
+                        if next_stock < 0 or next_stock > self.reservoir_capacity:
+                            self.logger.debug(
+                                f"Contrôle {control:.2f} MWh hors limites pour stock {current_stock:.2f} MWh, ignoré."
+                            )
+                            continue
                         cost = cost_function(control)
                         future_value = future_bellman_function(next_stock)
                         penalty = penalty_function(next_stock)
@@ -244,6 +250,11 @@ class BellmanValuesProxy:
 
                 for control in controls:
                     new_stock = previous_stock - control + inflows_for_week
+                    if new_stock < 0 or new_stock > self.reservoir_capacity:
+                        self.logger.debug(
+                            f"Contrôle {control:.2f} MWh hors limites pour stock {previous_stock:.2f} MWh, ignoré."
+                        )
+                        continue
                     cost = cost_function(control)
                     future_value = future_bellman_function(new_stock)
                     penalty = penalty_function(new_stock)
@@ -279,10 +290,6 @@ class BellmanValuesProxy:
                 self.logger.debug(f"==> Stock retenu pour la semaine {w+1} : {best_new_stock:.2f} MWh\n")
 
                 if best_new_stock is not None:
-                    self.trajectories[s, w] = best_new_stock
-                    self.optimal_controls[s, w] = optimal_control
-                    self.optimal_turb[s, w] = self.turb_functions[w, s](optimal_control)
-                    self.optimal_pump[s, w] = self.pump_functions[w, s](optimal_control)
                     lower_bound = self.bottom_rule_curve[w]
                     upper_bound = self.upper_rule_curve[w]
                     if not (lower_bound <= best_new_stock <= upper_bound):
@@ -291,6 +298,17 @@ class BellmanValuesProxy:
                             f"{best_new_stock:.2f} ∉ [{lower_bound:.2f}, {upper_bound:.2f}]"
                         )
                         self.warning_lines.append(warning_msg)
+
+                        if best_new_stock>upper_bound:
+                            best_new_stock = upper_bound
+                        else:
+                            best_new_stock = lower_bound
+                    
+                    self.trajectories[s, w] = best_new_stock
+                    self.optimal_controls[s, w] = optimal_control
+                    self.optimal_turb[s, w] = self.turb_functions[w, s](optimal_control)
+                    self.optimal_pump[s, w] = self.pump_functions[w, s](optimal_control)
+                    
                     previous_stock = best_new_stock
                 else:
                     self.trajectories[s, w] = None
@@ -1051,8 +1069,8 @@ def main() -> None:
     parser.add_argument("--dir_study", type=str, required=True, help="Répertoire d'entrée contenant les données.")
     parser.add_argument("--area", type=str, nargs='+', required=True, help="Liste des zones d'étude (séparées par un espace).")
     parser.add_argument("--MC_years", type=int, required=False, default=200, help="Nombre d'années Monte-Carlo à simuler.")
-    parser.add_argument("--alpha", type=float, required=False,default=2, help="Coefficient alpha de la fonction de coût.")
-    parser.add_argument("--coeff_cost", type=int, required=False,default=1000000000, help="Facteur d'échelle pour la fonction de coût.")
+    parser.add_argument("--alpha", type=float, required=False,default=2, help="Coefficient alpha de la fonction de coût, par défaut vaut 2.")
+    parser.add_argument("--coeff_cost", type=int, required=False,default=1000000000, help="Facteur d'échelle pour la fonction de coût, par défaut vaut 1e9.")
     parser.add_argument("--enable_logging", type=bool, default=False, help="Activer les logs.")
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="Liste des actions à effectuer (ex: export_bellman_values, plot_trajectories, modify_antares_data, undo_modifications, etc.)")
 

@@ -128,7 +128,6 @@ class Reservoir:
             for area in parser.options("[allocation]"):
                 val = float(parser.get("[allocation]", area))
                 self.allocation_dict[area] = val
-        print(f"Allocation matrix read from {allocation_file}: {self.allocation_dict}")
 
 def generate_mps_file(study_path: str, antares_path: str) -> str:
     change_hydro_management_to_heuristic(dir_study=study_path)

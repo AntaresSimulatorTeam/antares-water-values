@@ -1,10 +1,10 @@
+from calculate_reward_and_bellman_values import ReservoirManagement
+from functions_iterative import itr_control
+from read_antares_data import TimeScenarioParameter
 from simple_bellman_value_calculation import (
     calculate_bellman_value_directly,
     calculate_bellman_value_with_precalculated_reward,
 )
-from functions_iterative import itr_control
-from read_antares_data import TimeScenarioParameter
-from calculate_reward_and_bellman_values import ReservoirManagement
 from type_definition import Array1D, Array2D, Optional
 
 
@@ -14,6 +14,7 @@ def calculate_bellman_values(
     output_path: str,
     X: Array1D,
     method: str,
+    saving_dir: str,
     solver: str = "CLP",
     N: int = 1,
     tol_gap: float = 1e-4,
@@ -48,6 +49,7 @@ def calculate_bellman_values(
             X=X,
             solver=solver,
             processes=processes,
+            saving_dir=saving_dir,
         )
 
     elif method == "precalculated":
@@ -60,6 +62,7 @@ def calculate_bellman_values(
             X=X,
             solver=solver,
             processes=processes,
+            saving_dir=saving_dir,
         )
 
     elif method == "iterative":

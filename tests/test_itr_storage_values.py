@@ -339,6 +339,7 @@ def test_itr_control_without_stored_models() -> None:
             X=X,
             N=3,
             tol_gap=1e-4,
+            saving_dir="test_data/one_node",
         )
     )
 

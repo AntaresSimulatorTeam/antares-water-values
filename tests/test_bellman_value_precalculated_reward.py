@@ -32,6 +32,7 @@ def test_bellman_value_precalculated_reward() -> None:
         reservoir_management=reservoir_management,
         output_path="test_data/one_node",
         X=X,
+        saving_dir="test_data/one_node",
     )
 
     true_list_cut = [

@@ -7,19 +7,16 @@ from time import time
 import numpy as np
 from scipy.interpolate import interp1d
 
-from calculate_reward_and_bellman_values import (
-    BellmanValueCalculation,
-    ReservoirManagement,
-    RewardApproximation,
-)
-from functions_iterative import (
-    compute_upper_bound_with_stored_models,
-    compute_upper_bound_without_stored_models,
-    create_model,
-)
+from calculate_reward_and_bellman_values import (BellmanValueCalculation,
+                                                 ReservoirManagement,
+                                                 RewardApproximation)
+from functions_iterative import (compute_upper_bound_with_stored_models,
+                                 compute_upper_bound_without_stored_models,
+                                 create_model)
 from optimization import AntaresProblem, Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
-from type_definition import Any, Array1D, Array2D, Array3D, Array4D, Dict, Optional
+from type_definition import (Any, Array1D, Array2D, Array3D, Array4D, Dict,
+                             Optional)
 
 
 def calculate_complete_reward(
@@ -29,7 +26,9 @@ def calculate_complete_reward(
     output_path: str,
     dict_basis: Dict[TimeScenarioIndex, Basis],
     solver: str,
+    saving_dir:str,
     processes: Optional[int] = None,
+
 ) -> tuple[
     Dict[TimeScenarioIndex, RewardApproximation],
     Array2D,
@@ -58,6 +57,7 @@ def calculate_complete_reward(
                 controls=controls,
                 solver=solver,
                 dict_basis=dict_basis,
+                saving_dir = saving_dir
             ),
             range(param.len_scenario),
         )
@@ -158,6 +158,7 @@ def calculate_bellman_value_with_precalculated_reward(
     reservoir_management: ReservoirManagement,
     output_path: str,
     X: Array1D,
+    saving_dir: str,
     solver: str = "CLP",
     processes: Optional[int] = None,
 ) -> tuple[
@@ -213,6 +214,7 @@ def calculate_bellman_value_with_precalculated_reward(
         processes=processes,
         solver=solver,
         dict_basis=dict_basis,
+        saving_dir=saving_dir
     )
 
     bellman_value_calculation = BellmanValueCalculation(
@@ -238,6 +240,7 @@ def calculate_bellman_value_with_precalculated_reward(
             store_basis=True if solver == "XPRESS_LP" else False,
             processes=processes,
             dict_basis=dict_basis,
+            saving_dir=saving_dir,
         )
     )
 
@@ -334,6 +337,7 @@ def calculate_bellman_value_directly(
             solver=solver,
             processes=processes,
             dict_basis=dict_basis,
+            saving_dir=saving_dir,
         )
     )
 

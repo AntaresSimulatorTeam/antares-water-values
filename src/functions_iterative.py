@@ -412,7 +412,10 @@ def create_model(
     solver: str,
     saving_dir: str,
 ) -> AntaresProblem:
-    proto_path = saving_dir + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+    if len(param.name_scenario)==param.len_scenario:
+        proto_path = saving_dir + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+    else :
+        proto_path = saving_dir + f"/problem-{scenario}-{week+1}.pkl"
     if Path(proto_path).is_file():
         m = AntaresProblem(
             scenario=scenario,

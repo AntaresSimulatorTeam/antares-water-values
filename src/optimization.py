@@ -80,7 +80,7 @@ class AntaresProblem:
 
         if name_scenario == -1:
             name_scenario = scenario + 1
-        if load_from_proto:
+        if load_from_proto and not (proto_path is None):
             with open(proto_path, "rb") as file:
                 model_proto = pkl.load(file)
         else:

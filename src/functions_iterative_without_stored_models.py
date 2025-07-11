@@ -10,10 +10,7 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     RewardApproximation,
 )
-from functions_iterative import (
-    compute_upper_bound_without_stored_models,
-    compute_x_multi_scenario,
-)
+from functions_iterative import compute_x_multi_scenario, create_model
 from optimization import Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from simple_bellman_value_calculation import calculate_reward_for_one_scenario
@@ -315,3 +312,134 @@ def init_iterative_calculation(
         gap,
         G,
     )
+
+
+def compute_upper_bound_without_stored_models(
+    param: TimeScenarioParameter,
+    stock_discretization: Array1D,
+    reservoir_management: ReservoirManagement,
+    V: Array2D,
+    output_path: str,
+    solver: str,
+    dict_basis: Dict[TimeScenarioIndex, Basis],
+    saving_dir: str,
+    store_basis: bool = False,
+    processes: Optional[int] = None,
+) -> tuple[float, Array2D, Array3D, Dict[TimeScenarioIndex, Basis]]:
+    """
+    Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
+
+    Parameters
+    ----------
+    bellman_value_calculation: BellmanValueCalculation :
+        Parameters to use to calculate Bellman values
+    list_models:Dict[TimeScenarioIndex, AntaresProblem] :
+        Optimization problems for every week and every scenario
+    V:Array2D :
+        Bellman values
+
+    Returns
+    -------
+    upper_bound:float :
+        Upper bound on the overall problem
+    controls:Array2D :
+        Optimal controls for every week and every scenario
+    current_itr:Array2D :
+        Time and simplex iterations used to solve the problem
+    """
+    current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
+
+    cout = 0.0
+    controls = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
+
+    with Pool(processes=processes) as pool:
+
+        intermediate_results = pool.map(
+            partial(
+                solve_one_scenario_with_bellman_values_without_stored_models,
+                param=param,
+                stock_discretization=stock_discretization,
+                reservoir_management=reservoir_management,
+                V=V,
+                output_path=output_path,
+                store_basis=store_basis,
+                solver=solver,
+                dict_basis=dict_basis,
+                saving_dir=saving_dir,
+            ),
+            range(param.len_scenario),
+        )
+
+    for scenario in range(param.len_scenario):
+        cout += intermediate_results[scenario][0]
+        controls[:, scenario] = intermediate_results[scenario][1]
+        current_itr[:, scenario] = intermediate_results[scenario][2]
+        for week in range(param.len_week):
+            dict_basis[TimeScenarioIndex(week=week, scenario=scenario)] = (
+                intermediate_results[scenario][3][TimeScenarioIndex(week, scenario)]
+            )
+
+    upper_bound = cout / param.len_scenario
+    return (upper_bound, controls, current_itr, dict_basis)
+
+
+def solve_one_scenario_with_bellman_values_without_stored_models(
+    scenario: int,
+    param: TimeScenarioParameter,
+    stock_discretization: Array1D,
+    reservoir_management: ReservoirManagement,
+    V: Array2D,
+    output_path: str,
+    solver: str,
+    saving_dir: str,
+    dict_basis: Dict[TimeScenarioIndex, Basis],
+    store_basis: bool = False,
+) -> tuple[float, Array1D, Array2D, Dict[TimeScenarioIndex, Basis]]:
+
+    current_itr = np.zeros((param.len_week, 2), dtype=np.float32)
+
+    cout = 0.0
+    controls = np.zeros((param.len_week), dtype=np.float32)
+
+    level_i = reservoir_management.reservoir.initial_level
+    for week in range(param.len_week):
+        print(f"{scenario} {week}")
+
+        m = create_model(
+            param=param,
+            reservoir_management=reservoir_management,
+            output_path=output_path,
+            week=week,
+            scenario=scenario,
+            solver=solver,
+            saving_dir=saving_dir,
+        )
+
+        basis = Basis([], [])
+        if m.store_basis:
+            if dict_basis[TimeScenarioIndex(week, scenario=scenario)].not_empty():
+                basis = dict_basis[TimeScenarioIndex(week=week, scenario=scenario)]
+            elif (
+                week > 0
+                and dict_basis[
+                    TimeScenarioIndex(week - 1, scenario=scenario)
+                ].not_empty()
+            ):
+                basis = dict_basis[TimeScenarioIndex(week - 1, scenario=scenario)]
+
+        computational_time, itr, current_cost, control, level_i = (
+            m.solve_problem_with_bellman_values(
+                stock_discretization=stock_discretization,
+                reservoir_management=reservoir_management,
+                V=V,
+                level_i=level_i,
+                take_into_account_z_and_y=(week == param.len_week - 1),
+                basis=basis,
+            )
+        )
+
+        cout += current_cost
+        controls[week] = control
+        current_itr[week] = (computational_time, itr)
+
+    return (cout, controls, current_itr, dict_basis)

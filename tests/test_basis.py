@@ -1,16 +1,17 @@
-from functions_iterative import (
-    TimeScenarioParameter,
-    ReservoirManagement,
-    TimeScenarioIndex,
-    compute_upper_bound_with_stored_models,
-    BellmanValueCalculation,
-    RewardApproximation,
-)
-from read_antares_data import Reservoir
-from optimization import AntaresProblem, Basis
-import pytest
-import ortools.linear_solver.pywraplp as pywraplp
 import numpy as np
+import ortools.linear_solver.pywraplp as pywraplp
+import pytest
+
+from functions_iterative import (
+    BellmanValueCalculation,
+    ReservoirManagement,
+    RewardApproximation,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    compute_upper_bound_with_stored_models,
+)
+from optimization import AntaresProblem, Basis
+from read_antares_data import Reservoir
 
 
 def test_basis_with_xpress() -> None:

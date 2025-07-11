@@ -1,16 +1,17 @@
+import numpy as np
+import ortools.linear_solver.pywraplp as pywraplp
+import pytest
+
 from functions_iterative import (
-    TimeScenarioParameter,
-    compute_upper_bound_with_stored_models,
+    BellmanValueCalculation,
+    ReservoirManagement,
     RewardApproximation,
     TimeScenarioIndex,
-    ReservoirManagement,
-    BellmanValueCalculation,
+    TimeScenarioParameter,
+    compute_upper_bound_with_stored_models,
 )
 from optimization import AntaresProblem
 from read_antares_data import Reservoir
-import pytest
-import numpy as np
-import ortools.linear_solver.pywraplp as pywraplp
 
 
 def test_upper_bound() -> None:

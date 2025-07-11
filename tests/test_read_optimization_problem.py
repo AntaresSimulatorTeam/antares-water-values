@@ -1,8 +1,9 @@
-from functions_iterative import TimeScenarioParameter, ReservoirManagement
-from read_antares_data import Reservoir
-from optimization import AntaresProblem, Basis
-import pytest
 import ortools.linear_solver.pywraplp as pywraplp
+import pytest
+
+from functions_iterative import ReservoirManagement, TimeScenarioParameter
+from optimization import AntaresProblem, Basis
+from read_antares_data import Reservoir
 
 
 def test_create_and_modify_weekly_problem() -> None:

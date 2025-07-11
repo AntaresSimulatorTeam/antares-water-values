@@ -1,17 +1,14 @@
+import pickle as pkl
 import re
 from time import time
 
 import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
-from scipy.interpolate import interp1d
 
-from calculate_reward_and_bellman_values import (
-    BellmanValueCalculation,
-    ReservoirManagement,
-)
+from calculate_reward_and_bellman_values import ReservoirManagement
 from read_antares_data import TimeScenarioParameter
-from type_definition import Array1D, Array2D, Array3D, Array4D, List
+from type_definition import Array1D, Array2D, List, Optional
 
 
 class Basis:
@@ -52,6 +49,8 @@ class AntaresProblem:
         itr: int = 1,
         name_solver: str = "CLP",
         name_scenario: int = -1,
+        load_from_proto: bool = False,
+        proto_path: Optional[str] = None,
     ) -> None:
         """
         Create a new Xpress problem and load the problem stored in the associated mps file.
@@ -77,15 +76,18 @@ class AntaresProblem:
 
         if name_scenario == -1:
             name_scenario = scenario + 1
-
-        mps_path = path + f"/problem-{name_scenario}-{week+1}--optim-nb-{itr}.mps"
-        model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
-        model.import_from_mps_file(mps_path)
-        model_proto = model.export_to_proto()
+        if load_from_proto and not (proto_path is None):
+            with open(proto_path, "rb") as file:
+                model_proto = pkl.load(file)
+        else:
+            mps_path = path + f"/problem-{name_scenario}-{week+1}--optim-nb-{itr}.mps"
+            model = model_builder.ModelBuilder()  # type: ignore[no-untyped-call]
+            model.import_from_mps_file(mps_path)
+            model_proto = model.export_to_proto()
 
         solver = pywraplp.Solver.CreateSolver(name_solver)
         assert solver, "Couldn't find any supported solver"
-        solver.EnableOutput()
+        solver.SuppressOutput()
 
         parameters = pywraplp.MPSolverParameters()
         if name_solver == "XPRESS_LP":
@@ -104,6 +106,25 @@ class AntaresProblem:
 
         self.basis: List = []
         self.control_basis: List = []
+
+    def reset(self, reservoir_management: ReservoirManagement) -> None:
+        cst = self.solver.constraints()
+        binding_id = [
+            i
+            for i in range(len(cst))
+            if re.search(
+                f"^HydroPower::area<{reservoir_management.reservoir.area}>::week<.",
+                cst[i].name(),
+            )
+        ]
+        assert len(binding_id) == 1
+        var = self.solver.variables()
+        self.binding_id = cst[binding_id[0]]
+        self.U = var[[i for i in range(len(var)) if var[i].name() == "u"][0]]
+        self.x_s = var[[i for i in range(len(var)) if var[i].name() == "x_s"][0]]
+        self.x_s_1 = var[[i for i in range(len(var)) if var[i].name() == "x_s_1"][0]]
+        self.z = var[[i for i in range(len(var)) if var[i].name() == "z"][0]]
+        self.y = var[[i for i in range(len(var)) if var[i].name() == "y"][0]]
 
     def add_basis(self, basis: Basis, control_basis: float) -> None:
         """
@@ -439,17 +460,17 @@ class AntaresProblem:
 
     def remove_bellman_constraints(
         self,
-        bellman_value_calculation: BellmanValueCalculation,
+        reservoir_management: ReservoirManagement,
         additional_constraint: List[pywraplp.Constraint],
     ) -> None:
         for cst in additional_constraint:
             cst.SetLb(0)
         cst_initial_level = self.solver.LookupConstraint(
-            f"InitialLevelReservoir::area<{bellman_value_calculation.reservoir_management.reservoir.area}>::week<{self.week}>"
+            f"InitialLevelReservoir::area<{reservoir_management.reservoir.area}>::week<{self.week}>"
         )
         cst_initial_level.SetBounds(
-            lb=bellman_value_calculation.reservoir_management.reservoir.capacity,
-            ub=bellman_value_calculation.reservoir_management.reservoir.capacity,
+            lb=reservoir_management.reservoir.capacity,
+            ub=reservoir_management.reservoir.capacity,
         )
         self.binding_id.SetCoefficient(self.U, 0)
 
@@ -479,52 +500,41 @@ class AntaresProblem:
 
             return (beta, lamb, xf, y, z, itr, end - start)
         else:
+            print(self.week)
+            print(self.scenario)
             print(f"Failed to solve : {solve_status}")
             raise (ValueError)
 
     def solve_problem_with_bellman_values(
         self,
-        bellman_value_calculation: BellmanValueCalculation,
+        stock_discretization: Array1D,
+        reservoir_management: ReservoirManagement,
         V: Array2D,
         level_i: float,
         take_into_account_z_and_y: bool,
-        find_optimal_basis: bool = True,
+        basis: Basis = Basis([], []),
     ) -> tuple[float, int, float, float, float]:
 
         cout = 0.0
 
-        X = bellman_value_calculation.stock_discretization
+        X = stock_discretization
 
         additional_constraint = []
         additional_constraint += self.set_constraints_initial_level_and_bellman_values(
             level_i=level_i,
             X=X,
             bellman_value=V[:, self.week + 1],
-            area=bellman_value_calculation.reservoir_management.reservoir.area,
+            area=reservoir_management.reservoir.area,
         )
 
-        if find_optimal_basis:
-            if len(self.control_basis) >= 1:
-                if len(self.control_basis) >= 2:
-                    V_fut = interp1d(X, V[:, self.week + 1])
-
-                    _, _, likely_control = (
-                        bellman_value_calculation.solve_weekly_problem_with_approximation(
-                            level_i=level_i,
-                            V_fut=V_fut,
-                            week=self.week,
-                            scenario=self.scenario,
-                        )
-                    )
-                else:
-                    likely_control = 0
-                basis = self.find_closest_basis(likely_control)
-                self.load_basis(basis)
+        if basis.not_empty():
+            self.load_basis(basis)
 
         beta, _, xf, y, z, itr, t = self.solve_problem()
 
         self.remove_bellman_constraints(
-            bellman_value_calculation, additional_constraint
+            reservoir_management=reservoir_management,
+            additional_constraint=additional_constraint,
         )
         cout += beta
         if not (take_into_account_z_and_y):
@@ -537,9 +547,7 @@ class AntaresProblem:
             -(
                 xf
                 - level_i
-                - bellman_value_calculation.reservoir_management.reservoir.inflow[
-                    self.week, self.scenario
-                ]
+                - reservoir_management.reservoir.inflow[self.week, self.scenario]
             ),
             xf,
         )

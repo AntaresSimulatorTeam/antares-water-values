@@ -8,6 +8,9 @@ from functions_iterative import (
     TimeScenarioParameter,
     itr_control,
 )
+from functions_iterative_without_stored_models import (
+    calculate_bellman_values_with_iterative_method_without_stored_models,
+)
 from read_antares_data import Reservoir
 
 expected_vb = np.array(
@@ -312,3 +315,72 @@ def test_itr_control_with_xpress() -> None:
         assert vb == pytest.approx(expected_vb)
     else:
         print("Ignore test, xpress not available")
+
+
+def test_itr_control_without_stored_models() -> None:
+
+    param = TimeScenarioParameter(len_week=5, len_scenario=1)
+    reservoir = Reservoir("test_data/one_node", "area")
+    reservoir_management = ReservoirManagement(
+        reservoir=reservoir,
+        penalty_bottom_rule_curve=3000,
+        penalty_upper_rule_curve=3000,
+        penalty_final_level=3000,
+        force_final_level=False,
+    )
+    xNsteps = 20
+    X = np.linspace(0, reservoir.capacity, num=xNsteps)
+
+    vb, G, _, _, controls_upper, traj = (
+        calculate_bellman_values_with_iterative_method_without_stored_models(
+            param=param,
+            reservoir_management=reservoir_management,
+            output_path="test_data/one_node",
+            X=X,
+            N=3,
+            tol_gap=1e-4,
+            saving_dir="test_data/one_node",
+        )
+    )
+
+    assert G[TimeScenarioIndex(0, 0)].list_cut[0] == pytest.approx(
+        (300.0022431781, -848257117.7874993)
+    )
+    assert G[TimeScenarioIndex(0, 0)].list_cut[1] == pytest.approx(
+        (200.08020216786073, -943484691.5152471)
+    )
+    assert G[TimeScenarioIndex(0, 0)].list_cut[2] == pytest.approx(
+        (100.0003310016, -828694927.2829424)
+    )
+    assert G[TimeScenarioIndex(0, 0)].list_cut[3] == pytest.approx((0.0, 0.0))
+
+    assert G[TimeScenarioIndex(0, 0)].breaking_point == pytest.approx(
+        np.array(
+            [
+                -8400000.0,
+                -953018.7010290311,
+                1146981.5347944114,
+                8286921.842985533,
+                8400000.0,
+            ]
+        )
+    )
+
+    assert controls_upper[-1] == pytest.approx(
+        np.array([[123864.0], [255912.0], [34924.0], [1139897.0], [773918.0]])
+    )
+
+    assert traj[1] == pytest.approx(
+        np.array(
+            [
+                [4450000.0],
+                [6420000.0],
+                [2380000.0],
+                [6350000.0],
+                [6320000.0],
+                [2280000.0],
+            ]
+        )
+    )
+
+    assert vb == pytest.approx(expected_vb)

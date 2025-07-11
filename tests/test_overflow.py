@@ -29,12 +29,13 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
     xNsteps = 20
     X = np.linspace(0, reservoir.capacity, num=xNsteps)
 
-    vb, G = calculate_bellman_value_with_precalculated_reward(
+    vb, G, _, _, _, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
         reservoir_management=reservoir_management,
         output_path="test_data/one_node",
         X=X,
+        saving_dir="test_data/one_node",
     )
 
     V_fut = interp1d(X, vb[:, 0])
@@ -51,12 +52,13 @@ def test_bellman_value_precalculated_reward_overflow() -> None:
         overflow=False,
     )
 
-    vb, G = calculate_bellman_value_with_precalculated_reward(
+    vb, G, _, _, _, _ = calculate_bellman_value_with_precalculated_reward(
         len_controls=20,
         param=param,
         reservoir_management=reservoir_management,
         output_path="test_data/one_node",
         X=X,
+        saving_dir="test_data/one_node",
     )
 
     V_fut = interp1d(X, vb[:, 0])

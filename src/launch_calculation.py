@@ -5,7 +5,7 @@ from simple_bellman_value_calculation import (
     calculate_bellman_value_directly,
     calculate_bellman_value_with_precalculated_reward,
 )
-from type_definition import Array1D, Array2D
+from type_definition import Array1D, Array2D, Optional
 
 
 def calculate_bellman_values(
@@ -14,10 +14,12 @@ def calculate_bellman_values(
     output_path: str,
     X: Array1D,
     method: str,
+    saving_dir: str,
     solver: str = "CLP",
     N: int = 1,
     tol_gap: float = 1e-4,
     len_controls: int = 10,
+    processes: Optional[int] = None,
 ) -> Array2D:
     """Algorithm to evaluate Bellman values with different methods.
 
@@ -40,28 +42,32 @@ def calculate_bellman_values(
 
     if method == "direct":
         # Compute Bellman values directly
-        vb = calculate_bellman_value_directly(
+        vb, _, _, _, _ = calculate_bellman_value_directly(
             param=param,
             reservoir_management=reservoir_management,
             output_path=output_path,
             X=X,
             solver=solver,
+            processes=processes,
+            saving_dir=saving_dir,
         )
 
     elif method == "precalculated":
         # or with precalulated reward
-        vb, G = calculate_bellman_value_with_precalculated_reward(
+        vb, _, _, _, _, _ = calculate_bellman_value_with_precalculated_reward(
             len_controls=len_controls,
             param=param,
             reservoir_management=reservoir_management,
             output_path=output_path,
             X=X,
             solver=solver,
+            processes=processes,
+            saving_dir=saving_dir,
         )
 
     elif method == "iterative":
         # or with iterative algorithm
-        vb, G, _, _, controls_upper, traj = itr_control(
+        vb, _, _, _, _, _ = itr_control(
             param=param,
             reservoir_management=reservoir_management,
             output_path=output_path,

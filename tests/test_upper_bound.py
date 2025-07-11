@@ -40,18 +40,6 @@ def test_upper_bound() -> None:
         reservoir_management=reservoir_management,
         stock_discretization=np.linspace(0, reservoir.capacity, num=20),
     )
-    bellman_value_calculation = BellmanValueCalculation(
-        param=param,
-        reward={
-            TimeScenarioIndex(0, 0): RewardApproximation(
-                lb_control=-reservoir.max_pumping[0],
-                ub_control=reservoir.max_generating[0],
-                ub_reward=0,
-            )
-        },
-        reservoir_management=reservoir_management,
-        stock_discretization=np.linspace(0, reservoir.capacity, num=20),
-    )
 
     list_models = {TimeScenarioIndex(0, 0): problem}
     V = np.zeros((20, 2), dtype=np.float32)
@@ -103,18 +91,6 @@ def test_upper_bound_with_xpress() -> None:
         )
         problem.create_weekly_problem_itr(
             param=param, reservoir_management=reservoir_management
-        )
-        bellman_value_calculation = BellmanValueCalculation(
-            param=param,
-            reward={
-                TimeScenarioIndex(0, 0): RewardApproximation(
-                    lb_control=-reservoir.max_pumping[0],
-                    ub_control=reservoir.max_generating[0],
-                    ub_reward=0,
-                )
-            },
-            reservoir_management=reservoir_management,
-            stock_discretization=np.linspace(0, reservoir.capacity, num=20),
         )
         bellman_value_calculation = BellmanValueCalculation(
             param=param,

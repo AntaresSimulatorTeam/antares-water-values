@@ -216,7 +216,7 @@ class AntaresProblem:
             hours_in_week=hours_in_week,
             name_variable=f"^HydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
-        self.delete_variable(
+        self.fix_variable(
             hours_in_week=hours_in_week,
             name_variable=f"^Overflow::area<{reservoir_management.reservoir.area}>::hour<.",
         )
@@ -224,6 +224,23 @@ class AntaresProblem:
             hours_in_week=hours_in_week,
             name_constraint=f"^AreaHydroLevel::area<{reservoir_management.reservoir.area}>::hour<.",
         )
+
+        vars = model.variables()
+
+        hyd_prod_vars = [
+            var
+            for id, var in enumerate(vars)
+            if re.search(
+                f"HydProd::area<{reservoir_management.reservoir.area}>::hour<",
+                var.name(),
+            )
+        ]
+
+        for var in hyd_prod_vars:
+            var.SetUb(
+                reservoir_management.reservoir.max_generating[self.week]
+                / reservoir_management.reservoir.hours_in_week
+            )
 
         cst = model.constraints()
         binding_id = [
@@ -327,6 +344,18 @@ class AntaresProblem:
                 var[i].SetLb(-model.Infinity())
                 var[i].SetUb(model.Infinity())
                 model.Objective().SetCoefficient(var[i], 0)
+
+    def fix_variable(
+        self, hours_in_week: int, name_variable: str, value: float = 0
+    ) -> None:
+        model = self.solver
+        var = model.variables()
+        var_id = [i for i in range(len(var)) if re.search(name_variable, var[i].name())]
+        assert len(var_id) in [0, hours_in_week]
+        if len(var_id) == hours_in_week:
+            for i in var_id:
+                var[i].SetLb(value)
+                var[i].SetUb(value)
 
     def delete_constraint(self, hours_in_week: int, name_constraint: str) -> None:
         model = self.solver

@@ -1,14 +1,14 @@
-from calculate_reward_and_bellman_values import (
-    RewardApproximation,
-    ReservoirManagement,
-    BellmanValueCalculation,
-)
-from read_antares_data import TimeScenarioParameter, TimeScenarioIndex
-from optimization import AntaresProblem
-from optimization import Basis
 import numpy as np
 from scipy.interpolate import interp1d
+
+from calculate_reward_and_bellman_values import (
+    BellmanValueCalculation,
+    ReservoirManagement,
+    RewardApproximation,
+)
 from functions_iterative import compute_upper_bound
+from optimization import AntaresProblem, Basis
+from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Array2D, Dict
 
 

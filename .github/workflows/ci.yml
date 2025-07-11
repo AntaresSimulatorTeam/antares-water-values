@@ -32,3 +32,17 @@ jobs:
         run: |
           python -m mypy src
 
+      - name: Check imports sort order
+        uses: isort/isort-action@v1
+        with:
+          sort-paths: src, tests
+          configuration: --profile black --check-only --diff
+          requirements-files: "requirements.txt requirements-dev.txt"
+
+      - name: Check formatting
+        uses: psf/black@stable
+        with:
+          # Version of Black should match the versions set in `requirements-dev.txt`
+          version: "~=24.3.0"
+          options: --check --diff
+

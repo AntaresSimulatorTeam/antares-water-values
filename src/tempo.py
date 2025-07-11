@@ -21,6 +21,8 @@ class GainFunctionTempo:
     def __init__(self, net_load : NetLoad, max_control:int):
         
         self.net_load=net_load.net_load
+        juillet_aout = self.net_load[24:65*24, :]
+        self.net_load = np.concatenate((self.net_load, juillet_aout), axis=0)
         self.nb_scenarios=net_load.nb_scenarios
         self.daily_net_load=net_load.net_load.reshape(365+64,24,self.nb_scenarios).sum(axis=1)
         self.max_control=max_control

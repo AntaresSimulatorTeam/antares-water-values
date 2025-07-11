@@ -20,6 +20,7 @@ import shutil
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from typing import List
 from tqdm import tqdm
+import traceback
 
 rcParams['font.family'] = 'Cambria'
 
@@ -100,10 +101,10 @@ class BellmanValuesProxy:
         # penalty=interp1d(np.array([-0.05,0,1,1.05])*self.reservoir_capacity,[1e3,0,0,1e3],kind='linear',fill_value='extrapolate')
         penalty=interp1d(
                 [
-                    0,
+                    self.reservoir.bottom_rule_curve[week_idx]-1e6,
                     self.reservoir.bottom_rule_curve[week_idx],
                     self.reservoir.upper_rule_curve[week_idx],
-                    self.reservoir.capacity,
+                    self.reservoir.upper_rule_curve[week_idx]+1e6,
                 ],
                 [
                     self.reservoir.upper_rule_curve[week_idx]/1e4,
@@ -132,6 +133,16 @@ class BellmanValuesProxy:
             self.logger.debug("-" * 60 + "\n")
             penalty_function = self.penalty_rule_curves(w + 1)
 
+            future_bellman_function = interp1d(
+                        np.linspace(0, self.reservoir_capacity, 51),
+                        self.mean_bv[w + 1],
+                        kind="linear",
+                        fill_value="extrapolate",
+                    )
+            
+            max_week_turb = np.sum(self.cost_function.max_daily_generating[(w + 1) * 7:(w + 2) * 7])
+            max_week_pump = np.sum(self.cost_function.max_daily_pumping[(w + 1) * 7:(w + 2) * 7])
+
             for c in range(0, 101, 2):
                 current_stock = (c / 100) * self.reservoir_capacity
 
@@ -141,24 +152,14 @@ class BellmanValuesProxy:
                     cost_function = self.cost_functions[w + 1, s]
                     controls = cost_function.x
 
-                    future_bellman_function = interp1d(
-                        np.linspace(0, self.reservoir_capacity, 51),
-                        self.mean_bv[w + 1],
-                        kind="linear",
-                        fill_value="extrapolate",
-                    )
+                    
 
-                    best_value = np.inf
+                    best_value = 1e12
                     self.logger.debug(f"\n[Semaine {w+1} | Scénario {s+1} | Stock {current_stock:.2f} MWh]")
 
                     # Contrôles libres
                     for control in controls:
                         next_stock = current_stock - control + inflows_for_week
-                        if next_stock < 0 or next_stock > self.reservoir_capacity:
-                            self.logger.debug(
-                                f"Contrôle {control:.2f} MWh hors limites pour stock {current_stock:.2f} MWh, ignoré."
-                            )
-                            continue
                         cost = cost_function(control)
                         future_value = future_bellman_function(next_stock)
                         penalty = penalty_function(next_stock)
@@ -177,8 +178,7 @@ class BellmanValuesProxy:
 
                     # Contrôles forcés
                     for c_new in range(0, 101, 2):
-                        max_week_turb = np.sum(self.cost_function.max_daily_generating[(w + 1) * 7:(w + 2) * 7])
-                        max_week_pump = np.sum(self.cost_function.max_daily_pumping[(w + 1) * 7:(w + 2) * 7])
+                        
                         new_level = (c_new / 100) * self.reservoir_capacity
                         week_energy_var = current_stock - new_level
 
@@ -208,7 +208,8 @@ class BellmanValuesProxy:
                     self.logger.debug(f"Valeur de Bellman enregistrée pour stock {current_stock:.2f} MWh : {best_value:.2f}")
 
                 self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2])
-            self.logger.debug(f"→ Moyenne BV semaine {w+1} : {self.mean_bv[w]}")
+            self.logger.debug(f"Valeurs de Bellman moyennes pour la semaine {w+1} : {self.mean_bv[w]}")
+            # print(f"→ Moyenne BV semaine {w+1} : {self.mean_bv[w]}")
 
     def compute_usage_values(self) -> None:
         self.usage_values=np.zeros((self.nb_weeks,50))
@@ -224,6 +225,7 @@ class BellmanValuesProxy:
         self.optimal_controls = np.zeros((len(self.scenarios),self.nb_weeks))
         self.optimal_turb = np.zeros((len(self.scenarios),self.nb_weeks))
         self.optimal_pump = np.zeros((len(self.scenarios),self.nb_weeks))
+        self.delta_inflows_correction = np.zeros((self.nb_weeks, len(self.scenarios), 168))
         self.warning_lines = []
         for s in self.scenarios:
             previous_stock = self.initial_level
@@ -245,16 +247,13 @@ class BellmanValuesProxy:
                     fill_value="extrapolate",
                 )
 
+                max_week_turb = np.sum(self.cost_function.max_daily_generating[w * 7:(w + 1) * 7])
+                max_week_pump = np.sum(self.cost_function.max_daily_pumping[w * 7:(w + 1) * 7])
+
                 best_value = np.inf
                 best_new_stock = None
-
                 for control in controls:
                     new_stock = previous_stock - control + inflows_for_week
-                    if new_stock < 0 or new_stock > self.reservoir_capacity:
-                        self.logger.debug(
-                            f"Contrôle {control:.2f} MWh hors limites pour stock {previous_stock:.2f} MWh, ignoré."
-                        )
-                        continue
                     cost = cost_function(control)
                     future_value = future_bellman_function(new_stock)
                     penalty = penalty_function(new_stock)
@@ -268,8 +267,6 @@ class BellmanValuesProxy:
                         self.logger.debug(f"→ Nouveau meilleur contrôle retenu (libre) : {control:.2f}, stock suivant: {new_stock:.2f}, total: {total_value:.2f}")
 
                 for c_new in range(0, 101, 2):
-                    max_week_turb = np.sum(self.cost_function.max_daily_generating[w * 7:(w + 1) * 7])
-                    max_week_pump = np.sum(self.cost_function.max_daily_pumping[w * 7:(w + 1) * 7])
                     week_energy_var = previous_stock - c_new / 100 * self.reservoir_capacity
                     if week_energy_var < -max_week_pump * self.cost_function.efficiency or week_energy_var > max_week_turb * self.cost_function.turb_efficiency:
                         continue
@@ -286,8 +283,8 @@ class BellmanValuesProxy:
                         best_new_stock = new_stock
                         optimal_control = control
                         self.logger.debug(f"→ Nouveau meilleur contrôle retenu (forcé) : {control:.2f}, stock suivant: {new_stock:.2f}, total: {total_value:.2f}")
-
-                self.logger.debug(f"==> Stock retenu pour la semaine {w+1} : {best_new_stock:.2f} MWh\n")
+                
+                self.logger.debug(f"==> Stock retenu pour la semaine {w+1} : {best_new_stock:.2f} MWh")
 
                 if best_new_stock is not None:
                     lower_bound = self.bottom_rule_curve[w]
@@ -300,9 +297,10 @@ class BellmanValuesProxy:
                         self.warning_lines.append(warning_msg)
 
                         if best_new_stock>upper_bound:
+                            delta = best_new_stock - upper_bound
+                            self.delta_inflows_correction [w, s, :] = delta / 168
                             best_new_stock = upper_bound
-                        else:
-                            best_new_stock = lower_bound
+                            self.logger.debug(f"==> Stock retenu supérieur à la courbe guide : {upper_bound}, déversement de {delta} MWh\n")
                     
                     self.trajectories[s, w] = best_new_stock
                     self.optimal_controls[s, w] = optimal_control
@@ -771,12 +769,11 @@ class ModifyAntaresStudy:
         np.savetxt(inflow_path, inflows, fmt="%.8f", delimiter="\t")
 
     def overwrite_hydro_ini_file(self) -> None:
-        hydro_ini_path = os.path.join(self.dir_study, "input", "hydro", "hydro.ini")
-        config = ConfigParser()
-        config.read(hydro_ini_path)
-        config["reservoir"][f"{self.area}"] = "false"
-        with open(hydro_ini_path, "w") as configfile:
-            config.write(configfile)
+        flag_dir = os.path.join(self.dir_study, "tmp", "hydro_flags")
+        os.makedirs(flag_dir, exist_ok=True)
+        flag_path = os.path.join(flag_dir, f"{self.area}.flag")
+        with open(flag_path, "w") as f:
+            f.write("false\n")  # indique que la zone doit être désactivée
 
     def create_st_cluster(self) -> None:
         contenu = f"""[lt_stock_proxy_{self.area}]
@@ -800,10 +797,16 @@ enabled = true
         pmax_injection_hourly = np.repeat(self.reservoir.max_daily_pumping, 24) / 24
         pmax_withdrawal_hourly = np.repeat(self.reservoir.max_daily_generating, 24) / 24
 
-        modulation_injection = np.clip(
-            pmax_injection_hourly / np.max(self.reservoir.max_daily_pumping / 24), 0, 1)
-        modulation_withdrawal = np.clip(
-            pmax_withdrawal_hourly / np.max(self.reservoir.max_daily_generating / 24), 0, 1)
+        if np.max(pmax_injection_hourly) == 0:
+            modulation_injection = np.zeros(168 * self.cost_function.nb_weeks + 24)
+        else:
+            modulation_injection = np.clip(
+                pmax_injection_hourly / np.max(self.reservoir.max_daily_pumping / 24), 0, 1)
+        if np.max(pmax_withdrawal_hourly) == 0:
+            modulation_withdrawal = np.zeros(168 * self.cost_function.nb_weeks + 24)
+        else:
+            modulation_withdrawal = np.clip(
+                pmax_withdrawal_hourly / np.max(self.reservoir.max_daily_generating / 24), 0, 1)
 
         modulation_injection = np.concatenate([modulation_injection, np.full(24, modulation_injection[-1])])
         modulation_withdrawal = np.concatenate([modulation_withdrawal, np.full(24, modulation_withdrawal[-1])])
@@ -838,11 +841,12 @@ enabled = true
         lines = []
         for mc in range(nbyears):
             trajectory = (mc % self.cost_function.net_load.shape[1]) + 1
-            lines.append(f"\nsts,{self.area},{mc},lt_stock_proxy_{self.area}={trajectory}")
+            lines.append(f"sts,{self.area},{mc},lt_stock_proxy_{self.area}={trajectory}")
 
-        path = os.path.join(self.dir_study, "settings", "scenariobuilder.dat")
-        with open(path, "a") as f:
-            f.writelines(lines)
+        sb_dir = os.path.join(self.dir_study, "tmp", "scenariobuilder_lines")
+        os.makedirs(sb_dir, exist_ok=True)
+        with open(os.path.join(sb_dir, f"{self.area}.txt"), "w") as f:
+            f.write("\n".join(lines) + "\n")
 
     def create_inflows_sts(self) -> None:
         balance = np.zeros((168 * self.cost_function.nb_weeks, len(self.cost_function.scenarios)))
@@ -858,6 +862,7 @@ enabled = true
                 balance[hour_start + 167, s] = self.bv.reservoir_capacity / 2 - hlevel_end
                 balance[hour_start:hour_start + 168, s] += (
                     np.repeat(self.bv.daily_inflow[w * 7:(w + 1) * 7, s], 24) / 24)
+                balance[hour_start:hour_start + 168, s] -= self.bv.delta_inflows_correction[w,s,:]
 
         balance = np.vstack([balance, np.zeros((24, len(self.cost_function.scenarios)))])
         path = os.path.join(
@@ -1064,6 +1069,34 @@ def run_for_area(area: str, dir_study: str, MC_years: int, alpha: float, coeff_c
             global_export_dir=global_export_dir
         ).run(actions=actions)
 
+def post_process_shared_files(dir_study: str, areas: list[str]) -> None:
+    # ✅ Modifier hydro.ini
+    hydro_ini_path = os.path.join(dir_study, "input", "hydro", "hydro.ini")
+    config = ConfigParser()
+    config.read(hydro_ini_path)
+
+    for area in areas:
+        flag_path = os.path.join(dir_study, "tmp", "hydro_flags", f"{area}.flag")
+        if os.path.exists(flag_path):
+            if "reservoir" not in config:
+                config["reservoir"] = {}
+            config["reservoir"][area] = "false"
+
+    with open(hydro_ini_path, "w") as configfile:
+        config.write(configfile)
+
+    # ✅ Modifier scenariobuilder.dat
+    sb_lines = []
+    for area in areas:
+        file_path = os.path.join(dir_study, "tmp", "scenariobuilder_lines", f"{area}.txt")
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                sb_lines.extend(f.readlines())
+
+    sb_path = os.path.join(dir_study, "settings", "scenariobuilder.dat")
+    with open(sb_path, "a") as f:
+        f.writelines(sb_lines)
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Lancer la génération des trajectoires pour plusieurs zones.")
     parser.add_argument("--dir_study", type=str, required=True, help="Répertoire d'entrée contenant les données.")
@@ -1127,7 +1160,12 @@ def main() -> None:
                 try:
                     future.result()
                 except Exception as e:
+                    
                     print(f"❌ Erreur pour la zone {area} : {e}")
+                    traceback.print_exc()
+
+            # Post-traitement des fichiers partagés
+            post_process_shared_files(args.dir_study, args.area)
 
 if __name__ == "__main__":
     main()

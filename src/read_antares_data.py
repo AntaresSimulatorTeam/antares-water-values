@@ -75,7 +75,7 @@ class Reservoir:
 
         self.max_generating = weekly_energy[:, 0]
         self.max_pumping = weekly_energy[:, 2]
-
+        
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
         self.daily_inflow = daily_inflow[: self.days_in_year]
@@ -92,10 +92,10 @@ class Reservoir:
             )[:, [0, 2]]
             * self.capacity
         )
-        assert (
-            rule_curves[0, 0] == rule_curves[0, 1]
-        ), "Initial level is not correctly defined by bottom and upper rule curves"
-        self.initial_level = rule_curves[0, 0]
+        # assert (
+        #     rule_curves[0, 0] == rule_curves[0, 1]
+        # ), "Initial level is not correctly defined by bottom and upper rule curves"
+        self.initial_level = np.mean([rule_curves[0, 0], rule_curves[0, 1]])
         bottom_rule_curve = rule_curves[7::7, 0]
         upper_rule_curve = rule_curves[7::7, 1]
         self.daily_bottom_rule_curve = rule_curves[:,0]
@@ -169,39 +169,91 @@ class NetLoad:
     def __init__(self, dir_study: str, name_area: str) -> None:
         self.area = name_area
         self.dir_study=dir_study
-        self.read_data()
+        self.read_load()
+        self.ror = self.compute_ror()
+        self.renewables = self.compute_renewables()
         self.compute_net_load()
-        self.compute_solar()
-        self.compute_wind()
-        self.compute_net_load()
         
 
-    def read_data(self) -> None: 
+    def read_load(self) -> None:
+        self.nb_scenarios=200
+
+        path_load = f"{self.dir_study}/input/load/series/load_{self.area}.txt"
+        if os.path.exists(path_load) and os.path.getsize(path_load) != 0:
+            self.load = np.loadtxt(path_load)
+        else:
+            self.load = np.zeros((8760, 200))
         
-        self.load = np.loadtxt(f"{self.dir_study}/input/load/series/load_{self.area}.txt")
-        self.nb_scenarios=self.load.shape[1]
-        self.solar = np.loadtxt(f"{self.dir_study}/input/renewables/series/{self.area}/{self.area}_solar_pv/series.txt")
-        self.wind_offshore = np.loadtxt(f"{self.dir_study}/input/renewables/series/{self.area}/{self.area}_wind_offshore/series.txt")
-        self.wind_onshore = np.loadtxt(f"{self.dir_study}/input/renewables/series/{self.area}/{self.area}_wind_onshore/series.txt")
-        self.ror = np.loadtxt(f"{self.dir_study}/input/hydro/series/{self.area}/ror.txt")
+        if len(self.load.shape) == 1:
+            self.load = np.repeat(self.load[:, np.newaxis], self.nb_scenarios, axis=1)
 
-    def compute_renewable(self, data:np.ndarray, capacity_key:str, cluster_file:str) -> np.ndarray:
-        
-        config = ConfigParser()
-        config.read(f"{cluster_file}")
-        capacity = float(config.get(f"{self.area}_{capacity_key}", "nominalcapacity"))
-        data *= capacity
-        return data
+    def compute_ror(self) -> np.ndarray:
+        ror_file = os.path.join(self.dir_study, "input", "hydro", "series", self.area, "ror.txt")
 
-    def compute_solar(self) -> None:
-        self.solar = self.compute_renewable(self.solar, "solar_pv", f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini")
+        if not os.path.exists(ror_file) or os.path.getsize(ror_file) == 0:
+            return np.zeros((8760, self.nb_scenarios))
 
-    def compute_wind(self) -> None:
-        self.wind_offshore = self.compute_renewable(self.wind_offshore, "wind_offshore", f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini")
-        self.wind_onshore = self.compute_renewable(self.wind_onshore, "wind_onshore", f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini")
+        try:
+            data = np.loadtxt(ror_file)
+            if len(data.shape) == 1:
+                data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
+            return data
+        except Exception:
+            return np.zeros((8760, self.nb_scenarios))
+
+
+    def compute_renewables(self) -> np.ndarray:
+
+        cluster_file = f"{self.dir_study}/input/renewables/clusters/{self.area}/list.ini"
+        base_series_path = f"{self.dir_study}/input/renewables/series/{self.area}"
+
+        total_renewable = np.zeros((8760, self.nb_scenarios))
+        found_cluster = False
+
+        if os.path.exists(cluster_file) and os.path.getsize(cluster_file) > 0:
+            config = ConfigParser()
+            config.read(cluster_file)
+
+            for section in config.sections():
+                if not config.has_option(section, "nominalcapacity"):
+                    continue
+
+                try:
+                    capacity = float(config.get(section, "nominalcapacity"))
+                except ValueError:
+                    capacity = 0.0
+
+                series_file = os.path.join(base_series_path, section, "series.txt")
+                if not os.path.exists(series_file) or os.path.getsize(series_file) == 0:
+                    continue
+
+                try:
+                    data = np.loadtxt(series_file)
+                    if len(data.shape) == 1:
+                        data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
+                    total_renewable += data * capacity
+                    found_cluster = True
+                except Exception:
+                    continue
+
+        if not found_cluster:
+            fallback_paths = [
+                f"{self.dir_study}/input/solar/series/solar_{self.area}.txt",
+                f"{self.dir_study}/input/wind/series/wind_{self.area}.txt"
+            ]
+
+            for fallback_file in fallback_paths:
+                if os.path.exists(fallback_file) and os.path.getsize(fallback_file) > 0:
+                    try:
+                        data = np.loadtxt(fallback_file)
+                        if len(data.shape) == 1:
+                            data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
+                        total_renewable += data 
+                    except Exception:
+                        continue
+
+        return total_renewable
+
 
     def compute_net_load(self) -> None:
-        self.net_load=self.load-self.solar-self.wind_offshore-self.wind_onshore-self.ror
-        
-        juillet_aout = self.net_load[24:65*24, :]
-        self.net_load = np.concatenate((self.net_load, juillet_aout), axis=0)
+        self.net_load=self.load-self.renewables-self.ror

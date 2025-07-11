@@ -227,9 +227,9 @@ class BellmanValueCalculation:
     def __init__(
         self,
         param: TimeScenarioParameter,
+        reward: Dict[TimeScenarioIndex, RewardApproximation],
         reservoir_management: ReservoirManagement,
         stock_discretization: Array1D,
-        reward: Dict[TimeScenarioIndex, RewardApproximation],
     ) -> None:
         self.time_scenario_param = param
         self.reward_approximation = reward

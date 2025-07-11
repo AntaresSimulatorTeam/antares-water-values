@@ -8,7 +8,7 @@ from functions_iterative import (
     RewardApproximation,
     TimeScenarioIndex,
     TimeScenarioParameter,
-    compute_upper_bound_with_stored_models,
+    compute_upper_bound,
 )
 from optimization import AntaresProblem
 from read_antares_data import Reservoir
@@ -46,7 +46,7 @@ def test_upper_bound() -> None:
     assert len(problem.solver.constraints()) == 3535
     assert len(problem.solver.variables()) == 3533
 
-    upper_bound, controls, _ = compute_upper_bound_with_stored_models(
+    upper_bound, controls, _ = compute_upper_bound(
         bellman_value_calculation=bellman_value_calculation,
         list_models=list_models,
         V=V,
@@ -58,7 +58,7 @@ def test_upper_bound() -> None:
     assert len(problem.solver.variables()) == 3533
 
     V[:, 1] = np.linspace(-5e9, -3e9, num=20)
-    upper_bound, controls, _ = compute_upper_bound_with_stored_models(
+    upper_bound, controls, _ = compute_upper_bound(
         bellman_value_calculation=bellman_value_calculation,
         list_models=list_models,
         V=V,
@@ -92,7 +92,6 @@ def test_upper_bound_with_xpress() -> None:
         problem.create_weekly_problem_itr(
             param=param, reservoir_management=reservoir_management
         )
-
         bellman_value_calculation = BellmanValueCalculation(
             param=param,
             reward={
@@ -111,7 +110,7 @@ def test_upper_bound_with_xpress() -> None:
         assert len(problem.solver.constraints()) == 3535
         assert len(problem.solver.variables()) == 3533
 
-        upper_bound, controls, _ = compute_upper_bound_with_stored_models(
+        upper_bound, controls, _ = compute_upper_bound(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,
@@ -123,7 +122,7 @@ def test_upper_bound_with_xpress() -> None:
         assert len(problem.solver.variables()) == 3533
 
         V[:, 1] = np.linspace(-5e9, -3e9, num=20)
-        upper_bound, controls, _ = compute_upper_bound_with_stored_models(
+        upper_bound, controls, _ = compute_upper_bound(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,

@@ -75,7 +75,6 @@ def calculate_bellman_values(
             N=N,
             tol_gap=tol_gap,
             solver=solver,
-            processes=processes,
         )
 
     return vb

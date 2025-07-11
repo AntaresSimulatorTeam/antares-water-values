@@ -8,7 +8,7 @@ from functions_iterative import (
     RewardApproximation,
     TimeScenarioIndex,
     TimeScenarioParameter,
-    compute_upper_bound_with_stored_models,
+    compute_upper_bound,
 )
 from optimization import AntaresProblem, Basis
 from read_antares_data import Reservoir
@@ -103,7 +103,7 @@ def test_basis_with_upper_bound() -> None:
             control=0, prev_basis=Basis([], [])
         )
 
-        upper_bound_1, _, itr_without_basis = compute_upper_bound_with_stored_models(
+        upper_bound_1, _, itr_without_basis = compute_upper_bound(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,
@@ -113,7 +113,7 @@ def test_basis_with_upper_bound() -> None:
             control=8400000, prev_basis=Basis([], [])
         )
 
-        upper_bound_2, _, itr_with_basis = compute_upper_bound_with_stored_models(
+        upper_bound_2, _, itr_with_basis = compute_upper_bound(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,

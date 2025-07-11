@@ -5,14 +5,10 @@ from time import time
 import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
-from scipy.interpolate import interp1d
 
-from calculate_reward_and_bellman_values import (
-    BellmanValueCalculation,
-    ReservoirManagement,
-)
+from calculate_reward_and_bellman_values import ReservoirManagement
 from read_antares_data import TimeScenarioParameter
-from type_definition import Array1D, Array2D, Array3D, Array4D, List, Optional
+from type_definition import Array1D, Array2D, List, Optional
 
 
 class Basis:
@@ -403,7 +399,6 @@ class AntaresProblem:
                 self.load_basis(basis)
 
         self.set_constraints_predefined_control(control)
-        # print(control)
         beta, lamb, _, _, _, itr, computing_time = self.solve_problem()
         return beta, lamb, itr, computing_time
 

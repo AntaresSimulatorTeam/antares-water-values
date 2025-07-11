@@ -14,7 +14,7 @@ from functions_iterative import create_model
 from functions_iterative_without_stored_models import (
     compute_upper_bound_without_stored_models,
 )
-from optimization import AntaresProblem, Basis
+from optimization import Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Any, Array1D, Array2D, Array3D, Array4D, Dict, Optional
 

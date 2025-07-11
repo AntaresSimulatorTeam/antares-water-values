@@ -84,7 +84,7 @@ def compute_x_multi_scenario(
     return (initial_x, controls)
 
 
-def compute_upper_bound_with_stored_models(
+def compute_upper_bound(
     bellman_value_calculation: BellmanValueCalculation,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     V: Array2D,
@@ -216,7 +216,6 @@ def itr_control(
     N: int,
     tol_gap: float,
     solver: str = "GLOP",
-    processes: Optional[int] = None,
 ) -> tuple[
     Array2D,
     Dict[TimeScenarioIndex, RewardApproximation],
@@ -301,7 +300,7 @@ def itr_control(
         V_fut = interp1d(X, V[:, 0])
         V0 = V_fut(reservoir_management.reservoir.initial_level)
 
-        upper_bound, controls, current_itr = compute_upper_bound_with_stored_models(
+        upper_bound, controls, current_itr = compute_upper_bound(
             bellman_value_calculation=bellman_value_calculation,
             list_models=list_models,
             V=V,

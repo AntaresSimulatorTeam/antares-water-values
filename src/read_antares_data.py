@@ -65,24 +65,26 @@ class Reservoir:
         max_power_data = np.loadtxt(
             f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
         )
-        daily_energy = max_power_data [: self.days_in_year] * self.hours_in_day
-        weekly_energy = daily_energy.reshape(
+        max_power_data = np.round(max_power_data, 6)
+        daily_energy = np.round(max_power_data[: self.days_in_year] * self.hours_in_day, 6)
+        weekly_energy = np.round(daily_energy.reshape(
             (self.weeks_in_year, self.days_in_week, 4)
-        ).sum(axis=1)
+        ).sum(axis=1), 6)
 
-        self.max_daily_generating = daily_energy[:, 0]
-        self.max_daily_pumping = daily_energy[:, 2]
+        self.max_daily_generating = np.round(daily_energy[:, 0], 6)
+        self.max_daily_pumping = np.round(daily_energy[:, 2], 6)
 
-        self.max_generating = weekly_energy[:, 0]
-        self.max_pumping = weekly_energy[:, 2]
+        self.max_generating = np.round(weekly_energy[:, 0], 6)
+        self.max_pumping = np.round(weekly_energy[:, 2], 6)
         
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
+        daily_inflow = np.round(daily_inflow, 6)
         self.daily_inflow = daily_inflow[: self.days_in_year]
         nb_scenarios = self.daily_inflow.shape[1]
-        weekly_inflow = self.daily_inflow.reshape(
+        weekly_inflow = np.round(self.daily_inflow.reshape(
             (self.weeks_in_year, self.days_in_week, nb_scenarios)
-        ).sum(axis=1)
+        ).sum(axis=1), 6)
         self.inflow = weekly_inflow
 
     def read_rule_curves(self, dir_study: str) -> None:
@@ -92,14 +94,15 @@ class Reservoir:
             )[:, [0, 2]]
             * self.capacity
         )
+        rule_curves = np.round(rule_curves, 6)
         # assert (
         #     rule_curves[0, 0] == rule_curves[0, 1]
         # ), "Initial level is not correctly defined by bottom and upper rule curves"
-        self.initial_level = np.mean([rule_curves[0, 0], rule_curves[0, 1]])
-        bottom_rule_curve = rule_curves[7::7, 0]
-        upper_rule_curve = rule_curves[7::7, 1]
-        self.daily_bottom_rule_curve = rule_curves[:,0]
-        self.daily_upper_rule_curve = rule_curves[:,1]
+        self.initial_level = np.round(np.mean([rule_curves[0, 0], rule_curves[0, 1]]), 6)
+        bottom_rule_curve = np.round(rule_curves[7::7, 0], 6)
+        upper_rule_curve = np.round(rule_curves[7::7, 1], 6)
+        self.daily_bottom_rule_curve = np.round(rule_curves[:,0], 6)
+        self.daily_upper_rule_curve = np.round(rule_curves[:,1], 6)
         self.bottom_rule_curve = bottom_rule_curve
         self.upper_rule_curve = upper_rule_curve
 
@@ -183,9 +186,9 @@ class NetLoad:
             self.load = np.loadtxt(path_load)
         else:
             self.load = np.zeros((8760, 200))
-        
         if len(self.load.shape) == 1:
             self.load = np.repeat(self.load[:, np.newaxis], self.nb_scenarios, axis=1)
+        self.load = np.round(self.load, 6)
 
     def compute_ror(self) -> np.ndarray:
         ror_file = os.path.join(self.dir_study, "input", "hydro", "series", self.area, "ror.txt")
@@ -197,6 +200,7 @@ class NetLoad:
             data = np.loadtxt(ror_file)
             if len(data.shape) == 1:
                 data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
+            data = np.round(data, 6)
             return data
         except Exception:
             return np.zeros((8760, self.nb_scenarios))
@@ -231,6 +235,7 @@ class NetLoad:
                     data = np.loadtxt(series_file)
                     if len(data.shape) == 1:
                         data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
+                    data = np.round(data, 6)
                     total_renewable += data * capacity
                     found_cluster = True
                 except Exception:
@@ -248,12 +253,14 @@ class NetLoad:
                         data = np.loadtxt(fallback_file)
                         if len(data.shape) == 1:
                             data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
+                        data = np.round(data, 6)
                         total_renewable += data 
                     except Exception:
                         continue
 
+        total_renewable = np.round(total_renewable, 6)
         return total_renewable
 
 
     def compute_net_load(self) -> None:
-        self.net_load=self.load-self.renewables-self.ror
+        self.net_load = np.round(self.load - self.renewables - self.ror, 6)

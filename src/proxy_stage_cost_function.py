@@ -17,7 +17,7 @@ class Proxy:
         self.allocation_dict = self.reservoir.allocation_dict
         # pour éviter les infaisabilités dues aux arrondis on diminue la capacité de pompage et turbinage
         self.max_daily_generating=self.reservoir.max_daily_generating-1
-        self.max_daily_pumping=self.reservoir.max_daily_pumping
+        self.max_daily_pumping=self.reservoir.max_daily_pumping-1 if not np.allclose(self.reservoir.max_daily_pumping,0) else self.reservoir.max_daily_pumping
         self.efficiency=self.reservoir.efficiency
         self.turb_efficiency=1
 
@@ -31,11 +31,13 @@ class Proxy:
         # print(self.allocation_dict)
         for key, value in self.allocation_dict.items():
             self.net_load += value * NetLoad(self.dir_study, key).net_load
+        # Arrondi pour éviter la propagation des erreurs
+        self.net_load = np.round(self.net_load, 6)
     
     def stage_cost_function(self, week_index: int, scenario: int, alpha: float, coeff: float) -> np.ndarray:
-        net_load_for_week = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
-        max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
-        max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
+        net_load_for_week = np.round(self.net_load[week_index * 168:(week_index + 1) * 168, scenario], 6)
+        max_energy_hour = np.round(np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24, 6)
+        max_pumping_hour = np.round(np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24, 6)
 
         pump_is_zero = np.allclose(max_pumping_hour, 0)
         control_list = []
@@ -52,28 +54,29 @@ class Proxy:
         )
 
         for turb_threshold in turb_thresholds:
-            curtailed_energy = np.minimum(net_load_for_week, np.maximum(turb_threshold, net_load_for_week - max_energy_hour))
-            curtail = net_load_for_week - curtailed_energy
+            turb_threshold = np.round(turb_threshold, 6)
+            curtailed_energy = np.round(np.minimum(net_load_for_week, np.maximum(turb_threshold, net_load_for_week - max_energy_hour)), 6)
+            curtail = np.round(net_load_for_week - curtailed_energy, 6)
 
             if not pump_is_zero:
                 if turb_threshold < 0:
                     pump_threshold = turb_threshold
                 else:
                     pump_threshold = ((self.efficiency / self.turb_efficiency) ** (1 / (alpha - 1))) * turb_threshold
-
-                potential_pump = pump_threshold - curtailed_energy
+                pump_threshold = np.round(pump_threshold, 6)
+                potential_pump = np.round(pump_threshold - curtailed_energy, 6)
                 mask = curtailed_energy < pump_threshold
-                actual_pump = np.minimum(potential_pump, max_pumping_hour) * mask
+                actual_pump = np.round(np.minimum(potential_pump, max_pumping_hour) * mask, 6)
             else:
                 actual_pump = np.zeros_like(curtailed_energy)
 
-            curtailed_energy += actual_pump
+            curtailed_energy = np.round(curtailed_energy + actual_pump, 6)
 
-            control_hourly = curtail * self.turb_efficiency - actual_pump * self.efficiency
-            control = np.sum(control_hourly)
-            turb_list.append(np.sum(curtail * self.turb_efficiency))
-            pump_list.append(np.sum(actual_pump * self.efficiency))
-            cost = np.sum(np.abs(curtailed_energy) ** alpha / coeff)
+            control_hourly = np.round(curtail * self.turb_efficiency - actual_pump * self.efficiency, 6)
+            control = np.round(np.sum(control_hourly), 6)
+            turb_list.append(np.round(np.sum(curtail * self.turb_efficiency), 6))
+            pump_list.append(np.round(np.sum(actual_pump * self.efficiency), 6))
+            cost = np.round(np.sum(np.abs(curtailed_energy) ** alpha / coeff), 6)
             control_list.append(control)
             cost_list.append(cost)
 
@@ -247,3 +250,10 @@ class Proxy:
         plt.show()
 
 
+
+
+
+# proxy=Proxy("C:/Users/brescianomat/Documents/5 - Etudes Antares/BP23_A-Reference_2036","se2",200)
+# proxy.plot_stage_cost_function(34,50,2,1e9)
+# proxy.plot_load(34,17,2,25,1e9)
+# proxy.plot_load_simple(34, 17, 2, 60, 1e9)

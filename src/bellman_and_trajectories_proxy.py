@@ -122,9 +122,9 @@ class BellmanValuesProxy:
         self.logger.debug("=" * 70 + "\n")
         self.logger.debug(">>> Initialisation des valeurs de Bellman finales")
         penalty_final_stock = self.penalty_final_stock()
-        self.mean_bv[self.nb_weeks - 1] = np.array([
+        self.mean_bv[self.nb_weeks - 1] = np.round(np.array([
             penalty_final_stock((c / 100) * self.reservoir_capacity) for c in range(0, 101, 2)
-        ])
+        ]), 6)
         self.logger.debug(f"Valeurs de pénalité finales (semaine {self.nb_weeks}): {self.mean_bv[self.nb_weeks - 1]}")
 
         for w in reversed(range(self.nb_weeks - 1)):
@@ -204,27 +204,27 @@ class BellmanValuesProxy:
                                 f"→ Nouveau meilleur contrôle retenu (forcé): {control:.2f}, total: {total_value:.2f}"
                             )
 
-                    self.bv[w, c // 2, s] = best_value
+                    self.bv[w, c // 2, s] = np.round(best_value, 6)
                     self.logger.debug(f"Valeur de Bellman enregistrée pour stock {current_stock:.2f} MWh : {best_value:.2f}")
 
-                self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2])
+                self.mean_bv[w, c // 2] = np.round(np.mean(self.bv[w, c // 2]), 6)
             self.logger.debug(f"Valeurs de Bellman moyennes pour la semaine {w+1} : {self.mean_bv[w]}")
             # print(f"→ Moyenne BV semaine {w+1} : {self.mean_bv[w]}")
 
     def compute_usage_values(self) -> None:
-        self.usage_values=np.zeros((self.nb_weeks,50))
+        self.usage_values = np.zeros((self.nb_weeks, 50))
         for w in range(self.nb_weeks):
-            for c in range(2,102,2):
-                self.usage_values[w,(c//2)-1]=self.mean_bv[w,c//2]-self.mean_bv[w,(c//2)-1]
+            for c in range(2, 102, 2):
+                self.usage_values[w, (c // 2) - 1] = np.round(self.mean_bv[w, c // 2] - self.mean_bv[w, (c // 2) - 1], 6)
 
     def compute_trajectories(self) -> None:
         self.logger.debug("\n" + "=" * 70)
         self.logger.debug(f"{"CALCUL DES TRAJECTOIRES".center(70)}")
         self.logger.debug("=" * 70 + "\n")
-        self.trajectories = np.zeros((len(self.scenarios),self.nb_weeks))
-        self.optimal_controls = np.zeros((len(self.scenarios),self.nb_weeks))
-        self.optimal_turb = np.zeros((len(self.scenarios),self.nb_weeks))
-        self.optimal_pump = np.zeros((len(self.scenarios),self.nb_weeks))
+        self.trajectories = np.zeros((len(self.scenarios), self.nb_weeks))
+        self.optimal_controls = np.zeros((len(self.scenarios), self.nb_weeks))
+        self.optimal_turb = np.zeros((len(self.scenarios), self.nb_weeks))
+        self.optimal_pump = np.zeros((len(self.scenarios), self.nb_weeks))
         self.delta_inflows_correction = np.zeros((self.nb_weeks, len(self.scenarios), 168))
         self.warning_lines = []
         for s in self.scenarios:
@@ -296,17 +296,17 @@ class BellmanValuesProxy:
                         )
                         self.warning_lines.append(warning_msg)
 
-                        if best_new_stock>upper_bound:
+                        if best_new_stock > upper_bound:
                             delta = best_new_stock - upper_bound
-                            self.delta_inflows_correction [w, s, :] = delta / 168
+                            self.delta_inflows_correction[w, s, :] = np.round(delta / 168, 6)
                             best_new_stock = upper_bound
                             self.logger.debug(f"==> Stock retenu supérieur à la courbe guide : {upper_bound}, déversement de {delta} MWh\n")
-                    
-                    self.trajectories[s, w] = best_new_stock
-                    self.optimal_controls[s, w] = optimal_control
-                    self.optimal_turb[s, w] = self.turb_functions[w, s](optimal_control)
-                    self.optimal_pump[s, w] = self.pump_functions[w, s](optimal_control)
-                    
+
+                    self.trajectories[s, w] = np.round(best_new_stock, 6)
+                    self.optimal_controls[s, w] = np.round(optimal_control, 6)
+                    self.optimal_turb[s, w] = np.round(self.turb_functions[w, s](optimal_control), 6)
+                    self.optimal_pump[s, w] = np.round(self.pump_functions[w, s](optimal_control), 6)
+
                     previous_stock = best_new_stock
                 else:
                     self.trajectories[s, w] = None
@@ -332,7 +332,7 @@ class BellmanValuesProxy:
         last_val = daily_curve[-1]
         final_interp = np.linspace(last_val, self.reservoir.initial_level, 25)[1:-1]
         hourly_curve = np.concatenate([hourly_curve, final_interp])
-        return hourly_curve
+        return np.round(hourly_curve, 6)
 
     def new_lower_rule_curve(self)->None:
         self.logger.debug("\n" + "=" * 70)
@@ -358,8 +358,8 @@ class BellmanValuesProxy:
         hourly_envelope=weekly_envelope.flatten()
         hourly_envelope=np.concatenate([hourly_envelope, hourly_envelope[-24:]])
         self.hourly_lower_rule_curve = self.daily_to_hourly_curve(self.daily_bottom_rule_curve)
-        final_lower_rule_curve=np.minimum(hourly_envelope,self.hourly_lower_rule_curve)
-        self.final_lower_rule_curve = np.concatenate([final_lower_rule_curve[1:], [self.initial_level]])
+        final_lower_rule_curve = np.minimum(hourly_envelope, self.hourly_lower_rule_curve)
+        self.final_lower_rule_curve = np.round(np.concatenate([final_lower_rule_curve[1:], [self.initial_level]]), 6)
 
         difference = np.abs(self.final_lower_rule_curve - self.hourly_lower_rule_curve)
         threshold = 1e-3
@@ -399,8 +399,8 @@ class BellmanValuesProxy:
         hourly_envelope = weekly_envelope.flatten()
         hourly_envelope = np.concatenate([hourly_envelope, hourly_envelope[-24:]])
         self.hourly_upper_rule_curve = self.daily_to_hourly_curve(self.daily_upper_rule_curve)
-        final_upper_rule_curve=np.maximum(hourly_envelope,self.hourly_upper_rule_curve)
-        self.final_upper_rule_curve = np.concatenate([final_upper_rule_curve[1:], [self.initial_level]])
+        final_upper_rule_curve = np.maximum(hourly_envelope, self.hourly_upper_rule_curve)
+        self.final_upper_rule_curve = np.round(np.concatenate([final_upper_rule_curve[1:], [self.initial_level]]), 6)
 
         difference = np.abs(self.final_upper_rule_curve - self.hourly_upper_rule_curve)
         threshold = 1e-3
@@ -706,8 +706,11 @@ class Exporter:
                 })
 
         df = pd.DataFrame(data)
+        for col in ["u", "turb", "pump"]:
+            if col in df.columns:
+                df[col] = np.round(df[col], 6)
         output_path = os.path.join(self.export_dir, filename)
-        df.to_csv(output_path,index=False)
+        df.to_csv(output_path, index=False)
         print(f"Control trajectories export succeeded : {output_path}")
 
     def export_bellman_values(self, filename: str = "bellman_values.csv") -> None:
@@ -725,6 +728,8 @@ class Exporter:
                     })
 
         df = pd.DataFrame(data)
+        if "bellman_value" in df.columns:
+            df["bellman_value"] = np.round(df["bellman_value"], 6)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
         print(f"Bellman values export succeeded: {output_path}")
@@ -743,8 +748,10 @@ class Exporter:
                     "sim": "u_0"
                 })
         df = pd.DataFrame(data)
+        if "hlevel" in df.columns:
+            df["hlevel"] = np.round(df["hlevel"], 6)
         output_path = os.path.join(self.export_dir, filename)
-        df.to_csv(output_path,index=False)
+        df.to_csv(output_path, index=False)
         print(f"Stock trajectories export succeeded : {output_path}")
     
 
@@ -858,11 +865,11 @@ enabled = true
                 else:
                     hlevel_start = self.bv.trajectories[s, w - 1]
                 hlevel_end = self.bv.trajectories[s, w]
-                balance[hour_start, s] = hlevel_start - self.bv.reservoir_capacity / 2
-                balance[hour_start + 167, s] = self.bv.reservoir_capacity / 2 - hlevel_end
+                balance[hour_start, s] = np.round(hlevel_start - self.bv.reservoir_capacity / 2, 6)
+                balance[hour_start + 167, s] = np.round(self.bv.reservoir_capacity / 2 - hlevel_end, 6)
                 balance[hour_start:hour_start + 168, s] += (
-                    np.repeat(self.bv.daily_inflow[w * 7:(w + 1) * 7, s], 24) / 24)
-                balance[hour_start:hour_start + 168, s] -= self.bv.delta_inflows_correction[w,s,:]
+                    np.round(np.repeat(self.bv.daily_inflow[w * 7:(w + 1) * 7, s], 24) / 24, 6))
+                balance[hour_start:hour_start + 168, s] -= np.round(self.bv.delta_inflows_correction[w, s, :], 6)
 
         balance = np.vstack([balance, np.zeros((24, len(self.cost_function.scenarios)))])
         path = os.path.join(

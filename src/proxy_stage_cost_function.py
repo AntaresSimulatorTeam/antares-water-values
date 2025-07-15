@@ -17,7 +17,7 @@ class Proxy:
         self.allocation_dict = self.reservoir.allocation_dict
         # pour éviter les infaisabilités dues aux arrondis on diminue la capacité de pompage et turbinage
         self.max_daily_generating=self.reservoir.max_daily_generating-1
-        self.max_daily_pumping=self.reservoir.max_daily_pumping-1 if not np.allclose(self.reservoir.max_daily_pumping,0) else self.reservoir.max_daily_pumping
+        self.max_daily_pumping=self.reservoir.max_daily_pumping
         self.efficiency=self.reservoir.efficiency
         self.turb_efficiency=1
 

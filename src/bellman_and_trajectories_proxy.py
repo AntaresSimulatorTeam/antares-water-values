@@ -869,7 +869,7 @@ enabled = true
             self.dir_study, "input", "st-storage", "series", self.area,
             f"lt_stock_proxy_{self.area}", "inflows.txt"
         )
-        np.savetxt(path, balance, fmt="%.8f", delimiter="\t")
+        np.savetxt(path, balance, fmt="%.12f", delimiter="\t")
 
     def apply_all(self) -> None:
         self.overwrite_inflows()

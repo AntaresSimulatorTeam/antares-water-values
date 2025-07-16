@@ -232,7 +232,6 @@ def calculate_bellman_value_with_precalculated_reward(
             V=V,
             output_path=output_path,
             solver=solver,
-            store_basis=True if solver == "XPRESS_LP" else False,
             processes=processes,
             dict_basis=dict_basis,
             saving_dir=saving_dir,
@@ -328,7 +327,6 @@ def calculate_bellman_value_directly(
             reservoir_management=reservoir_management,
             V=V,
             output_path=output_path,
-            store_basis=True if solver == "XPRESS_LP" else False,
             solver=solver,
             processes=processes,
             dict_basis=dict_basis,
@@ -447,7 +445,6 @@ def compute_upper_bound_without_stored_models(
     solver: str,
     dict_basis: Dict[TimeScenarioIndex, Basis],
     saving_dir: Optional[str],
-    store_basis: bool = False,
     processes: Optional[int] = None,
 ) -> tuple[float, Array2D, Array3D, Dict[TimeScenarioIndex, Basis]]:
     """
@@ -486,7 +483,6 @@ def compute_upper_bound_without_stored_models(
                 reservoir_management=reservoir_management,
                 V=V,
                 output_path=output_path,
-                store_basis=store_basis,
                 solver=solver,
                 dict_basis=dict_basis,
                 saving_dir=saving_dir,
@@ -515,9 +511,8 @@ def solve_one_scenario_with_bellman_values_without_stored_models(
     V: Array2D,
     output_path: str,
     solver: str,
-    saving_dir: str,
+    saving_dir: Optional[str],
     dict_basis: Dict[TimeScenarioIndex, Basis],
-    store_basis: bool = False,
 ) -> tuple[float, Array1D, Array2D, Dict[TimeScenarioIndex, Basis]]:
 
     current_itr = np.zeros((param.len_week, 2), dtype=np.float32)

@@ -219,7 +219,6 @@ def calculate_bellman_values_with_iterative_method_without_stored_models(
                 V=V,
                 output_path=output_path,
                 solver=solver,
-                store_basis=True if solver == "XPRESS_LP" else False,
                 processes=processes,
                 dict_basis=dict_basis,
                 saving_dir=saving_dir,

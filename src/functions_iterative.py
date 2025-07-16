@@ -8,7 +8,7 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     RewardApproximation,
 )
-from optimization import AntaresProblem, Basis
+from optimization import AntaresProblem, Basis, create_model, find_basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
 from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
 
@@ -117,16 +117,23 @@ def compute_upper_bound(
         for week in range(param.len_week):
             print(f"{scenario} {week}", end="\r")
             m = list_models[TimeScenarioIndex(week, scenario)]
+            basis = find_basis(
+                bellman_value_calculation,
+                V[:, week + 1],
+                scenario,
+                level_i,
+                week,
+                m,
+            )
 
             computational_time, itr, current_cost, control, level_i = (
                 m.solve_problem_with_bellman_values(
-                    bellman_value_calculation=bellman_value_calculation,
+                    stock_discretization=bellman_value_calculation.stock_discretization,
+                    reservoir_management=bellman_value_calculation.reservoir_management,
                     V=V,
                     level_i=level_i,
-                    take_into_account_z_and_y=(
-                        week
-                        == bellman_value_calculation.time_scenario_param.len_week - 1
-                    ),
+                    take_into_account_z_and_y=(week == param.len_week - 1),
+                    basis=basis,
                 )
             )
             cout += current_cost
@@ -331,21 +338,14 @@ def init_iterative_calculation(
     list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
     for week in range(len_week):
         for scenario in range(len_scenario):
-            m = AntaresProblem(
-                scenario=scenario,
-                week=week,
-                path=output_path,
-                itr=1,
-                name_solver=solver,
-                name_scenario=(
-                    param.name_scenario[scenario]
-                    if len(param.name_scenario) > 1
-                    else -1
-                ),
-            )
-            m.create_weekly_problem_itr(
+            m = create_model(
                 param=param,
                 reservoir_management=reservoir_management,
+                output_path=output_path,
+                week=week,
+                scenario=scenario,
+                solver=solver,
+                saving_dir=None,
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 

@@ -1,259 +1,102 @@
-from tkinter import font
 from read_antares_data import Reservoir
 from read_antares_data import NetLoad
 import numpy as np
 from scipy.interpolate import interp1d
-import matplotlib.pyplot as plt
-from matplotlib import rcParams
-from scipy.ndimage import binary_dilation
-
-rcParams['font.family'] = 'Cambria'
 
 class Proxy:
-    def __init__(self, dir_study: str, name_area: str,nb_scenarios:int) -> None:
-        self.dir_study=dir_study
-        self.name_area=name_area
-        self.reservoir = Reservoir(self.dir_study, self.name_area)
-        self.allocation_dict = self.reservoir.allocation_dict
-        # pour éviter les infaisabilités dues aux arrondis on diminue la capacité de pompage et turbinage
-        self.max_daily_generating=self.reservoir.max_daily_generating-1
-        self.max_daily_pumping=self.reservoir.max_daily_pumping-1 if not np.allclose(self.reservoir.max_daily_pumping,0) else self.reservoir.max_daily_pumping
-        self.efficiency=self.reservoir.efficiency
+    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float, coeff:float) -> None:
+        self.dir_study = dir_study
+        self.name_area = name_area
+        self.reservoir = Reservoir(dir_study, name_area)
+
+        # self.max_daily_generating=self.reservoir.max_daily_generating-1
+        # self.max_daily_pumping=self.reservoir.max_daily_pumping-1 if not np.allclose(self.reservoir.max_daily_pumping,0) else self.reservoir.max_daily_pumping
+
         self.turb_efficiency=1
+        self.alpha=alpha
+        self.coeff = coeff
 
-        self.nb_weeks=self.reservoir.inflow.shape[0]
-        self.scenarios=range(nb_scenarios)
-        self.compute_weighted_net_load()
+        self.nb_weeks=52
+        self.scenarios=range(MC_years)
+        
+        self.weighted_net_load = self.compute_weighted_net_load()
 
     
-    def compute_weighted_net_load(self)-> None:
-        self.net_load = np.zeros((365 * 24, 200))
-        # print(self.allocation_dict)
-        for key, value in self.allocation_dict.items():
-            self.net_load += value * NetLoad(self.dir_study, key).net_load
-        # Arrondi pour éviter la propagation des erreurs
-        self.net_load = np.round(self.net_load, 6)
+    def compute_weighted_net_load(self)-> np.ndarray:
+        weighted_net_load = np.zeros((365 * 24, 200))
+        for key, value in self.reservoir.allocation_dict.items():
+            weighted_net_load += value * NetLoad(self.dir_study, key).compute_net_load()
+
+        return weighted_net_load
     
-    def stage_cost_function(self, week_index: int, scenario: int, alpha: float, coeff: float) -> np.ndarray:
-        net_load_for_week = np.round(self.net_load[week_index * 168:(week_index + 1) * 168, scenario], 6)
-        max_energy_hour = np.round(np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24, 6)
-        max_pumping_hour = np.round(np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24, 6)
+    def compute_turb_and_pump_with_thresholds(self, 
+                                              turb_thresholds : np.ndarray, 
+                                              weekly_net_load : np.ndarray, 
+                                              max_hourly_turb : np.ndarray, 
+                                              max_hourly_pump : np.ndarray, 
+                                              null_pump : bool) -> tuple:
+        hourly_turb = []
+        hourly_pump = []
+        weekly_control = []
+        costs = []
+        
+        for turb_threshold in turb_thresholds:
+            clipped_net_load = np.minimum(weekly_net_load, np.maximum(turb_threshold, weekly_net_load - max_hourly_turb))
+            turb = weekly_net_load - clipped_net_load
 
-        pump_is_zero = np.allclose(max_pumping_hour, 0)
-        control_list = []
-        cost_list = []
-        turb_list = []
-        pump_list = []
+            if not null_pump:
+                if turb_threshold < 0:
+                    pump_threshold = turb_threshold
+                else:
+                    pump_threshold = ((self.reservoir.efficiency / self.turb_efficiency) ** (1 / (self.alpha - 1))) * turb_threshold
+                potential_pump = pump_threshold - clipped_net_load
+                mask = clipped_net_load < pump_threshold
+                pump = np.minimum(potential_pump, max_hourly_pump) * mask
+            else:
+                pump = np.zeros_like(clipped_net_load)
 
+            clipped_net_load += pump
+
+            hourly_turb.append(np.sum(turb * self.turb_efficiency))
+            hourly_pump.append(np.sum(pump * self.reservoir.efficiency))
+            hourly_control = turb * self.turb_efficiency - pump * self.reservoir.efficiency
+            weekly_control.append(np.sum(hourly_control))
+            cost = np.sum(np.abs(clipped_net_load) ** self.alpha / self.coeff)
+            costs.append(cost)
+        
+        return hourly_turb,hourly_pump,weekly_control,costs
+
+
+
+    def stage_cost_function(self, week: int, scenario: int) -> np.ndarray:
+        weekly_net_load = self.weighted_net_load[week * 168:(week + 1) * 168, scenario]
+        max_hourly_turb = self.reservoir.max_hourly_turb[(week)*168:(week+1)*168]
+        max_hourly_pump = self.reservoir.max_hourly_pump[(week)*168:(week+1)*168]
+        null_pump = np.allclose(self.reservoir.max_hourly_pump, 0)
+        
         turb_thresholds = np.quantile(
             np.linspace(
-                np.min(net_load_for_week - max_energy_hour),
-                np.max(net_load_for_week + max_pumping_hour) * (self.turb_efficiency / self.efficiency) ** (1 / (alpha - 1))
+                np.min(weekly_net_load - max_hourly_turb),
+                np.max(weekly_net_load + max_hourly_pump) * (self.turb_efficiency / self.reservoir.efficiency) ** (1 / (self.alpha - 1))
             ),
             np.linspace(0, 1, 25)
         )
 
-        for turb_threshold in turb_thresholds:
-            turb_threshold = np.round(turb_threshold, 6)
-            curtailed_energy = np.round(np.minimum(net_load_for_week, np.maximum(turb_threshold, net_load_for_week - max_energy_hour)), 6)
-            curtail = np.round(net_load_for_week - curtailed_energy, 6)
-
-            if not pump_is_zero:
-                if turb_threshold < 0:
-                    pump_threshold = turb_threshold
-                else:
-                    pump_threshold = ((self.efficiency / self.turb_efficiency) ** (1 / (alpha - 1))) * turb_threshold
-                pump_threshold = np.round(pump_threshold, 6)
-                potential_pump = np.round(pump_threshold - curtailed_energy, 6)
-                mask = curtailed_energy < pump_threshold
-                actual_pump = np.round(np.minimum(potential_pump, max_pumping_hour) * mask, 6)
-            else:
-                actual_pump = np.zeros_like(curtailed_energy)
-
-            curtailed_energy = np.round(curtailed_energy + actual_pump, 6)
-
-            control_hourly = np.round(curtail * self.turb_efficiency - actual_pump * self.efficiency, 6)
-            control = np.round(np.sum(control_hourly), 6)
-            turb_list.append(np.round(np.sum(curtail * self.turb_efficiency), 6))
-            pump_list.append(np.round(np.sum(actual_pump * self.efficiency), 6))
-            cost = np.round(np.sum(np.abs(curtailed_energy) ** alpha / coeff), 6)
-            control_list.append(control)
-            cost_list.append(cost)
+        hourly_turb, hourly_pump, weekly_control, costs = self.compute_turb_and_pump_with_thresholds(
+            turb_thresholds=turb_thresholds,
+            weekly_net_load=weekly_net_load,
+            max_hourly_turb=max_hourly_turb,
+            max_hourly_pump=max_hourly_pump,
+            null_pump=null_pump
+        )
 
         return np.array([
-            interp1d(control_list, cost_list, fill_value="extrapolate"),
-            interp1d(control_list, turb_list, fill_value="extrapolate"),
-            interp1d(control_list, pump_list, fill_value="extrapolate")
+            interp1d(weekly_control, costs, fill_value="extrapolate"),
+            interp1d(weekly_control, hourly_turb, fill_value="extrapolate"),
+            interp1d(weekly_control, hourly_pump, fill_value="extrapolate")
         ])
 
 
-    def compute_stage_cost_functions(self,alpha:float,coeff:float)->np.ndarray:
-        cost_functions=np.array([[self.stage_cost_function(w,s,alpha,coeff) for s in self.scenarios] for w in range(self.nb_weeks)])
+    def compute_stage_cost_functions(self)->np.ndarray:
+        cost_functions=np.array([[self.stage_cost_function(w,s) for s in self.scenarios] for w in range(self.nb_weeks)])
         return cost_functions
-
-    
-   
-    # affichages
-
-    def plot_stage_cost_function(self,week_index:int,scenario:int,alpha:float,coeff:float)->None:
-        cost_func = self.stage_cost_function(week_index, scenario, alpha,coeff)[0]
-        control_values = cost_func.x
-        cost_values = cost_func(control_values)
-        # print(f"control values : {control_values}, cost_values : {cost_values}")
-        plt.figure(figsize=(8, 5))
-        plt.plot(control_values, cost_values, marker='o')
-        plt.xlabel("Contrôle hebdomadaire [MWh]", fontsize=14)
-        plt.ylabel(f"Coût, (α={alpha})",fontsize=14)
-        plt.title(f"Fonction de coût - Scénario {scenario+1}, Semaine {week_index+1}",fontsize=14)
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
-
-
-
-    def plot_load(self, week_index: int, scenario: int, alpha: float, index_ecretement: int, coeff: float) -> None:
-        original_load = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
-        max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
-        max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
-
-        n_thresholds = 168
-        turb_thresholds = np.quantile(
-            np.linspace(
-                np.min(original_load - max_energy_hour),
-                np.max(original_load + max_pumping_hour) * (self.turb_efficiency / self.efficiency) ** (1 / (alpha - 1))
-            ),
-            np.linspace(0, 1, n_thresholds)
-        )
-
-        threshold = turb_thresholds[index_ecretement]
-        curtailed_energy = np.minimum(original_load, np.maximum(threshold, original_load - max_energy_hour))
-        curtail = original_load - curtailed_energy
-
-        if threshold < 0:
-            pump_threshold = threshold
-        else:
-            pump_threshold = (self.efficiency / self.turb_efficiency) ** (1 / (alpha - 1)) * threshold
-
-        potential_pump = pump_threshold - curtailed_energy
-        mask = curtailed_energy < pump_threshold
-        actual_pump = np.minimum(potential_pump, max_pumping_hour) * mask
-        curtailed_energy += actual_pump
-
-        # Étapes intermédiaires
-        turb_curve = original_load - curtail
-        final_curve = turb_curve + actual_pump
-
-        # Contrôle et coût
-        control_hourly = curtail * self.turb_efficiency - actual_pump * self.efficiency
-        control_total = np.sum(control_hourly)
-        cost_total = np.sum(np.abs(curtailed_energy) ** alpha / coeff)
-
-        # Affichage des valeurs
-        print(f"Semaine {week_index}, scénario {scenario}")
-        print(f"  Turbinage total : {np.sum(curtail):.1f} MWh")
-        print(f"  Pompage total   : {np.sum(actual_pump):.1f} MWh")
-        print(f"  Contrôle total  : {control_total:.1f} MWh")
-        print(f"  Coût            : {cost_total:.2f}")
-
-        hours = np.arange(len(original_load))
-
-        plt.figure(figsize=(15, 6))
-        plt.plot(hours, original_load, label='Consommation initiale', color='gray', linewidth=1.2)
-        plt.plot(hours, final_curve, label='Consommation écrétée', color='black', linewidth=1.5)
-
-        # Remplissages
-        turb_mask = binary_dilation(curtail > 1e-6, iterations=1)
-        plt.fill_between(hours, original_load, turb_curve, where=turb_mask,
-                        color='firebrick', alpha=0.5, label='Énergie turbinée')
-
-        pump_mask = binary_dilation(actual_pump > 1e-6, iterations=1)
-        plt.fill_between(hours, turb_curve, final_curve, where=pump_mask,
-                        color='royalblue', alpha=0.5, label='Énergie pompée')
-
-        # Seuils
-        if index_ecretement < n_thresholds:
-            plt.axhline(y=threshold, color='red', linestyle='--', label=f"Seuil turbinage = {threshold:.2f} MWh")
-            plt.axhline(y=pump_threshold, color='blue', linestyle='--', label=f"Seuil pompage = {pump_threshold:.2f} MWh")
-        else:
-            plt.axhline(y=pump_threshold, color='blue', linestyle='--', label=f"Seuil pompage seul = {pump_threshold:.2f} MWh")
-
-        plt.title(f"Scénario {scenario+1}, Semaine {week_index+1} (α={alpha})", fontsize=16)
-        plt.xlabel("Heures", fontsize=16)
-        plt.ylabel("Consommation résiduelle (MWh)", fontsize=16)
-        plt.legend()
-        plt.grid(True, axis='y')
-        plt.tight_layout()
-        plt.show()
-
-
-
-
-    def plot_load_simple(self, week_index: int, scenario: int, alpha: float, index_ecretement: int, coeff: float) -> None:
-        original_load = self.net_load[week_index * 168:(week_index + 1) * 168, scenario]
-        max_energy_hour = np.repeat(self.max_daily_generating[week_index * 7:(week_index + 1) * 7], 24) / 24
-        max_pumping_hour = np.repeat(self.max_daily_pumping[week_index * 7:(week_index + 1) * 7], 24) / 24
-
-        n_thresholds = 168
-        turb_thresholds = np.quantile(
-            np.linspace(
-                np.min(original_load - max_energy_hour),
-                np.max(original_load + max_pumping_hour) * (self.turb_efficiency / self.efficiency) ** (1 / (alpha - 1))
-            ),
-            np.linspace(0, 1, n_thresholds)
-        )
-
-        threshold = turb_thresholds[index_ecretement]
-        curtailed_energy = np.minimum(original_load, np.maximum(threshold, original_load - max_energy_hour))
-        curtail = original_load - curtailed_energy  # énergie turbinée
-
-        if threshold < 0:
-            pump_threshold = threshold
-        else:
-            pump_threshold = (self.efficiency / self.turb_efficiency) ** (1 / (alpha - 1)) * threshold
-
-        potential_pump = pump_threshold - curtailed_energy
-        mask = curtailed_energy < pump_threshold
-        actual_pump = np.minimum(potential_pump, max_pumping_hour) * mask
-        curtailed_energy += actual_pump  # consommation après pompage
-
-        # Étapes intermédiaires
-        turb_curve = original_load - curtail  # après turbinage
-        final_curve = turb_curve + actual_pump  # après turbinage + pompage
-
-        hours = np.arange(len(original_load))
-
-        plt.figure(figsize=(15, 6))
-
-        # Courbe initiale
-        plt.plot(hours, original_load, label='Consommation initiale', color='gray', linewidth=1.2)
-
-        # Courbe modifiée
-        plt.plot(hours, final_curve, label='Consommation écrétée', color='black', linewidth=1.5)
-
-        # Remplissage entre courbe initiale et après turbinage
-        turb_mask = binary_dilation(curtail > 1e-6, iterations=1)
-        plt.fill_between(hours, original_load, turb_curve, where=turb_mask,
-                        color='firebrick', alpha=0.5, label='Énergie turbinée')
-
-        # Remplissage entre après turbinage et consommation finale
-        pump_mask = binary_dilation(actual_pump > 1e-6, iterations=1)
-        plt.fill_between(hours, turb_curve, final_curve, where=pump_mask,
-                        color='royalblue', alpha=0.5, label='Énergie pompée')
-
-        plt.title(f"Écrêtement de la consommation résiduelle – Scénario {scenario+1}, Semaine {week_index+1}",fontsize=14)
-        plt.xlabel("Heures",fontsize=14)
-        plt.ylabel("Consommation résiduelle (MWh)",fontsize=14)
-        plt.legend()
-        plt.grid(True, axis='y')
-        plt.tight_layout()
-        plt.show()
-
-
-
-
-
-# proxy=Proxy("C:/Users/brescianomat/Documents/5 - Etudes Antares/BP23_A-Reference_2036","se2",200)
-# proxy.plot_stage_cost_function(34,50,2,1e9)
-# proxy.plot_load(34,17,2,25,1e9)
-# proxy.plot_load_simple(34, 17, 2, 60, 1e9)

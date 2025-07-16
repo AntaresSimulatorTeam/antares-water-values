@@ -65,27 +65,32 @@ class Reservoir:
         max_power_data = np.loadtxt(
             f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
         )
-        max_power_data = np.round(max_power_data, 6)
-        daily_energy = np.round(max_power_data[: self.days_in_year] * self.hours_in_day, 6)
-        weekly_energy = np.round(daily_energy.reshape(
+        hourly_energy = max_power_data[ : self.days_in_year]
+        daily_energy = hourly_energy * self.hours_in_day
+        weekly_energy = daily_energy.reshape(
             (self.weeks_in_year, self.days_in_week, 4)
-        ).sum(axis=1), 6)
+        ).sum(axis=1)
 
-        self.max_daily_generating = np.round(daily_energy[:, 0], 6)
-        self.max_daily_pumping = np.round(daily_energy[:, 2], 6)
+        self.max_hourly_turb = np.repeat(hourly_energy[:, 0],24)
+        self.max_hourly_pump = np.repeat(hourly_energy[:, 2],24)
 
-        self.max_generating = np.round(weekly_energy[:, 0], 6)
-        self.max_pumping = np.round(weekly_energy[:, 2], 6)
+        self.max_daily_turb = daily_energy[:, 0]
+        self.max_daily_pump = daily_energy[:, 2]
+
+        self.max_weekly_turb = weekly_energy[:, 0]
+        self.max_weekly_pump = weekly_energy[:, 2]
         
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
-        daily_inflow = np.round(daily_inflow, 6)
+
         self.daily_inflow = daily_inflow[: self.days_in_year]
-        nb_scenarios = self.daily_inflow.shape[1]
-        weekly_inflow = np.round(self.daily_inflow.reshape(
-            (self.weeks_in_year, self.days_in_week, nb_scenarios)
-        ).sum(axis=1), 6)
-        self.inflow = weekly_inflow
+
+        self.weekly_inflow = self.daily_inflow.reshape(
+            (self.weeks_in_year, self.days_in_week, 200)
+        ).sum(axis=1)
+
+        self.hourly_inflow = np.repeat(self.daily_inflow/24.0,24,axis=0)
+
 
     def read_rule_curves(self, dir_study: str) -> None:
         rule_curves = (
@@ -94,17 +99,16 @@ class Reservoir:
             )[:, [0, 2]]
             * self.capacity
         )
-        rule_curves = np.round(rule_curves, 6)
-        # assert (
-        #     rule_curves[0, 0] == rule_curves[0, 1]
-        # ), "Initial level is not correctly defined by bottom and upper rule curves"
-        self.initial_level = np.round(np.mean([rule_curves[0, 0], rule_curves[0, 1]]), 6)
-        bottom_rule_curve = np.round(rule_curves[7::7, 0], 6)
-        upper_rule_curve = np.round(rule_curves[7::7, 1], 6)
-        self.daily_bottom_rule_curve = np.round(rule_curves[:,0], 6)
-        self.daily_upper_rule_curve = np.round(rule_curves[:,1], 6)
-        self.bottom_rule_curve = bottom_rule_curve
-        self.upper_rule_curve = upper_rule_curve
+        rule_curves = rule_curves
+
+        self.initial_level = np.mean([rule_curves[0, 0], rule_curves[0, 1]])
+
+        self.daily_lower_rule_curve = rule_curves[:,0]
+        self.daily_upper_rule_curve = rule_curves[:,1]
+
+        self.weekly_lower_rule_curve = rule_curves[7::7, 0]
+        self.weekly_upper_rule_curve = rule_curves[7::7, 1]
+
 
     def get_hydro_ini_file(self, dir_study: str) -> ConfigParser:
         hydro_ini_file = ConfigParser()
@@ -171,36 +175,30 @@ class NetLoad:
 
     def __init__(self, dir_study: str, name_area: str) -> None:
         self.area = name_area
-        self.dir_study=dir_study
-        self.read_load()
-        self.ror = self.compute_ror()
-        self.renewables = self.compute_renewables()
-        self.compute_net_load()
+        self.dir_study = dir_study
+        self.nb_scenarios = 200
         
 
-    def read_load(self) -> None:
-        self.nb_scenarios=200
-
+    def read_load(self) -> np.ndarray:
         path_load = f"{self.dir_study}/input/load/series/load_{self.area}.txt"
         if os.path.exists(path_load) and os.path.getsize(path_load) != 0:
-            self.load = np.loadtxt(path_load)
+            load = np.loadtxt(path_load)
         else:
-            self.load = np.zeros((8760, 200))
-        if len(self.load.shape) == 1:
-            self.load = np.repeat(self.load[:, np.newaxis], self.nb_scenarios, axis=1)
-        self.load = np.round(self.load, 6)
+            load = np.zeros((8760, self.nb_scenarios))
+        if len(load.shape) == 1:
+            load = np.repeat(load[:, np.newaxis], self.nb_scenarios, axis=1)
+        return load
 
     def compute_ror(self) -> np.ndarray:
-        ror_file = os.path.join(self.dir_study, "input", "hydro", "series", self.area, "ror.txt")
+        ror_path = os.path.join(self.dir_study, "input", "hydro", "series", self.area, "ror.txt")
 
-        if not os.path.exists(ror_file) or os.path.getsize(ror_file) == 0:
+        if not os.path.exists(ror_path) or os.path.getsize(ror_path) == 0:
             return np.zeros((8760, self.nb_scenarios))
 
         try:
-            data = np.loadtxt(ror_file)
+            data = np.loadtxt(ror_path)
             if len(data.shape) == 1:
                 data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
-            data = np.round(data, 6)
             return data
         except Exception:
             return np.zeros((8760, self.nb_scenarios))
@@ -235,7 +233,6 @@ class NetLoad:
                     data = np.loadtxt(series_file)
                     if len(data.shape) == 1:
                         data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
-                    data = np.round(data, 6)
                     total_renewable += data * capacity
                     found_cluster = True
                 except Exception:
@@ -253,14 +250,15 @@ class NetLoad:
                         data = np.loadtxt(fallback_file)
                         if len(data.shape) == 1:
                             data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
-                        data = np.round(data, 6)
                         total_renewable += data 
                     except Exception:
                         continue
 
-        total_renewable = np.round(total_renewable, 6)
         return total_renewable
 
 
-    def compute_net_load(self) -> None:
-        self.net_load = np.round(self.load - self.renewables - self.ror, 6)
+    def compute_net_load(self) -> np.ndarray:
+        load = self.read_load()
+        renewables = self.compute_renewables()
+        ror = self.compute_ror()
+        return load-renewables-ror

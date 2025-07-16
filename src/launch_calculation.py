@@ -5,7 +5,7 @@ from simple_bellman_value_calculation import (
     calculate_bellman_value_directly,
     calculate_bellman_value_with_precalculated_reward,
 )
-from type_definition import Array1D, Array2D, Optional
+from type_definition import Array1D, Array2D
 
 
 def calculate_bellman_values(
@@ -14,12 +14,10 @@ def calculate_bellman_values(
     output_path: str,
     X: Array1D,
     method: str,
-    saving_dir: str,
     solver: str = "CLP",
     N: int = 1,
     tol_gap: float = 1e-4,
     len_controls: int = 10,
-    processes: Optional[int] = None,
 ) -> Array2D:
     """Algorithm to evaluate Bellman values with different methods.
 
@@ -48,8 +46,6 @@ def calculate_bellman_values(
             output_path=output_path,
             X=X,
             solver=solver,
-            processes=processes,
-            saving_dir=saving_dir,
         )
 
     elif method == "precalculated":
@@ -61,8 +57,6 @@ def calculate_bellman_values(
             output_path=output_path,
             X=X,
             solver=solver,
-            processes=processes,
-            saving_dir=saving_dir,
         )
 
     elif method == "iterative":

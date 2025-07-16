@@ -1,12 +1,17 @@
 import pickle as pkl
 import re
+from pathlib import Path
 from time import time
 
 import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
+from scipy.interpolate import interp1d
 
-from calculate_reward_and_bellman_values import ReservoirManagement
+from calculate_reward_and_bellman_values import (
+    BellmanValueCalculation,
+    ReservoirManagement,
+)
 from read_antares_data import TimeScenarioParameter
 from type_definition import Array1D, Array2D, List, Optional
 
@@ -551,3 +556,94 @@ class AntaresProblem:
             ),
             xf,
         )
+
+
+def create_model(
+    param: TimeScenarioParameter,
+    reservoir_management: ReservoirManagement,
+    output_path: str,
+    week: int,
+    scenario: int,
+    solver: str,
+    saving_dir: Optional[str],
+) -> AntaresProblem:
+    done = False
+    if saving_dir is not None:
+        if len(param.name_scenario) == param.len_scenario:
+            proto_path = (
+                saving_dir + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
+            )
+        else:
+            proto_path = saving_dir + f"/problem-{scenario}-{week+1}.pkl"
+        if Path(proto_path).is_file():
+            m = AntaresProblem(
+                scenario=scenario,
+                week=week,
+                path=output_path,
+                itr=1,
+                name_solver=solver,
+                name_scenario=(
+                    param.name_scenario[scenario]
+                    if len(param.name_scenario) > 1
+                    else -1
+                ),
+                load_from_proto=True,
+                proto_path=proto_path,
+            )
+            m.reset(reservoir_management)
+            done = True
+    if not done:
+        m = AntaresProblem(
+            scenario=scenario,
+            week=week,
+            path=output_path,
+            itr=1,
+            name_solver=solver,
+            name_scenario=(
+                param.name_scenario[scenario] if len(param.name_scenario) > 1 else -1
+            ),
+        )
+        m.create_weekly_problem_itr(
+            param=param,
+            reservoir_management=reservoir_management,
+        )
+
+        if saving_dir is not None:
+            proto = model_builder.ModelBuilder().export_to_proto()  # type: ignore[no-untyped-call]
+            m.solver.ExportModelToProto(output_model=proto)
+            with open(proto_path, "wb") as file:
+                pkl.dump(proto, file)
+
+    return m
+
+
+def find_basis(
+    bellman_value_calculation: BellmanValueCalculation,
+    V: Array1D,
+    scenario: int,
+    level_i: float,
+    week: int,
+    m: AntaresProblem,
+) -> Basis:
+
+    basis = Basis([], [])
+
+    if len(m.control_basis) >= 1:
+        if len(m.control_basis) >= 2:
+            V_fut = interp1d(
+                bellman_value_calculation.stock_discretization,
+                V,
+            )
+
+            _, _, likely_control = (
+                bellman_value_calculation.solve_weekly_problem_with_approximation(
+                    level_i=level_i,
+                    V_fut=V_fut,
+                    week=week,
+                    scenario=scenario,
+                )
+            )
+        else:
+            likely_control = 0
+        basis = m.find_closest_basis(likely_control)
+    return basis

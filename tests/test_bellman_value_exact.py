@@ -191,7 +191,6 @@ def test_bellman_value_exact() -> None:
         reservoir_management=reservoir_management,
         output_path="test_data/one_node",
         X=X,
-        saving_dir="test_data/one_node",
     )
 
     assert vb == pytest.approx(expected_vb)
@@ -220,7 +219,6 @@ def test_bellman_value_exact_xpress() -> None:
             output_path="test_data/one_node",
             X=X,
             solver="XPRESS_LP",
-            saving_dir="test_data/one_node",
         )
 
         assert vb == pytest.approx(expected_vb)

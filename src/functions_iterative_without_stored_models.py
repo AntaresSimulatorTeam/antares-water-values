@@ -10,13 +10,13 @@ from calculate_reward_and_bellman_values import (
     ReservoirManagement,
     RewardApproximation,
 )
-from functions_iterative import (
-    compute_upper_bound_without_stored_models,
-    compute_x_multi_scenario,
-)
+from functions_iterative import compute_x_multi_scenario
 from optimization import Basis
 from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
-from simple_bellman_value_calculation import calculate_reward_for_one_scenario
+from simple_bellman_value_calculation import (
+    calculate_reward_for_one_scenario,
+    compute_upper_bound_without_stored_models,
+)
 from type_definition import Array1D, Array2D, Array4D, Dict, List, Optional
 
 
@@ -27,7 +27,7 @@ def calculate_reward(
     reservoir_management: ReservoirManagement,
     output_path: str,
     solver: str,
-    saving_dir: str,
+    saving_dir: Optional[str],
     dict_basis: Dict[TimeScenarioIndex, Basis],
     processes: Optional[int] = None,
 ) -> tuple[
@@ -112,8 +112,8 @@ def calculate_bellman_values_with_iterative_method_without_stored_models(
     X: Array1D,
     N: int,
     tol_gap: float,
-    saving_dir: str,
     solver: str = "GLOP",
+    saving_dir: Optional[str] = None,
     processes: Optional[int] = None,
 ) -> tuple[
     Array2D,
@@ -168,7 +168,7 @@ def calculate_bellman_values_with_iterative_method_without_stored_models(
         bellman_value_calculation,
         gap,
         G,
-    ) = init_iterative_calculation(param, reservoir_management, output_path, X, solver)
+    ) = init_iterative_calculation(param, reservoir_management, X)
     i = 0
 
     dict_basis = {}
@@ -240,9 +240,7 @@ def calculate_bellman_values_with_iterative_method_without_stored_models(
 def init_iterative_calculation(
     param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
-    output_path: str,
     X: Array1D,
-    solver: str,
 ) -> tuple[
     List,
     Array2D,

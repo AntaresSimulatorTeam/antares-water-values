@@ -1,3 +1,4 @@
+import os as os
 import pickle as pkl
 import re
 from pathlib import Path
@@ -609,6 +610,8 @@ def create_model(
         )
 
         if saving_dir is not None:
+            if not (os.path.exists(saving_dir)):
+                os.makedirs(saving_dir)
             proto = model_builder.ModelBuilder().export_to_proto()  # type: ignore[no-untyped-call]
             m.solver.ExportModelToProto(output_model=proto)
             with open(proto_path, "wb") as file:

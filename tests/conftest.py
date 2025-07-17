@@ -80,8 +80,8 @@ def discretization_two_nodes() -> Dict[AreaIndex, Array1D]:
 
     reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
 
-    x_1 = np.linspace(0, reservoir_1.capacity, num=5)
-    x_2 = np.linspace(0, reservoir_2.capacity, num=5)
+    x_1 = np.linspace(0, reservoir_1.capacity, num=10)
+    x_2 = np.linspace(0, reservoir_2.capacity, num=10)
     X = {AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2}
 
     return X

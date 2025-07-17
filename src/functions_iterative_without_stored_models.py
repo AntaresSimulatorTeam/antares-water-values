@@ -89,12 +89,12 @@ def calculate_reward(
     for scenario in range(param.len_scenario):
         for week in range(param.len_week):
             reward[TimeScenarioIndex(week, scenario)].update_reward_approximation(
-                slope_new_cut=scenario_reward[scenario][0][
+                new_control=scenario_reward[scenario][0][
                     TimeScenarioIndex(week, scenario)
-                ].list_cut[0][0],
-                intercept_new_cut=scenario_reward[scenario][0][
+                ].controls,
+                new_cost=scenario_reward[scenario][0][
                     TimeScenarioIndex(week, scenario)
-                ].list_cut[0][1],
+                ].costs,
             )
             tot_t[week][scenario] = scenario_reward[scenario][1][week]
             perf[week][scenario] = scenario_reward[scenario][2][week]

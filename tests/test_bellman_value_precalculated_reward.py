@@ -1,7 +1,13 @@
 import numpy as np
 import pytest
 
-from functions_iterative import TimeScenarioParameter
+from calculate_reward_and_bellman_values import solve_weekly_problem_with_approximation
+from estimation import PieceWiseLinearInterpolator
+from functions_iterative import (
+    MultiStockManagement,
+    TimeScenarioParameter,
+    solve_weekly_problem_with_approximation,
+)
 from multi_stock_bellman_value_calculation import (
     MultiStockManagement,
     generate_controls,
@@ -11,6 +17,7 @@ from multi_stock_bellman_value_calculation import (
 )
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
+    calculate_complete_reward,
 )
 from type_definition import (
     AreaIndex,
@@ -334,3 +341,54 @@ def test_get_all_cost(
             multi_stock_management_one_node.areas,
         )
     )
+
+
+def test_solve_weekly_problem_with_approximation(
+    param: TimeScenarioParameter,
+    controls_precalculated_one_node_10: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    costs_precalculated_one_node_10: Dict[TimeScenarioIndex, List[float]],
+    slopes_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
+    multi_stock_management_one_node: MultiStockManagement,
+) -> None:
+
+    reward = calculate_complete_reward(
+        controls={
+            TimeScenarioIndex(w, s): [
+                ctrl for ctrl in controls_precalculated_one_node_10[WeekIndex(w)]
+            ]
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
+        param=param,
+        multi_stock_management=multi_stock_management_one_node,
+        costs=costs_precalculated_one_node_10,
+        slopes=slopes_precalculated_one_node_10,
+    )
+    for area, mng in multi_stock_management_one_node.dict_reservoirs.items():
+        X = np.linspace(0, mng.reservoir.capacity, num=20)
+        V = {
+            week: np.zeros((len(X), param.len_scenario), dtype=np.float32)
+            for week in range(param.len_week + 1)
+        }
+
+        week = param.len_week - 1
+
+        scenario = 0
+        V_fut = PieceWiseLinearInterpolator(X, V[week + 1][:, scenario])
+        i = 10
+        Vu, xf, control, cost = solve_weekly_problem_with_approximation(
+            level_i=X[i],
+            V_fut=V_fut,
+            week=week,
+            scenario=scenario,
+            reservoir_management=mng,
+            param=param,
+            reward=reward[area][TimeScenarioIndex(week, scenario)],
+        )
+
+        assert Vu == pytest.approx(-539893423.7863245)
+        assert xf == pytest.approx(2280000.0)
+        assert control == pytest.approx(3014776.8947368413)
+        assert cost == pytest.approx(-539893423.7863245)

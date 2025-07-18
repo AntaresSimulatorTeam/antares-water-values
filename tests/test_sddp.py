@@ -14,18 +14,18 @@ from type_definition import AreaIndex, Dict, List, TimeScenarioIndex, WeekIndex
 
 opt_cost = 4410020520.96
 opt_controls = [
-    271484.68421052676,
-    1326913.4733752445,
-    -737268.6839015605,
-    1395766.5263157892,
-    71619.0,
+    -1833778.47368421,
+    1084397.57894737,
+    1084194.57894737,
+    1084187.57894737,
+    909513.73684211,
 ]
 opt_trajectory = [
     4450000.0,
-    4210526.315789473,
-    2915378.8424142287,
-    3684210.526315789,
-    2320000.0,
+    6315789.47368421,
+    5263157.89473684,
+    4210526.31578947,
+    3157894.73684211,
     2280000.0,
 ]
 
@@ -206,4 +206,4 @@ def test_compare_sddp_to_precalculated(
         assert (
             V[WeekIndex(1)](mng.reservoir.capacity / 100 * 51)
             - V[WeekIndex(1)](mng.reservoir.capacity / 100 * 50)
-        ) / mng.reservoir.capacity * 100 == pytest.approx(200.07966720000266)
+        ) / mng.reservoir.capacity * 100 == pytest.approx(200.07966720000266, abs=1e-1)

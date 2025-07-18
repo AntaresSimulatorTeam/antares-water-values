@@ -76,9 +76,9 @@ class ReservoirManagement:
                     self.reservoir.capacity,
                 ],
                 [
-                    -self.penalty_final_level * (self.final_level),
+                    self.penalty_final_level * (self.final_level),
                     0,
-                    -self.penalty_final_level
+                    self.penalty_final_level
                     * (self.reservoir.capacity - self.final_level),
                 ],
             )
@@ -91,11 +91,11 @@ class ReservoirManagement:
                     self.reservoir.capacity,
                 ],
                 [
-                    -self.penalty_bottom_rule_curve
+                    self.penalty_bottom_rule_curve
                     * (self.reservoir.bottom_rule_curve[week]),
                     0,
                     0,
-                    -self.penalty_upper_rule_curve
+                    self.penalty_upper_rule_curve
                     * (self.reservoir.capacity - self.reservoir.upper_rule_curve[week]),
                 ],
             )

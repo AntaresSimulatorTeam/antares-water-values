@@ -189,21 +189,21 @@ def test_compare_sddp_to_precalculated(
                 initial_x[TimeScenarioIndex(week + 1, trajectory)] = xf
                 controls[TimeScenarioIndex(week, scenario)] = u
 
-        assert -lb == pytest.approx(opt_cost)
-        assert -ub == pytest.approx(opt_cost)
+        assert lb == pytest.approx(opt_cost)
+        assert ub == pytest.approx(opt_cost)
         assert np.array([v for v in controls.values()]) == pytest.approx(
             np.array(opt_controls)
         )
         assert np.array([v for v in initial_x.values()]) == pytest.approx(
             np.array(opt_trajectory)
         )
-        assert -V[WeekIndex(1)](mng.reservoir.capacity / 100 * 50) == pytest.approx(
+        assert V[WeekIndex(1)](mng.reservoir.capacity / 100 * 50) == pytest.approx(
             3362896896.0
         )
-        assert -V[WeekIndex(1)](mng.reservoir.capacity / 100 * 51) == pytest.approx(
+        assert V[WeekIndex(1)](mng.reservoir.capacity / 100 * 51) == pytest.approx(
             3342888929.2799997
         )
         assert (
             V[WeekIndex(1)](mng.reservoir.capacity / 100 * 51)
             - V[WeekIndex(1)](mng.reservoir.capacity / 100 * 50)
-        ) / mng.reservoir.capacity * 100 == pytest.approx(200.07966720000266, abs=1e-1)
+        ) / mng.reservoir.capacity * 100 == pytest.approx(200.07966720000266)

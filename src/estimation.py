@@ -120,51 +120,12 @@ class BellmanValueEstimation(Estimator):
         )
 
 
-class MultiVariateEstimator:
-
-    def __init__(
-        self, controls: Optional[np.ndarray], costs: np.ndarray, duals: np.ndarray
-    ):
-        if controls is not None:
-            self.true_inputs = controls
-            self.inputs = controls
-        self.costs = costs.ravel()
-        self.duals = duals
-        self.true_costs = costs.ravel()
-        self.true_duals = duals
-
-    def update(
-        self,
-        costs: Union[np.ndarray, float],
-        duals: Union[np.ndarray, float],
-        controls: Optional[np.ndarray],
-    ) -> None:
-        raise NotImplementedError
-
-    def count_redundant(
-        self, tolerance: float, remove: bool = False
-    ) -> tuple[int, list[bool]]:
-        return 0, [True]
-
-    def remove_interps(self) -> None:
-        pass
-
-    def round(self, precision: int = 6) -> None:
-        pass
-
-    def __call__(self, x: np.ndarray) -> float:
-        return NotImplemented
-
-    def to_julia_dict(self) -> Dict[str, np.ndarray]:
-        return NotImplemented
-
-
-class LinearInterpolator(MultiVariateEstimator):
+class LinearInterpolator:
     """Class to enable use of n-dimensionnal linear interpolation"""
 
     def __init__(
         self,
-        controls: Optional[np.ndarray],
+        controls: np.ndarray,
         costs: np.ndarray,
         duals: np.ndarray,
         interp_mode: Optional[bool] = False,
@@ -179,7 +140,6 @@ class LinearInterpolator(MultiVariateEstimator):
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        assert controls is not None
         self.inputs = controls
         self.costs = costs.ravel()
         self.duals = duals
@@ -192,9 +152,9 @@ class LinearInterpolator(MultiVariateEstimator):
 
     def update(
         self,
-        costs: Union[np.ndarray, float],
-        duals: Union[np.ndarray, float],
-        controls: Optional[np.ndarray],
+        costs: np.ndarray,
+        duals: np.ndarray,
+        controls: np.ndarray,
         interp_mode: Optional[bool] = False,
     ) -> None:
         """
@@ -489,9 +449,9 @@ class LinearDecomposer(LinearInterpolator):
 
     def update(
         self,
-        costs: Union[np.ndarray, float],
-        duals: Union[np.ndarray, float],
-        controls: Optional[np.ndarray],
+        costs: np.ndarray,
+        duals: np.ndarray,
+        controls: np.ndarray,
         interp_mode: Optional[bool] = None,
     ) -> None:
 
@@ -555,146 +515,6 @@ class LinearDecomposer(LinearInterpolator):
         self.duals = np.round(self.duals, precision)
 
 
-class RewardApproximation(MultiVariateEstimator):
-    """Class to store and update reward approximation for a given week and a given scenario"""
-
-    def __init__(self, lb_control: float, ub_control: float, ub_reward: float) -> None:
-        """
-        Create a new reward approximation
-
-        Parameters
-        ----------
-        lb_control:float :
-            Lower possible bound on control
-        ub_control:float :
-            Upper possible bound on control
-        ub_reward:float :
-            Upper bound on reward
-
-        Returns
-        -------
-        None
-        """
-        self.breaking_point = [lb_control, ub_control]
-        self.list_cut = [(0.0, ub_reward)]
-
-    def reward_function(self) -> Callable:
-        """Return a function to evaluate reward at any point based on the current approximation."""
-        return lambda x: min([cut[0] * x + cut[1] for cut in self.list_cut])
-
-    def update(
-        self,
-        costs: Union[np.ndarray, float],
-        duals: Union[np.ndarray, float],
-        controls: Optional[np.ndarray] = None,
-    ) -> None:
-        """
-        Update reward approximation by adding a new cut
-
-        Returns
-        -------
-        None
-        """
-        if isinstance(duals, np.ndarray):
-            slope_new_cut = float(duals[0])
-        else:
-            slope_new_cut = duals
-        if isinstance(costs, np.ndarray):
-            intercept_new_cut = float(costs[0])
-        else:
-            intercept_new_cut = costs
-        previous_reward = self.reward_function()
-        new_cut: Callable = lambda x: slope_new_cut * x + intercept_new_cut
-        new_reward: list[tuple[float, float]] = []
-        new_points = [self.breaking_point[0]]
-
-        if len(self.breaking_point) != len(self.list_cut) + 1:
-            raise (ValueError)
-
-        for i in range(len(self.breaking_point)):
-            if i == len(self.breaking_point) - 1:
-                new_points.append(self.breaking_point[-1])
-            else:
-                new_cut_below_previous_reward_at_i = self.check_relative_position(
-                    previous_reward, new_cut, i
-                )
-                new_cut_above_previous_reward_at_i = self.check_relative_position(
-                    new_cut, previous_reward, i
-                )
-                new_cut_below_previous_reward_at_i_plus_1 = (
-                    self.check_relative_position(previous_reward, new_cut, i + 1)
-                )
-                new_cut_above_previous_reward_at_i_plus_1 = (
-                    self.check_relative_position(new_cut, previous_reward, i + 1)
-                )
-                slopes_are_different = (slope_new_cut - self.list_cut[i][0]) != 0
-                if i == 0:
-                    if new_cut_below_previous_reward_at_i:
-                        new_reward.append((slope_new_cut, intercept_new_cut))
-                    elif new_cut_above_previous_reward_at_i:
-                        new_reward.append(self.list_cut[i])
-                    elif new_cut_below_previous_reward_at_i_plus_1:
-                        new_reward.append((slope_new_cut, intercept_new_cut))
-                    else:
-                        new_reward.append(self.list_cut[i])
-                if (new_cut_below_previous_reward_at_i) and (
-                    new_cut_above_previous_reward_at_i_plus_1
-                ):
-                    if slopes_are_different:
-                        new_reward.append(self.list_cut[i])
-                        new_points.append(
-                            self.calculate_breaking_point(
-                                slope_new_cut=slope_new_cut,
-                                intercept_new_cut=intercept_new_cut,
-                                i=i,
-                            )
-                        )
-                elif new_cut_above_previous_reward_at_i:
-                    if i != 0:
-                        new_reward.append(self.list_cut[i])
-                        new_points.append(self.breaking_point[i])
-                    if new_cut_below_previous_reward_at_i_plus_1:
-                        if slopes_are_different:
-                            new_reward.append((slope_new_cut, intercept_new_cut))
-                            new_points.append(
-                                self.calculate_breaking_point(
-                                    slope_new_cut=slope_new_cut,
-                                    intercept_new_cut=intercept_new_cut,
-                                    i=i,
-                                )
-                            )
-                elif (
-                    not (new_cut_below_previous_reward_at_i)
-                    and not (new_cut_above_previous_reward_at_i)
-                    and i != 0
-                ):
-                    new_points.append(self.breaking_point[i])
-                    if new_cut_below_previous_reward_at_i_plus_1:
-                        new_reward.append((slope_new_cut, intercept_new_cut))
-                    else:
-                        new_reward.append(self.list_cut[i])
-
-        self.breaking_point = new_points
-        self.list_cut = new_reward
-
-    def calculate_breaking_point(
-        self,
-        intercept_new_cut: float,
-        slope_new_cut: float,
-        i: int,
-    ) -> float:
-        intercept_previous_cut = self.list_cut[i][1]
-        slope_previous_cut = self.list_cut[i][0]
-        return -(intercept_new_cut - intercept_previous_cut) / (
-            slope_new_cut - slope_previous_cut
-        )
-
-    def check_relative_position(
-        self, previous_reward: Callable, new_cut: Callable, i: int
-    ) -> bool:
-        return new_cut(self.breaking_point[i]) < previous_reward(self.breaking_point[i])
-
-
 class LinearCostEstimator:
     """A class to contain an ensemble of Interpolators for every week and scenario"""
 
@@ -717,7 +537,7 @@ class LinearCostEstimator:
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        estimators: Dict[TimeScenarioIndex, MultiVariateEstimator] = {}
+        estimators: Dict[TimeScenarioIndex, LinearInterpolator] = {}
         for week in range(param.len_week):
             for scenario in range(param.len_scenario):
                 r = LinearDecomposer(
@@ -730,7 +550,7 @@ class LinearCostEstimator:
         self.estimators = estimators
         self.param = param
 
-    def __getitem__(self, index: TimeScenarioIndex) -> MultiVariateEstimator:
+    def __getitem__(self, index: TimeScenarioIndex) -> LinearInterpolator:
         """
         Gets a LinearInterpolators
 

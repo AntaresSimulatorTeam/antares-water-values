@@ -185,6 +185,12 @@ expected_vb = np.array(
         ],
     ]
 )
+true_list_cut = [
+    (300.0022431781, -848257117.7874993),
+    (200.08020216786073, -943484691.5152471),
+    (100.0003310016, -828694927.2829424),
+    (0.0, 0.0),
+]
 
 
 def test_itr_control(param: TimeScenarioParameter) -> None:
@@ -208,28 +214,11 @@ def test_itr_control(param: TimeScenarioParameter) -> None:
         tol_gap=1e-4,
     )
 
-    assert G[TimeScenarioIndex(0, 0)].list_cut[0] == pytest.approx(
-        (300.0022431781, -848257117.7874993)
-    )
-    assert G[TimeScenarioIndex(0, 0)].list_cut[1] == pytest.approx(
-        (200.08020216786073, -943484691.5152471)
-    )
-    assert G[TimeScenarioIndex(0, 0)].list_cut[2] == pytest.approx(
-        (100.0003310016, -828694927.2829424)
-    )
-    assert G[TimeScenarioIndex(0, 0)].list_cut[3] == pytest.approx((0.0, 0.0))
-
-    assert G[TimeScenarioIndex(0, 0)].breaking_point == pytest.approx(
-        np.array(
-            [
-                -8400000.0,
-                -953018.7010290311,
-                1146981.5347944114,
-                8286921.842985533,
-                8400000.0,
-            ]
-        )
-    )
+    for i, cut in enumerate(true_list_cut):
+        assert -G[TimeScenarioIndex(0, 0)].costs[i] + G[TimeScenarioIndex(0, 0)].duals[
+            i
+        ] * G[TimeScenarioIndex(0, 0)].inputs[i] == pytest.approx(cut[1])
+        assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(cut[0])
 
     assert -lb == pytest.approx(4410020694.484235)
     assert ub == pytest.approx(4410021160.928989)
@@ -269,28 +258,11 @@ def test_itr_control_with_xpress(param: TimeScenarioParameter) -> None:
             solver="XPRESS_LP",
         )
 
-        assert G[TimeScenarioIndex(0, 0)].list_cut[0] == pytest.approx(
-            (300.0022431781, -848257117.7874993)
-        )
-        assert G[TimeScenarioIndex(0, 0)].list_cut[1] == pytest.approx(
-            (200.08020216786073, -943484691.5152471)
-        )
-        assert G[TimeScenarioIndex(0, 0)].list_cut[2] == pytest.approx(
-            (100.0003310016, -828694927.2829424)
-        )
-        assert G[TimeScenarioIndex(0, 0)].list_cut[3] == pytest.approx((0.0, 0.0))
-
-        assert G[TimeScenarioIndex(0, 0)].breaking_point == pytest.approx(
-            np.array(
-                [
-                    -8400000.0,
-                    -953018.7010290311,
-                    1146981.5347944114,
-                    8286921.842985533,
-                    8400000.0,
-                ]
-            )
-        )
+        for i, cut in enumerate(true_list_cut):
+            assert -G[TimeScenarioIndex(0, 0)].costs[i] + G[
+                TimeScenarioIndex(0, 0)
+            ].duals[i] * G[TimeScenarioIndex(0, 0)].inputs[i] == pytest.approx(cut[1])
+            assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(cut[0])
 
         assert -lb == pytest.approx(4410020694.484235)
         assert ub == pytest.approx(4410021160.928989)

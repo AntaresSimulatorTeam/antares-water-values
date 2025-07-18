@@ -343,9 +343,8 @@ def itr_control(
         itr_tot.append(current_itr)
         controls_upper.append(ctr)
 
-        gap = upper_bound + V0
-        print(gap, upper_bound, -V0)
-        gap = gap / -V0
+        print(upper_bound + V0, upper_bound, -V0)
+        gap = (upper_bound + V0) / -V0
         i += 1
         fin = time()
         tot_t.append(fin - debut)

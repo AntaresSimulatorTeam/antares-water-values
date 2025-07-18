@@ -43,6 +43,10 @@ def solve_weekly_problem_with_approximation(
     Vu = float("-inf")
     stock = reservoir_management.reservoir
     pen = reservoir_management.get_penalty(week=week, len_week=param.len_week)
+
+    def noise_penalty(x: float) -> float:
+        return 0.01 * x
+
     reward_fn = reward.reward_function()
     points = reward.breaking_point
     X = V_fut.inputs
@@ -54,8 +58,8 @@ def solve_weekly_problem_with_approximation(
                 u = min(u, stock.max_generating[week])
                 G = reward_fn(u)
                 penalty = pen(X[i_fut])
-                if (G + V_fut(X[i_fut]) + penalty) > Vu:
-                    Vu = G + V_fut(X[i_fut]) + penalty
+                if (G + V_fut(X[i_fut]) + penalty + noise_penalty(X[i_fut])) > Vu:
+                    Vu = G + V_fut(X[i_fut]) + penalty + noise_penalty(X[i_fut])
                     xf = X[i_fut]
                     control = u
                     cost = G
@@ -65,8 +69,8 @@ def solve_weekly_problem_with_approximation(
         if 0 <= state_fut <= stock.capacity:
             penalty = pen(state_fut)
             G = reward_fn(points[u])
-            if (G + V_fut(state_fut) + penalty) > Vu:
-                Vu = G + V_fut(state_fut) + penalty
+            if (G + V_fut(state_fut) + penalty + noise_penalty(state_fut)) > Vu:
+                Vu = G + V_fut(state_fut) + penalty + noise_penalty(state_fut)
                 xf = state_fut
                 control = points[u]
                 cost = G
@@ -79,8 +83,10 @@ def solve_weekly_problem_with_approximation(
     ):
         state_fut = level_i - Umin + stock.inflow[week, scenario]
         penalty = pen(state_fut)
-        if (reward_fn(Umin) + V_fut(state_fut) + penalty) > Vu:
-            Vu = reward_fn(Umin) + V_fut(state_fut) + penalty
+        if (
+            reward_fn(Umin) + V_fut(state_fut) + penalty + noise_penalty(state_fut)
+        ) > Vu:
+            Vu = reward_fn(Umin) + V_fut(state_fut) + penalty + noise_penalty(state_fut)
             xf = state_fut
             control = Umin
             cost = reward_fn(Umin)
@@ -93,8 +99,10 @@ def solve_weekly_problem_with_approximation(
     ):
         state_fut = level_i - Umax + stock.inflow[week, scenario]
         penalty = pen(state_fut)
-        if (reward_fn(Umax) + V_fut(state_fut) + penalty) > Vu:
-            Vu = reward_fn(Umax) + V_fut(state_fut) + penalty
+        if (
+            reward_fn(Umax) + V_fut(state_fut) + penalty + noise_penalty(state_fut)
+        ) > Vu:
+            Vu = reward_fn(Umax) + V_fut(state_fut) + penalty + noise_penalty(state_fut)
             xf = state_fut
             control = Umax
             cost = reward_fn(Umax)
@@ -103,6 +111,7 @@ def solve_weekly_problem_with_approximation(
         -(xf - level_i - stock.inflow[week, scenario]),
         stock.max_generating[week],
     )
+    Vu = Vu - noise_penalty(xf)
     return (Vu, xf, control, cost)
 
 

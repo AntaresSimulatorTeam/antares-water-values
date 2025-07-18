@@ -8,34 +8,14 @@ from reservoir_management import MultiStockManagement
 from type_definition import AreaIndex
 
 
-def test_create_weekly_problem_with_two_stocks() -> None:
+def test_create_weekly_problem_with_two_stocks(
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
     problem = AntaresProblem(scenario=0, week=0, path="test_data/two_nodes", itr=1)
-    param = TimeScenarioParameter(len_week=52, len_scenario=1)
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=0,
-        penalty_upper_rule_curve=0,
-        penalty_final_level=0,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=0,
-        penalty_upper_rule_curve=0,
-        penalty_final_level=0,
-        force_final_level=True,
-    )
-
-    all_reservoirs = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
 
     problem.create_weekly_problem_itr(
-        param=param, multi_stock_management=all_reservoirs
+        param=param, multi_stock_management=multi_stock_management_two_nodes
     )
 
     beta, lamb, _, _ = problem.solve_with_predefined_controls(
@@ -47,7 +27,10 @@ def test_create_weekly_problem_with_two_stocks() -> None:
     assert lamb[AreaIndex("area_2")] == pytest.approx(-138.85108188019998)
 
 
-def test_create_weekly_problem_with_two_stocks_with_xpress() -> None:
+def test_create_weekly_problem_with_two_stocks_with_xpress(
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
 
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
     if solver:
@@ -59,32 +42,9 @@ def test_create_weekly_problem_with_two_stocks_with_xpress() -> None:
             itr=1,
             name_solver="XPRESS_LP",
         )
-        param = TimeScenarioParameter(len_week=52, len_scenario=1)
-
-        reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-        reservoir_management_1 = ReservoirManagement(
-            reservoir=reservoir_1,
-            penalty_bottom_rule_curve=0,
-            penalty_upper_rule_curve=0,
-            penalty_final_level=0,
-            force_final_level=True,
-        )
-
-        reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-        reservoir_management_2 = ReservoirManagement(
-            reservoir=reservoir_2,
-            penalty_bottom_rule_curve=0,
-            penalty_upper_rule_curve=0,
-            penalty_final_level=0,
-            force_final_level=True,
-        )
-
-        all_reservoirs = MultiStockManagement(
-            [reservoir_management_1, reservoir_management_2]
-        )
 
         problem.create_weekly_problem_itr(
-            param=param, multi_stock_management=all_reservoirs
+            param=param, multi_stock_management=multi_stock_management_two_nodes
         )
 
         beta, lamb, _, _ = problem.solve_with_predefined_controls(

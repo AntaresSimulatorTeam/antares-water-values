@@ -19,7 +19,7 @@ def solve_weekly_problem_with_approximation(
     reservoir_management: ReservoirManagement,
     param: TimeScenarioParameter,
     reward: RewardApproximation,
-) -> tuple[float, float, float]:
+) -> tuple[float, float, float, float]:
     """
     Optimize control of reservoir during a week based on reward approximation and current Bellman values.
 
@@ -58,6 +58,7 @@ def solve_weekly_problem_with_approximation(
                     Vu = G + V_fut(X[i_fut]) + penalty
                     xf = X[i_fut]
                     control = u
+                    cost = G
 
     for u in range(len(points)):
         state_fut = level_i - points[u] + stock.inflow[week, scenario]
@@ -68,6 +69,7 @@ def solve_weekly_problem_with_approximation(
                 Vu = G + V_fut(state_fut) + penalty
                 xf = state_fut
                 control = points[u]
+                cost = G
 
     Umin = level_i + stock.inflow[week, scenario] - stock.bottom_rule_curve[week]
     if (
@@ -81,6 +83,7 @@ def solve_weekly_problem_with_approximation(
             Vu = reward_fn(Umin) + V_fut(state_fut) + penalty
             xf = state_fut
             control = Umin
+            cost = reward_fn(Umin)
 
     Umax = level_i + stock.inflow[week, scenario] - stock.upper_rule_curve[week]
     if (
@@ -94,12 +97,13 @@ def solve_weekly_problem_with_approximation(
             Vu = reward_fn(Umax) + V_fut(state_fut) + penalty
             xf = state_fut
             control = Umax
+            cost = reward_fn(Umax)
 
     control = min(
         -(xf - level_i - stock.inflow[week, scenario]),
         stock.max_generating[week],
     )
-    return (Vu, xf, control)
+    return (Vu, xf, control, cost)
 
 
 def calculate_VU(
@@ -134,7 +138,7 @@ def calculate_VU(
             V_fut = PieceWiseLinearInterpolator(X, V[week + 1][:, scenario])
             for i in range(len(X)):
 
-                Vu, _, _ = solve_weekly_problem_with_approximation(
+                Vu, _, _, _ = solve_weekly_problem_with_approximation(
                     level_i=X[i],
                     V_fut=V_fut,
                     week=week,

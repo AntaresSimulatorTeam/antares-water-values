@@ -10,7 +10,7 @@ from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from simple_bellman_value_calculation import calculate_bellman_value_directly
 from stock_discretization import StockDiscretization
-from type_definition import AreaIndex
+from type_definition import AreaIndex, Array1D, Dict
 
 
 def test_iterate_over_stock_discretization() -> None:
@@ -34,35 +34,11 @@ def test_iterate_over_stock_discretization() -> None:
     ]
 
 
-def test_solve_with_bellman_multi_stock() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    multi_stock_management = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
-
-    x_1 = np.linspace(0, reservoir_1.capacity, num=5)
-    x_2 = np.linspace(0, reservoir_2.capacity, num=5)
-    X = {AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2}
+def test_solve_with_bellman_multi_stock(
+    param: TimeScenarioParameter,
+    discretization_two_nodes: Dict[AreaIndex, Array1D],
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
 
     m = AntaresProblem(
         scenario=0,
@@ -72,158 +48,535 @@ def test_solve_with_bellman_multi_stock() -> None:
     )
     m.create_weekly_problem_itr(
         param=param,
-        multi_stock_management=multi_stock_management,
+        multi_stock_management=multi_stock_management_two_nodes,
     )
 
     V = {
         "intercept": np.array(
             [
-                [2.7942497e09, 1.3248531e09, 1.2739775e09, 1.2459432e09, 1.2459430e09],
-                [1.3137651e09, 7.6301440e07, 3.7071564e07, 3.1171368e07, 3.1171356e07],
-                [4.1457952e08, 5.7581808e07, 3.0331620e07, 3.0331258e07, 3.0331248e07],
-                [4.0567504e08, 5.7574440e07, 3.0331604e07, 3.0331258e07, 3.0331248e07],
-                [4.0567504e08, 5.7574440e07, 3.0331604e07, 3.0331258e07, 3.0331248e07],
+                [
+                    1.267817e10,
+                    1.015195e10,
+                    7.888292e09,
+                    6.054524e09,
+                    4.647728e09,
+                    3.863717e09,
+                    3.586034e09,
+                    3.557371e09,
+                    3.545864e09,
+                    3.545864e09,
+                ],
+                [
+                    1.152400e10,
+                    9.011807e09,
+                    6.785412e09,
+                    4.951644e09,
+                    3.544848e09,
+                    2.760837e09,
+                    2.483154e09,
+                    2.454491e09,
+                    2.442984e09,
+                    2.442984e09,
+                ],
+                [
+                    1.041837e10,
+                    7.945732e09,
+                    5.763495e09,
+                    3.929728e09,
+                    2.522931e09,
+                    1.738921e09,
+                    1.461238e09,
+                    1.432575e09,
+                    1.421068e09,
+                    1.421068e09,
+                ],
+                [
+                    9.563887e09,
+                    7.091247e09,
+                    4.909010e09,
+                    3.131633e09,
+                    1.827006e09,
+                    1.039847e09,
+                    7.621631e08,
+                    7.335004e08,
+                    7.219932e08,
+                    7.219932e08,
+                ],
+                [
+                    8.709401e09,
+                    6.271373e09,
+                    4.101809e09,
+                    2.473789e09,
+                    1.363239e09,
+                    7.835009e08,
+                    5.058175e08,
+                    4.771547e08,
+                    4.656476e08,
+                    4.656476e08,
+                ],
+                [
+                    7.854916e09,
+                    5.502337e09,
+                    3.332772e09,
+                    1.961098e09,
+                    1.106893e09,
+                    5.271552e08,
+                    3.020470e08,
+                    2.691269e08,
+                    2.576198e08,
+                    2.576198e08,
+                ],
+                [
+                    7.052250e09,
+                    4.733299e09,
+                    2.628873e09,
+                    1.448407e09,
+                    8.505472e08,
+                    3.349426e08,
+                    2.849153e08,
+                    2.538463e08,
+                    2.423392e08,
+                    2.423392e08,
+                ],
+                [
+                    6.283213e09,
+                    3.964262e09,
+                    2.116181e09,
+                    1.173939e09,
+                    5.942016e08,
+                    3.068391e08,
+                    2.697364e08,
+                    2.424903e08,
+                    2.310301e08,
+                    2.310301e08,
+                ],
+                [
+                    5.682867e09,
+                    3.363916e09,
+                    1.684533e09,
+                    9.686105e08,
+                    3.888728e08,
+                    2.914019e08,
+                    2.564865e08,
+                    2.326493e08,
+                    2.241571e08,
+                    2.241571e08,
+                ],
+                [
+                    5.244728e09,
+                    2.947258e09,
+                    1.422112e09,
+                    8.416020e08,
+                    3.265971e08,
+                    2.789938e08,
+                    2.464488e08,
+                    2.241572e08,
+                    2.241571e08,
+                    2.241571e08,
+                ],
             ]
         ),
         "slope_area_1": np.array(
             [
                 [
-                    -8.0000000e03,
-                    -8.0000000e03,
-                    -8.0000000e03,
-                    -8.0000000e03,
-                    -8.0000000e03,
+                    -16000.0,
+                    -16000.0,
+                    -16000.0,
+                    -16000.0,
+                    -16000.0,
+                    -16000.0,
+                    -16000.0,
+                    -16000.0,
+                    -16000.0,
+                    -16000.0,
                 ],
                 [
-                    -5.0000000e03,
-                    -1.5355737e02,
-                    -1.1516584e02,
-                    -1.1516584e02,
-                    -1.1516584e02,
+                    -13000.0,
+                    -13000.0,
+                    -12000.002,
+                    -12000.002,
+                    -12000.0,
+                    -12000.0,
+                    -12000.0,
+                    -12000.0,
+                    -12000.0,
+                    -12000.0,
                 ],
                 [
-                    -5.0000000e02,
-                    -1.3635868e01,
-                    -3.0350534e-04,
-                    0.0000000e00,
-                    0.0000000e00,
+                    -10000.0,
+                    -10000.0,
+                    -10000.0,
+                    -10000.0,
+                    -10000.0,
+                    -10000.0,
+                    -10000.0,
+                    -10000.0,
+                    -10000.0,
+                    -10000.0,
                 ],
-                [0.0000000e00, 0.0000000e00, 0.0000000e00, 0.0000000e00, 0.0000000e00],
-                [0.0000000e00, 0.0000000e00, 0.0000000e00, 0.0000000e00, 0.0000000e00],
+                [
+                    -10000.0,
+                    -9999.999,
+                    -9999.999,
+                    -9000.0,
+                    -6000.0005,
+                    -3000.0015,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                ],
+                [
+                    -10000.0,
+                    -9000.0,
+                    -9000.0,
+                    -6000.0005,
+                    -3000.0005,
+                    -3000.0002,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                ],
+                [
+                    -9999.999,
+                    -9000.0,
+                    -9000.0,
+                    -6000.0,
+                    -3000.0,
+                    -3000.0,
+                    -214.42735,
+                    -184.0357,
+                    -184.0357,
+                    -184.0357,
+                ],
+                [
+                    -8999.999,
+                    -8999.999,
+                    -6000.0005,
+                    -6000.0,
+                    -3000.0,
+                    -499.99988,
+                    -184.0357,
+                    -166.24536,
+                    -166.24536,
+                    -166.24536,
+                ],
+                [
+                    -8999.997,
+                    -8999.997,
+                    -6000.0005,
+                    -2999.9985,
+                    -2999.9985,
+                    -214.4246,
+                    -166.24376,
+                    -115.1695,
+                    -115.1673,
+                    -115.1673,
+                ],
+                [
+                    -6749.998,
+                    -6749.998,
+                    -4499.9985,
+                    -2249.9988,
+                    -2249.9988,
+                    -160.81877,
+                    -138.8498,
+                    -115.16678,
+                    -0.001517,
+                    -0.001517,
+                ],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             ]
         ),
         "slope_area_2": np.array(
             [
                 [
-                    -5.81250000e03,
-                    -1.85135559e02,
-                    -7.67796326e01,
-                    -1.42892147e-03,
-                    0.00000000e00,
+                    -13333.334,
+                    -13000.0,
+                    -10000.0,
+                    -9000.0,
+                    -6000.0,
+                    -3000.0,
+                    -153.55858,
+                    -119.162,
+                    0.0,
+                    0.0,
                 ],
                 [
-                    -5.81250000e03,
-                    -1.53558563e02,
-                    -4.37480087e01,
-                    -1.33653477e-04,
-                    0.00000000e00,
+                    -13000.0,
+                    -13000.0,
+                    -10000.0,
+                    -9000.0,
+                    -6000.0,
+                    -3000.0,
+                    -153.55858,
+                    -119.162,
+                    0.0,
+                    0.0,
                 ],
                 [
-                    -3.37826025e03,
-                    -1.15165504e02,
-                    -1.46546517e-03,
-                    -1.33653477e-04,
-                    0.00000000e00,
+                    -13000.0,
+                    -12000.0,
+                    -10000.0,
+                    -9000.0,
+                    -6000.0,
+                    -3000.0,
+                    -153.55858,
+                    -119.162,
+                    0.0,
+                    0.0,
                 ],
                 [
-                    -3.10778931e03,
-                    -1.15165482e02,
-                    -1.22650794e-03,
-                    -1.33653477e-04,
-                    0.00000000e00,
+                    -13000.0,
+                    -12000.0,
+                    -9999.999,
+                    -8999.999,
+                    -6000.0,
+                    -3000.0,
+                    -153.55858,
+                    -119.162,
+                    0.0,
+                    0.0,
                 ],
                 [
-                    -3.10778931e03,
-                    -1.15165482e02,
-                    -1.22650794e-03,
-                    -1.33653477e-04,
-                    0.00000000e00,
+                    -13000.0,
+                    -12000.0,
+                    -9000.002,
+                    -6000.0,
+                    -3000.0,
+                    -2999.9988,
+                    -153.55858,
+                    -119.162,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -13000.0,
+                    -12000.0,
+                    -9000.002,
+                    -6000.0,
+                    -3000.0,
+                    -2999.9985,
+                    -214.42587,
+                    -119.162,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -12000.0,
+                    -12000.0,
+                    -8000.001,
+                    -6000.0,
+                    -3000.0,
+                    -499.99872,
+                    -184.03592,
+                    -119.162,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -12000.0,
+                    -12000.0,
+                    -8000.001,
+                    -3000.0,
+                    -3000.0,
+                    -214.4259,
+                    -166.24396,
+                    -115.16813,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -12000.0,
+                    -12000.0,
+                    -6000.0,
+                    -3000.0,
+                    -3000.0,
+                    -214.4259,
+                    -153.55914,
+                    -115.1668,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -12000.0,
+                    -11000.004,
+                    -3138.8513,
+                    -3000.0,
+                    -499.99857,
+                    -184.0372,
+                    -153.5567,
+                    -0.001863,
+                    0.0,
+                    0.0,
                 ],
             ]
         ),
     }
 
     _, _, Vu, slope, _, xf, _ = m.solve_problem_with_bellman_values(
-        multi_stock_management=multi_stock_management,
-        stock_discretization=StockDiscretization(X),
-        V=BellmanValueEstimation(V, StockDiscretization(X)),
-        level_i=multi_stock_management.get_initial_level(),
+        multi_stock_management=multi_stock_management_two_nodes,
+        V=BellmanValueEstimation(V, StockDiscretization(discretization_two_nodes)),
+        level_i=multi_stock_management_two_nodes.get_initial_level(),
         take_into_account_z_and_y=True,
     )
 
-    assert Vu == pytest.approx(37137635.6914607)
+    assert Vu == pytest.approx(601088655.5179563)
 
     assert slope == pytest.approx(
         {
-            AreaIndex("area_1"): -73.24037883117816,
-            AreaIndex("area_2"): -73.23892027017814,
+            AreaIndex("area_1"): -3000,
+            AreaIndex("area_2"): -3000,
         }
     )
 
     assert xf == pytest.approx(
-        {AreaIndex("area_1"): 315840.9116434012, AreaIndex("area_2"): 668042.0658865988}
+        {AreaIndex("area_1"): 355709.73568, AreaIndex("area_2"): 1037507.5710124997}
     )
 
 
-def test_bellman_value_exact_calculation_multi_stock() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    all_reservoirs = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
-
-    x_1 = np.linspace(0, reservoir_1.capacity, num=5)
-    x_2 = np.linspace(0, reservoir_2.capacity, num=5)
+def test_bellman_value_exact_calculation_multi_stock(
+    param: TimeScenarioParameter,
+    discretization_two_nodes: Dict[AreaIndex, Array1D],
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
 
     vb, lb, ub = calculate_bellman_value_directly(
         param=param,
-        multi_stock_management=all_reservoirs,
+        multi_stock_management=multi_stock_management_two_nodes,
         output_path="test_data/two_nodes",
-        X={AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2},
+        X=discretization_two_nodes,
         univariate=False,
     )
-    assert lb == pytest.approx(419088906.63159156)
+    assert lb == pytest.approx(601088360.8803747)
 
-    assert ub == pytest.approx(798837417.3288709)
+    assert ub == pytest.approx(617563695.6916983)
 
     assert type(vb[0]) is BellmanValueEstimation
     assert vb[0]["intercept"] == pytest.approx(
         np.array(
             [
-                [9.9394519e09, 5.4620790e09, 3.9168504e09, 3.8727749e09, 3.8727749e09],
-                [7.1669325e09, 2.6933955e09, 1.1481676e09, 1.1040920e09, 1.1040919e09],
-                [5.2626033e09, 1.2132852e09, 3.5723610e08, 3.0289034e08, 3.0289021e08],
-                [3.4945702e09, 7.5961869e08, 3.2175792e08, 2.8026576e08, 2.8026566e08],
-                [2.8697385e09, 7.2652160e08, 2.9893891e08, 2.8026563e08, 2.8026560e08],
+                [
+                    9.9484518e09,
+                    7.5537244e09,
+                    5.7897851e09,
+                    4.5976842e09,
+                    4.0179466e09,
+                    3.9275658e09,
+                    3.9005504e09,
+                    3.8918866e09,
+                    3.8918866e09,
+                    3.8918866e09,
+                ],
+                [
+                    8.6380206e09,
+                    6.2503864e09,
+                    4.4864471e09,
+                    3.2943465e09,
+                    2.7146089e09,
+                    2.6242281e09,
+                    2.5972129e09,
+                    2.5885489e09,
+                    2.5885489e09,
+                    2.5885489e09,
+                ],
+                [
+                    7.3982254e09,
+                    5.0000686e09,
+                    3.2361295e09,
+                    2.0440291e09,
+                    1.4642913e09,
+                    1.3739105e09,
+                    1.3468951e09,
+                    1.3382313e09,
+                    1.3382312e09,
+                    1.3382312e09,
+                ],
+                [
+                    6.5423334e09,
+                    4.1898130e09,
+                    2.5568481e09,
+                    1.4413521e09,
+                    8.6161446e08,
+                    7.7123366e08,
+                    7.4421830e08,
+                    7.3555437e08,
+                    7.3555430e08,
+                    7.3555430e08,
+                ],
+                [
+                    5.6878479e09,
+                    3.4207759e09,
+                    2.0441568e09,
+                    1.1850063e09,
+                    6.0526874e08,
+                    5.1488797e08,
+                    4.8787261e08,
+                    4.7920870e08,
+                    4.7920867e08,
+                    4.7920867e08,
+                ],
+                [
+                    4.8403855e09,
+                    2.6909407e09,
+                    1.5314653e09,
+                    9.2866067e08,
+                    4.0688698e08,
+                    3.5276422e08,
+                    3.2563338e08,
+                    3.1696947e08,
+                    3.1696944e08,
+                    3.1696944e08,
+                ],
+                [
+                    4.0713485e09,
+                    2.2182638e09,
+                    1.2720599e09,
+                    6.9232230e08,
+                    3.7489958e08,
+                    3.3649302e08,
+                    3.1058058e08,
+                    3.0246422e08,
+                    3.0246419e08,
+                    3.0246419e08,
+                ],
+                [
+                    3.3824302e09,
+                    1.8637309e09,
+                    1.1168453e09,
+                    5.3710765e08,
+                    3.6113811e08,
+                    3.2639258e08,
+                    3.0246438e08,
+                    3.0246410e08,
+                    3.0246406e08,
+                    3.0246406e08,
+                ],
+                [
+                    3.1260844e09,
+                    1.6945381e09,
+                    1.1043474e09,
+                    5.2460970e08,
+                    3.4871072e08,
+                    3.1655174e08,
+                    3.0246426e08,
+                    3.0246400e08,
+                    3.0246400e08,
+                    3.0246400e08,
+                ],
+                [
+                    2.8697388e09,
+                    1.6826090e09,
+                    1.0944346e09,
+                    5.1469693e08,
+                    3.3879795e08,
+                    3.0720435e08,
+                    3.0246426e08,
+                    3.0246400e08,
+                    3.0246400e08,
+                    3.0246400e08,
+                ],
             ]
         )
     )
@@ -231,116 +584,262 @@ def test_bellman_value_exact_calculation_multi_stock() -> None:
         np.array(
             [
                 [
-                    -1.8733332e04,
-                    -1.9000000e04,
-                    -1.9000000e04,
-                    -1.9000000e04,
-                    -1.9000000e04,
+                    -18666.666,
+                    -19000.0,
+                    -19000.0,
+                    -19000.0,
+                    -19000.0,
+                    -19000.0,
+                    -19000.0,
+                    -19000.0,
+                    -19000.0,
+                    -19000.0,
                 ],
                 [
-                    -1.0000000e04,
-                    -9.9999990e03,
-                    -9.9999990e03,
-                    -9.9999990e03,
-                    -9.9999990e03,
+                    -15111.113,
+                    -15000.0,
+                    -15000.0,
+                    -15000.0,
+                    -15000.0,
+                    -15000.0,
+                    -15000.0,
+                    -15000.0,
+                    -15000.0,
+                    -15000.0,
                 ],
                 [
-                    -9.8999990e03,
-                    -2.6754175e03,
-                    -2.1557803e02,
-                    -2.1557803e02,
-                    -2.1557803e02,
+                    -13000.0,
+                    -13000.0,
+                    -13000.0,
+                    -13000.0,
+                    -13000.0,
+                    -13000.0,
+                    -13000.0,
+                    -13000.0,
+                    -13000.0,
+                    -13000.0,
                 ],
                 [
-                    -8.9999971e03,
-                    -2.0065604e03,
-                    -1.3885049e02,
-                    -1.4066651e-03,
-                    -1.3115490e-03,
+                    -10000.0,
+                    -9000.0,
+                    -6000.0,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
                 ],
-                [0.0000000e00, 0.0000000e00, 0.0000000e00, 0.0000000e00, 0.0000000e00],
+                [
+                    -9999.999,
+                    -9000.0,
+                    -6000.0005,
+                    -3000.0,
+                    -3000.0002,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                    -3000.0,
+                ],
+                [
+                    -9000.0,
+                    -6000.0005,
+                    -6000.0005,
+                    -3000.0,
+                    -499.99988,
+                    -214.42735,
+                    -214.42735,
+                    -214.42735,
+                    -214.42735,
+                    -214.42735,
+                ],
+                [
+                    -9000.0,
+                    -4499.999,
+                    -2249.999,
+                    -2249.999,
+                    -161.68344,
+                    -138.85013,
+                    -115.167274,
+                    -0.002865,
+                    -0.001603,
+                    -0.001603,
+                ],
+                [
+                    -3000.0005,
+                    -3000.0,
+                    -166.24425,
+                    -166.24425,
+                    -160.81712,
+                    -115.167854,
+                    -0.002323,
+                    -0.001274,
+                    -0.001252,
+                    -0.001252,
+                ],
+                [
+                    -3000.0005,
+                    -161.68333,
+                    -119.162125,
+                    -119.162125,
+                    -119.162125,
+                    -115.16593,
+                    -0.000864,
+                    -0.000045,
+                    -0.000035,
+                    -0.000035,
+                ],
+                [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             ]
-        )
+        ),
+        abs=1e-6,
+        rel=1e-6,
     )
     assert vb[0]["slope_area_2"] == pytest.approx(
         np.array(
             [
                 [
-                    -1.3333334e04,
-                    -6.0000000e03,
-                    -1.5355759e02,
-                    -1.4289215e-03,
-                    0.0000000e00,
+                    -13333.335,
+                    -10000.0,
+                    -9000.0,
+                    -3000.0,
+                    -3000.0,
+                    -153.55858,
+                    -115.16715,
+                    -0.001268,
+                    0.0,
+                    0.0,
                 ],
                 [
-                    -1.2999999e04,
-                    -6.0000000e03,
-                    -1.5355759e02,
-                    -1.4289215e-03,
-                    0.0000000e00,
+                    -13333.334,
+                    -10000.0,
+                    -9000.0,
+                    -3000.0,
+                    -3000.0,
+                    -153.55858,
+                    -115.16715,
+                    -0.001268,
+                    0.0,
+                    0.0,
                 ],
                 [
-                    -1.3200002e04,
-                    -2.6754175e03,
-                    -2.1557808e02,
-                    -1.4289215e-03,
-                    0.0000000e00,
+                    -13333.335,
+                    -9999.999,
+                    -9000.0,
+                    -3000.0,
+                    -3000.0,
+                    -153.55858,
+                    -115.16715,
+                    -0.001268,
+                    0.0,
+                    0.0,
                 ],
                 [
-                    -1.2000000e04,
-                    -2.6754175e03,
-                    -1.8513564e02,
-                    -1.2703377e-03,
-                    0.0000000e00,
+                    -13333.335,
+                    -8999.999,
+                    -6000.0,
+                    -3000.0,
+                    -2999.9988,
+                    -153.55858,
+                    -115.16715,
+                    -0.001268,
+                    0.0,
+                    0.0,
                 ],
                 [
-                    -1.1000001e04,
-                    -2.6754175e03,
-                    -1.5355794e02,
-                    -1.1774984e-03,
-                    0.0000000e00,
+                    -13333.334,
+                    -8999.999,
+                    -6000.0,
+                    -3000.0,
+                    -2999.9988,
+                    -153.55858,
+                    -115.16715,
+                    -0.001268,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -12000.004,
+                    -6000.0,
+                    -6000.0,
+                    -3000.0,
+                    -499.99872,
+                    -158.88426,
+                    -115.16715,
+                    -0.001268,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -12000.004,
+                    -6000.0,
+                    -3000.0,
+                    -3000.0,
+                    -215.5787,
+                    -153.55942,
+                    -115.166985,
+                    -0.001262,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -11000.001,
+                    -6000.0,
+                    -3000.0,
+                    -3000.0,
+                    -214.42587,
+                    -153.55823,
+                    -0.002724,
+                    -0.001116,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -11000.001,
+                    -3161.6833,
+                    -3000.0,
+                    -3000.0,
+                    -214.42587,
+                    -153.55714,
+                    -0.002203,
+                    -0.000077,
+                    0.0,
+                    0.0,
+                ],
+                [
+                    -11000.001,
+                    -3119.1606,
+                    -3000.0,
+                    -3000.0,
+                    -214.42587,
+                    -115.167404,
+                    -0.001564,
+                    -0.000047,
+                    0.0,
+                    0.0,
                 ],
             ]
-        )
+        ),
+        abs=1e-6,
+        rel=1e-6,
     )
 
 
-def test_bellman_value_exact_calculation_univariate() -> None:
-
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    all_reservoirs = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
-
-    x_1 = np.linspace(0, reservoir_1.capacity, num=5)
-    x_2 = np.linspace(0, reservoir_2.capacity, num=5)
+def test_bellman_value_exact_calculation_univariate(
+    param: TimeScenarioParameter,
+    discretization_two_nodes: Dict[AreaIndex, Array1D],
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
 
     try:
 
         vb, lb, ub = calculate_bellman_value_directly(
             param=param,
-            multi_stock_management=all_reservoirs,
+            multi_stock_management=multi_stock_management_two_nodes,
             output_path="test_data/two_nodes",
-            X={AreaIndex("area_1"): x_1, AreaIndex("area_2"): x_2},
+            X=discretization_two_nodes,
             univariate=True,
         )
         assert False

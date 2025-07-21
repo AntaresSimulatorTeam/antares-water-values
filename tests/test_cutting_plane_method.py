@@ -59,16 +59,9 @@ expected_duals = np.array(
     ]
 )
 expected_future_costs_approx = LinearInterpolator(
-    np.array(
-        [
-            [277853.0681, 628377.6569],
-            [277853.0681, 628377.6569],
-            [277853.0681, 628377.6569],
-            [277853.0681, 628377.6569],
-        ]
-    ),
-    np.array([0.0, 0.0, 0.0, 0.0]),
-    np.array([[0.0, 0.0], [-0.0, 0.0], [0.0, -0.0], [0.0, 0.0]]),
+    np.array([[769037.000000, 1739213.000000]]),
+    np.array([0.0]),
+    np.array([[0.0, 0.0]]),
 )
 
 expected_levels = np.array(
@@ -343,7 +336,7 @@ expected_future_costs_approx_l = [
         ),
     ),
     LinearInterpolator(
-        np.array([[277853.0681, 628377.6569]]),
+        np.array([[769037.000000, 1739213.000000]]),
         np.array([0.0]),
         np.array([[0.0, 0.0]]),
     ),
@@ -430,12 +423,10 @@ def test_Lget_costs(
 
 def test_initialize_future_costs(
     multi_stock_management_two_nodes: MultiStockManagement,
-    starting_pt: Dict[AreaIndex, float],
 ) -> None:
 
     # Initialize our approximation on future costs
     future_costs_approx = initialize_future_costs(
-        starting_pt=starting_pt,
         multi_stock_management=multi_stock_management_two_nodes,
     )
 
@@ -491,7 +482,6 @@ def test_get_bellman_values_from_costs(
         costs_approx=costs_approx,
         future_costs_approx=expected_future_costs_approx,
         name_solver=name_solver,
-        trajectory=trajectory,
         divisor=divisor,
         verbose=False,
         levels=levels,

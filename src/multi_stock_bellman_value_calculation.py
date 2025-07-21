@@ -119,7 +119,6 @@ def get_bellman_values_from_costs(
     costs_approx: LinearCostEstimator,
     future_costs_approx: Optional[LinearInterpolator],
     name_solver: str,
-    trajectory: Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
     levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
     verbose: bool = False,
@@ -163,8 +162,7 @@ def get_bellman_values_from_costs(
 
     if future_costs_approx is None:
         future_costs_approx = initialize_future_costs(
-            multi_stock_management=multi_stock_management,
-            starting_pt=trajectory[TimeScenarioIndex(0, 0)],
+            multi_stock_management=multi_stock_management
         )
 
     n_weeks = param.len_week
@@ -230,9 +228,7 @@ def get_bellman_values_from_costs(
 
 
 def initialize_future_costs(
-    starting_pt: Dict[AreaIndex, float],
     multi_stock_management: MultiStockManagement,
-    mult: float = 0.0,
 ) -> LinearInterpolator:
     """
     Proposes an estimation of yearly costs based on the precalculated weekly costs, to prevent the model from
@@ -248,17 +244,22 @@ def initialize_future_costs(
     -------
         LinearInterpolator: for any level associates a corresponding price
     """
-    n_reservoirs = len(multi_stock_management.areas)
     inputs = np.array(
-        [area_value_to_array(starting_pt) for _ in range(2 * n_reservoirs)]
+        [
+            area_value_to_array(
+                {
+                    a: res.reservoir.capacity
+                    for a, res in multi_stock_management.dict_reservoirs.items()
+                }
+            )
+        ]
     )
-    duals = np.array([np.zeros((n_reservoirs)) for _ in range(2 * n_reservoirs)])
-    for i in range(n_reservoirs):
-        duals[i][i] = mult
-        duals[i + 1][i] = -mult
+    duals = np.array(
+        [area_value_to_array({a: 0 for a in multi_stock_management.areas})]
+    )
     return LinearInterpolator(
         controls=inputs,
-        costs=np.zeros(2 * n_reservoirs),
+        costs=np.array([0]),
         duals=duals,
     )
 
@@ -680,15 +681,6 @@ def precalculated_method(
         name_solver=name_solver,
         verbose=verbose,
         levels=levels,
-        trajectory={
-            TimeScenarioIndex(w, s): {
-                a: mng.reservoir.bottom_rule_curve[0] * 0.7
-                + mng.reservoir.upper_rule_curve[0] * 0.3
-                for a, mng in multi_stock_management.dict_reservoirs.items()
-            }
-            for w in range(param.len_week)
-            for s in range(param.len_scenario)
-        },
         n_cycle=2,
     )
 
@@ -1165,7 +1157,6 @@ def cutting_plane_method(
             costs_approx=costs_approx,
             future_costs_approx=future_costs_approx,
             name_solver=name_solver,
-            trajectory=trajectory,
             levels=levels,
             divisor=divisor,
             verbose=verbose,
@@ -1354,7 +1345,6 @@ def iter_bell_vals(
 
     # Initialize our approximation on future costs
     future_costs_approx = initialize_future_costs(
-        starting_pt=starting_pt,
         multi_stock_management=multi_stock_management,
     )
 

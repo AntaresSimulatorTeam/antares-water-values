@@ -113,11 +113,7 @@ def calculate_bellman_value_with_precalculated_reward(
     )
 
     reward = calculate_complete_reward(
-        controls={
-            TimeScenarioIndex(w, s): [ctrl for ctrl in controls[WeekIndex(w)]]
-            for w in range(param.len_week)
-            for s in range(param.len_scenario)
-        },
+        controls=controls,
         param=param,
         multi_stock_management=multi_stock_management,
         costs=costs,

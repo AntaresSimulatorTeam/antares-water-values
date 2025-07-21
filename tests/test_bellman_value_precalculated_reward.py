@@ -290,7 +290,7 @@ def test_get_all_cost(
     costs, slopes, _ = get_all_costs(
         param=param, list_models=list_models, controls_list=controls
     )
-    assert time_list_area_value_to_array(
+    assert timescenario_list_area_value_to_array(
         controls, param, multi_stock_management_one_node.areas
     ) == pytest.approx(
         time_list_area_value_to_array(

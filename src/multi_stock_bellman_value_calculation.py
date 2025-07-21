@@ -335,7 +335,7 @@ def get_week_scenario_costs(
 def get_all_costs(
     param: TimeScenarioParameter,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    controls_list: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    controls_list: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
     saving_dir: Optional[str] = None,
     verbose: bool = False,
     already_init: bool = False,
@@ -389,11 +389,11 @@ def get_all_costs(
             try:
                 costs_ws, slopes_ws, iters, times_ws = get_week_scenario_costs(
                     m=m,
-                    controls_list=controls_list[WeekIndex(week)],
+                    controls_list=controls_list[TimeScenarioIndex(week, scenario)],
                 )
             except ValueError:
                 print(
-                    f"Failed at week {week}, the conditions on control were: {controls_list[WeekIndex(week)]}"
+                    f"Failed at week {week}, the conditions on control were: {controls_list[TimeScenarioIndex(week,scenario)]}"
                 )
                 raise ValueError
             tot_iter += iters
@@ -492,7 +492,7 @@ def generate_controls(
     multi_stock_management: MultiStockManagement,
     controls_looked_up: str,
     xNsteps: int,
-) -> Dict[WeekIndex, List[Dict[AreaIndex, float]]]:
+) -> Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]]:
     """
     Generates controls that will be precalculated for every week / scenario
 
@@ -587,11 +587,12 @@ def generate_controls(
 
     controls = np.moveaxis(controls, -1, 0)
     dict_control = {
-        WeekIndex(week): [
+        TimeScenarioIndex(week, scenario): [
             {area: cont for area, cont in zip(multi_stock_management.areas, u)}
             for u in controls[week]
         ]
         for week in range(param.len_week)
+        for scenario in range(param.len_scenario)
     }
     return dict_control
 
@@ -658,11 +659,7 @@ def precalculated_method(
     # Initialize cost functions
     costs_approx = LinearCostEstimator(
         param=param,
-        controls={
-            TimeScenarioIndex(w, s): [ctrl for ctrl in controls_list[WeekIndex(w)]]
-            for w in range(param.len_week)
-            for s in range(param.len_scenario)
-        },
+        controls=controls_list,
         costs=costs,
         duals=slopes,
         type_estimator="LinearDecomposer",

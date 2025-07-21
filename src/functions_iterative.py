@@ -3,8 +3,8 @@ from time import time
 import numpy as np
 
 from calculate_reward_and_bellman_values import (
+    LinearInterpolator,
     ReservoirManagement,
-    RewardApproximation,
     calculate_VU,
     solve_weekly_problem_with_approximation,
 )
@@ -26,7 +26,7 @@ from type_definition import (
 def compute_x_multi_scenario(
     param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
-    reward: Dict[TimeScenarioIndex, RewardApproximation],
+    reward: Dict[TimeScenarioIndex, LinearInterpolator],
     V: Dict[WeekIndex, PieceWiseLinearInterpolator],
     itr: int,
 ) -> tuple[Dict[TimeScenarioIndex, float], Dict[TimeScenarioIndex, float]]:
@@ -85,7 +85,7 @@ def compute_upper_bound(
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     V: Dict[WeekIndex, Estimator],
     reward_approximation: Optional[
-        Dict[AreaIndex, Dict[TimeScenarioIndex, RewardApproximation]]
+        Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]]
     ] = None,
 ) -> tuple[
     float,
@@ -121,7 +121,7 @@ def compute_upper_bound(
     times = {}
 
     if reward_approximation is None:
-        reward: Dict[AreaIndex, Dict[TimeScenarioIndex, RewardApproximation]] = {}
+        reward: Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]] = {}
         for (
             area,
             reservoir_management,
@@ -129,10 +129,12 @@ def compute_upper_bound(
             reward[area] = {}
             for week in range(param.len_week):
                 for scenario in range(param.len_scenario):
-                    r = RewardApproximation(
-                        lb_control=-reservoir_management.reservoir.max_pumping[week],
-                        ub_control=reservoir_management.reservoir.max_generating[week],
-                        ub_reward=0,
+                    r = LinearInterpolator(
+                        controls=np.array(
+                            [reservoir_management.reservoir.max_generating[week]]
+                        ),
+                        costs=np.array([0]),
+                        duals=np.array([0]),
                     )
                     reward[area][TimeScenarioIndex(week, scenario)] = r
     else:
@@ -170,13 +172,13 @@ def calculate_reward(
     param: TimeScenarioParameter,
     controls: Dict[TimeScenarioIndex, float],
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    G: Dict[TimeScenarioIndex, RewardApproximation],
+    G: Dict[TimeScenarioIndex, LinearInterpolator],
     i: int,
     name_reservoir: AreaIndex,
 ) -> tuple[
     Dict[TimeScenarioIndex, int],
     Dict[TimeScenarioIndex, float],
-    Dict[TimeScenarioIndex, RewardApproximation],
+    Dict[TimeScenarioIndex, LinearInterpolator],
 ]:
     """
     Evaluate reward for a set of given controls for each week and each scenario to update reward approximation.
@@ -189,7 +191,7 @@ def calculate_reward(
         Set of controls to evaluate
     list_models:Dict[TimeScenarioIndex, AntaresProblem] :
         Optimization problems for every week and every scenario
-    G:Dict[TimeScenarioIndex, RewardApproximation] :
+    G:Dict[TimeScenarioIndex, LinearInterpolator] :
         Reward approximation to update for every week and every scenario
     i:int :
         Iteration of iterative algorithm
@@ -200,7 +202,7 @@ def calculate_reward(
         Simplex iterations used to solve the problem
     time:Dict[TimeScenarioIndex, float] :
         Time to solve the problem
-    G:Dict[TimeScenarioIndex, RewardApproximation] :
+    G:Dict[TimeScenarioIndex, LinearInterpolator] :
         Updated reward approximation
     """
 
@@ -224,9 +226,9 @@ def calculate_reward(
                 basis_0 = Basis([], [])
 
             G[TimeScenarioIndex(week, scenario)].update(
-                duals=-lamb[name_reservoir],
-                costs=-beta
-                + lamb[name_reservoir] * controls[TimeScenarioIndex(week, scenario)],
+                controls=np.array([controls[TimeScenarioIndex(week, scenario)]]),
+                duals=np.array([lamb[name_reservoir]]),
+                costs=np.array([beta]),
             )
 
             current_itr[TimeScenarioIndex(week, scenario)] = itr
@@ -245,7 +247,7 @@ def itr_control(
     solver: str = "GLOP",
 ) -> tuple[
     Dict[WeekIndex, List[float]],
-    Dict[TimeScenarioIndex, RewardApproximation],
+    Dict[TimeScenarioIndex, LinearInterpolator],
     List[Dict[TimeScenarioIndex, int]],
     List[float],
     List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
@@ -277,7 +279,7 @@ def itr_control(
     -------
     V:Dict[WeekIndex,List[float]] :
         Bellman values
-    G:Dict[TimeScenarioIndex, RewardApproximation] :
+    G:Dict[TimeScenarioIndex, LinearInterpolator] :
         Reward approximation
     itr:Dict[TimeScenarioIndex, int] :
         Time and simplex iterations used to solve optimization problems at each iteration
@@ -343,9 +345,8 @@ def itr_control(
         itr_tot.append(current_itr)
         controls_upper.append(ctr)
 
-        gap = upper_bound + V0
-        print(gap, upper_bound, -V0)
-        gap = gap / -V0
+        print(upper_bound + V0, upper_bound, -V0)
+        gap = (upper_bound + V0) / -V0
         i += 1
         fin = time()
         tot_t.append(fin - debut)
@@ -378,7 +379,7 @@ def init_iterative_calculation(
     List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
     List[Dict[TimeScenarioIndex, float]],
     float,
-    Dict[TimeScenarioIndex, RewardApproximation],
+    Dict[TimeScenarioIndex, LinearInterpolator],
 ]:
     len_week = param.len_week
     len_scenario = param.len_scenario
@@ -414,14 +415,15 @@ def init_iterative_calculation(
         for week in range(len_week + 1)
     }
 
-    G: Dict[TimeScenarioIndex, RewardApproximation] = {}
+    G: Dict[TimeScenarioIndex, LinearInterpolator] = {}
     for week in range(len_week):
         for scenario in range(len_scenario):
-            r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week]
-                * reservoir_management.reservoir.efficiency,
-                ub_control=reservoir_management.reservoir.max_generating[week],
-                ub_reward=0,
+            r = LinearInterpolator(
+                controls=np.array(
+                    [reservoir_management.reservoir.max_generating[week]]
+                ),
+                costs=np.array([0]),
+                duals=np.array([0]),
             )
             G[TimeScenarioIndex(week, scenario)] = r
 

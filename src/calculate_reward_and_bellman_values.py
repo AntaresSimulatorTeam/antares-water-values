@@ -1,6 +1,7 @@
 import numpy as np
+from scipy.optimize import minimize
 
-from estimation import PieceWiseLinearInterpolator, RewardApproximation
+from estimation import LinearInterpolator, PieceWiseLinearInterpolator
 from reservoir_management import ReservoirManagement
 from type_definition import (
     Array1D,
@@ -18,7 +19,7 @@ def solve_weekly_problem_with_approximation(
     V_fut: PieceWiseLinearInterpolator,
     reservoir_management: ReservoirManagement,
     param: TimeScenarioParameter,
-    reward: RewardApproximation,
+    reward: LinearInterpolator,
 ) -> tuple[float, float, float, float]:
     """
     Optimize control of reservoir during a week based on reward approximation and current Bellman values.
@@ -40,77 +41,61 @@ def solve_weekly_problem_with_approximation(
         Optimal control
     """
 
-    Vu = float("-inf")
-    stock = reservoir_management.reservoir
     pen = reservoir_management.get_penalty(week=week, len_week=param.len_week)
-    reward_fn = reward.reward_function()
-    points = reward.breaking_point
-    X = V_fut.inputs
 
-    for i_fut in range(len(X)):
-        u = -X[i_fut] + level_i + stock.inflow[week, scenario]
-        if -stock.max_pumping[week] * stock.efficiency <= u:
-            if reservoir_management.overflow or u <= stock.max_generating[week]:
-                u = min(u, stock.max_generating[week])
-                G = reward_fn(u)
-                penalty = pen(X[i_fut])
-                if (G + V_fut(X[i_fut]) + penalty) > Vu:
-                    Vu = G + V_fut(X[i_fut]) + penalty
-                    xf = X[i_fut]
-                    control = u
-                    cost = G
+    def noise_penalty(x: float) -> float:
+        return -0.01 * x
 
-    for u in range(len(points)):
-        state_fut = level_i - points[u] + stock.inflow[week, scenario]
-        if 0 <= state_fut <= stock.capacity:
-            penalty = pen(state_fut)
-            G = reward_fn(points[u])
-            if (G + V_fut(state_fut) + penalty) > Vu:
-                Vu = G + V_fut(state_fut) + penalty
-                xf = state_fut
-                control = points[u]
-                cost = G
+    def objective(x_fut: Array1D) -> float:
+        return (
+            reward(
+                -x_fut[0]
+                + level_i
+                + reservoir_management.reservoir.inflow[week, scenario]
+            )
+            - V_fut(x_fut[0])
+            + pen(x_fut[0])
+            + noise_penalty(x_fut[0])
+        )
 
-    Umin = level_i + stock.inflow[week, scenario] - stock.bottom_rule_curve[week]
-    if (
-        -stock.max_pumping[week] * stock.efficiency
-        <= Umin
-        <= stock.max_generating[week]
-    ):
-        state_fut = level_i - Umin + stock.inflow[week, scenario]
-        penalty = pen(state_fut)
-        if (reward_fn(Umin) + V_fut(state_fut) + penalty) > Vu:
-            Vu = reward_fn(Umin) + V_fut(state_fut) + penalty
-            xf = state_fut
-            control = Umin
-            cost = reward_fn(Umin)
-
-    Umax = level_i + stock.inflow[week, scenario] - stock.upper_rule_curve[week]
-    if (
-        -stock.max_pumping[week] * stock.efficiency
-        <= Umax
-        <= stock.max_generating[week]
-    ):
-        state_fut = level_i - Umax + stock.inflow[week, scenario]
-        penalty = pen(state_fut)
-        if (reward_fn(Umax) + V_fut(state_fut) + penalty) > Vu:
-            Vu = reward_fn(Umax) + V_fut(state_fut) + penalty
-            xf = state_fut
-            control = Umax
-            cost = reward_fn(Umax)
-
-    control = min(
-        -(xf - level_i - stock.inflow[week, scenario]),
-        stock.max_generating[week],
+    lb = max(
+        0,
+        level_i
+        + reservoir_management.reservoir.inflow[week, scenario]
+        - reservoir_management.reservoir.max_generating[week],
     )
-    return (Vu, xf, control, cost)
+    ub = min(
+        reservoir_management.reservoir.capacity,
+        level_i
+        + reservoir_management.reservoir.inflow[week, scenario]
+        + reservoir_management.reservoir.max_pumping[week]
+        * reservoir_management.reservoir.efficiency,
+    )
+
+    res = minimize(
+        objective,
+        x0=[(lb + ub) / 2],
+        method="Nelder-Mead",
+        bounds=[(lb, ub)],
+    )
+    assert res.status == 0
+    xf = res.x[0]
+    control = min(
+        -(xf - level_i - reservoir_management.reservoir.inflow[week, scenario]),
+        reservoir_management.reservoir.max_generating[week],
+    )
+    Vu = objective(np.array([xf]))
+    Vu = Vu - noise_penalty(xf)
+    cost = reward(control)
+
+    return (-Vu, xf, control, cost)
 
 
 def calculate_VU(
     stock_discretization: Array1D,
     time_scenario_param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
-    reward: Dict[TimeScenarioIndex, RewardApproximation],
+    reward: Dict[TimeScenarioIndex, LinearInterpolator],
     final_values: Array1D = np.zeros(1, dtype=np.float32),
 ) -> Dict[WeekIndex, PieceWiseLinearInterpolator]:
     """

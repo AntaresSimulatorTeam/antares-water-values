@@ -1,6 +1,6 @@
 import numpy as np
 
-from calculate_reward_and_bellman_values import RewardApproximation, calculate_VU
+from calculate_reward_and_bellman_values import LinearInterpolator, calculate_VU
 from estimation import (
     BellmanValueEstimation,
     Estimator,
@@ -34,25 +34,22 @@ def calculate_complete_reward(
     multi_stock_management: MultiStockManagement,
     costs: Dict[TimeScenarioIndex, List[float]],
     slopes: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-) -> Dict[AreaIndex, Dict[TimeScenarioIndex, RewardApproximation]]:
-    reward: Dict[AreaIndex, Dict[TimeScenarioIndex, RewardApproximation]] = {}
+) -> Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]]:
+    reward: Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]] = {}
 
-    for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
+    for area in multi_stock_management.areas:
         reward[area] = {}
         for week in range(param.len_week):
             for scenario in range(param.len_scenario):
-                r = RewardApproximation(
-                    lb_control=-reservoir_management.reservoir.max_pumping[week],
-                    ub_control=reservoir_management.reservoir.max_generating[week],
-                    ub_reward=0,
+                r = LinearInterpolator(
+                    controls=np.array(
+                        [u[area] for u in controls[TimeScenarioIndex(week, scenario)]]
+                    ),
+                    costs=np.array(costs[TimeScenarioIndex(week, scenario)]),
+                    duals=np.array(
+                        [s[area] for s in slopes[TimeScenarioIndex(week, scenario)]]
+                    ),
                 )
-
-                for i, u in enumerate(controls[TimeScenarioIndex(week, scenario)]):
-                    r.update(
-                        duals=-slopes[TimeScenarioIndex(week, scenario)][i][area],
-                        costs=-costs[TimeScenarioIndex(week, scenario)][i]
-                        + slopes[TimeScenarioIndex(week, scenario)][i][area] * u[area],
-                    )
 
                 reward[area][TimeScenarioIndex(week, scenario)] = r
 
@@ -68,7 +65,7 @@ def calculate_bellman_value_with_precalculated_reward(
     name_solver: str = "CLP",
 ) -> tuple[
     Array2D,
-    Dict[AreaIndex, Dict[TimeScenarioIndex, RewardApproximation]],
+    Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]],
 ]:
     """
     Algorithm to evaluate Bellman values. First reward is approximated thanks to multiple simulations. Then, Bellman values are computed with the reward approximation.
@@ -92,7 +89,7 @@ def calculate_bellman_value_with_precalculated_reward(
     -------
     V:np.array :
         Bellman values
-    G:Dict[TimeScenarioIndex, RewardApproximation] :
+    G:Dict[TimeScenarioIndex, LinearInterpolator] :
         Reward approximation
     """
 

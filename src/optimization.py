@@ -13,7 +13,6 @@ from estimation import (
     Estimator,
     LinearCostEstimator,
     LinearInterpolator,
-    RewardApproximation,
     UniVariateEstimator,
 )
 from reservoir_management import MultiStockManagement
@@ -663,7 +662,7 @@ class AntaresProblem:
         find_optimal_basis: bool = True,
         param: Optional[TimeScenarioParameter] = None,
         reward: Optional[
-            Dict[AreaIndex, Dict[TimeScenarioIndex, RewardApproximation]]
+            Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]]
         ] = None,
     ) -> tuple[
         float,

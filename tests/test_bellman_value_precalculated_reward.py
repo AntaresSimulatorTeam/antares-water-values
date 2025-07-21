@@ -1,7 +1,9 @@
 import numpy as np
 import pytest
 
-from functions_iterative import TimeScenarioParameter
+from calculate_reward_and_bellman_values import solve_weekly_problem_with_approximation
+from estimation import PieceWiseLinearInterpolator
+from functions_iterative import MultiStockManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import (
     MultiStockManagement,
     generate_controls,
@@ -11,6 +13,7 @@ from multi_stock_bellman_value_calculation import (
 )
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
+    calculate_complete_reward,
 )
 from type_definition import (
     AreaIndex,
@@ -228,38 +231,15 @@ def test_bellman_value_precalculated_reward(
     ]
     for i, cut in enumerate(true_list_cut):
         for area in multi_stock_management_one_node.areas:
-            assert G[area][TimeScenarioIndex(0, 0)].list_cut[i] == pytest.approx(cut)
-
-    true_breaking_point = [
-        -8400000.0,
-        -8063224.997515362,
-        -7030895.6782807605,
-        -6199090.137508901,
-        -5286581.292333476,
-        -4407112.655717107,
-        -3538405.80076642,
-        -2213016.0157842324,
-        -1807675.2837932073,
-        -953016.7793065935,
-        -13295.937459539502,
-        1146982.96241088,
-        1779697.1019513493,
-        2582733.975863404,
-        3604958.074023681,
-        4413709.3726140605,
-        5355515.15835384,
-        6172222.34066152,
-        7004949.556935257,
-        7899894.858426053,
-        8400000.0,
-    ]
-    for i, pt in enumerate(true_breaking_point):
-        for area in multi_stock_management_one_node.areas:
-            assert G[area][TimeScenarioIndex(0, 0)].breaking_point[i] == pytest.approx(
-                pt, 1e-5
+            assert -G[area][TimeScenarioIndex(0, 0)].costs[i] + G[area][
+                TimeScenarioIndex(0, 0)
+            ].duals[i] * G[area][TimeScenarioIndex(0, 0)].inputs[i] == pytest.approx(
+                cut[1]
             )
+            assert G[area][TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0])
 
-    assert vb == pytest.approx(expected_vb)
+    for week in range(param.len_week - 1, -1, -1):
+        assert vb[:, week] == pytest.approx(expected_vb[:, week])
 
 
 def test_bellman_value_precalculated_reward_with_multi_stock(
@@ -334,3 +314,54 @@ def test_get_all_cost(
             multi_stock_management_one_node.areas,
         )
     )
+
+
+def test_solve_weekly_problem_with_approximation(
+    param: TimeScenarioParameter,
+    controls_precalculated_one_node_10: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    costs_precalculated_one_node_10: Dict[TimeScenarioIndex, List[float]],
+    slopes_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
+    multi_stock_management_one_node: MultiStockManagement,
+) -> None:
+
+    reward = calculate_complete_reward(
+        controls={
+            TimeScenarioIndex(w, s): [
+                ctrl for ctrl in controls_precalculated_one_node_10[WeekIndex(w)]
+            ]
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
+        param=param,
+        multi_stock_management=multi_stock_management_one_node,
+        costs=costs_precalculated_one_node_10,
+        slopes=slopes_precalculated_one_node_10,
+    )
+    for area, mng in multi_stock_management_one_node.dict_reservoirs.items():
+        X = np.linspace(0, mng.reservoir.capacity, num=20)
+        V = {
+            week: np.zeros((len(X), param.len_scenario), dtype=np.float32)
+            for week in range(param.len_week + 1)
+        }
+
+        week = param.len_week - 1
+
+        scenario = 0
+        V_fut = PieceWiseLinearInterpolator(X, V[week + 1][:, scenario])
+        i = 10
+        Vu, xf, control, cost = solve_weekly_problem_with_approximation(
+            level_i=X[i],
+            V_fut=V_fut,
+            week=week,
+            scenario=scenario,
+            reservoir_management=mng,
+            param=param,
+            reward=reward[area][TimeScenarioIndex(week, scenario)],
+        )
+
+        assert Vu == pytest.approx(-539893423.7863245)
+        assert xf == pytest.approx(2280000.0)
+        assert control == pytest.approx(3014776.8947368413)
+        assert cost == pytest.approx(539893423.7863245)

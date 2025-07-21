@@ -472,8 +472,15 @@ def test_get_bellman_values_from_costs(
         for s in range(param.len_scenario)
     }
 
+    levels = multi_stock_management_two_nodes.get_disc(
+        param=param,
+        xNsteps=nSteps_bellman,
+        trajectory=trajectory,
+        correlation_matrix=expected_correlations,
+        method=method,
+    )
+
     (
-        levels,
         bellman_costs,
         _,
         _,
@@ -483,13 +490,11 @@ def test_get_bellman_values_from_costs(
         multi_stock_management=multi_stock_management_two_nodes,
         costs_approx=costs_approx,
         future_costs_approx=expected_future_costs_approx,
-        nSteps_bellman=nSteps_bellman,
         name_solver=name_solver,
-        method=method,
         trajectory=trajectory,
-        correlations=expected_correlations,
         divisor=divisor,
         verbose=False,
+        levels=levels,
     )
 
     assert time_list_area_value_to_array(

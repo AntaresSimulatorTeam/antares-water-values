@@ -118,16 +118,13 @@ def get_bellman_values_from_costs(
     multi_stock_management: MultiStockManagement,
     costs_approx: LinearCostEstimator,
     future_costs_approx: Optional[LinearInterpolator],
-    nSteps_bellman: int,
     name_solver: str,
-    method: str,
     trajectory: Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
-    correlations: np.ndarray,
+    levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
     verbose: bool = False,
     n_cycle: int = 1,
 ) -> tuple[
-    Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     Dict[WeekIndex, List[float]],
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     Dict[WeekIndex, List[Dict[AreaIndex, Dict[ScenarioIndex, float]]]],
@@ -182,29 +179,16 @@ def get_bellman_values_from_costs(
         )
         costs: Dict[WeekIndex, List[float]] = {}
         duals: Dict[WeekIndex, List[Dict[AreaIndex, float]]] = {}
-        all_levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]] = {}
 
         # Starting from last week dynamically solving the optimal control problem (from every starting level)
         week_range = range(n_weeks - 1, -1, -1)
         if verbose:
             week_range = tqdm(week_range, colour="Green", desc="Dynamic Solving")
         for week in week_range:
-            # Getting levels along which we heck
-            levels = multi_stock_management.get_disc(
-                week=week,
-                xNsteps=nSteps_bellman,
-                reference_pt=timescenario_area_value_to_weekly_mean_area_values(
-                    trajectory, week, param, multi_stock_management.areas
-                ),
-                correlation_matrix=correlations,
-                method=method,
-            )
-            all_levels[WeekIndex(week)] = levels
-
             controls_w: List[Dict[AreaIndex, Dict[ScenarioIndex, float]]] = []
             costs_w: List[float] = []
             duals_w: List[Dict[AreaIndex, float]] = []
-            for lvl_init in levels:
+            for lvl_init in levels[WeekIndex(week)]:
 
                 # Remove previous constraints / vars
                 problem.solver = pywraplp.Solver.CreateSolver(name_solver)
@@ -217,17 +201,7 @@ def get_bellman_values_from_costs(
                     future_costs_estimation=future_costs_approx,
                 )
 
-                # Solve, should we make use of previous Bases ? Not yet, computations still tractable for n<=2
-                try:
-                    controls_wls, cost_wl, duals_wl, _ = problem.solve()
-                except ValueError:
-                    print(
-                        f"""Failed to solve at week {week} with initial levels {lvl_init}"""
-                    )
-                    print(
-                        f"We were using the following future costs estimation: {[f'Cost(lvl) >= {cost} +  (lvl_0 - {input[0]})*{duals[0]} + (lvl_1 - {input[1]})*{duals[1]}' for input, cost, duals in zip(future_costs_approx.inputs, future_costs_approx.costs, future_costs_approx.duals)]}"
-                    )
-                    raise ValueError
+                controls_wls, cost_wl, duals_wl, _ = problem.solve()
 
                 # Writing down results
                 controls_w.append(controls_wls)
@@ -241,14 +215,13 @@ def get_bellman_values_from_costs(
             # Updating the future estimator
             # costs_w - np.min(costs_w)
             future_costs_approx = LinearInterpolator(
-                controls=list_area_value_to_array(levels),
+                controls=list_area_value_to_array(levels[WeekIndex(week)]),
                 costs=costs_w - np.min(costs_w),
                 duals=list_area_value_to_array(duals_w),
             )
             future_costs_approx_l[WeekIndex(week)] = future_costs_approx
         future_costs_approx = future_costs_approx_l[WeekIndex(0)]
     return (
-        all_levels,
         costs,
         duals,
         controls,
@@ -675,21 +648,9 @@ def precalculated_method(
         type_estimator="LinearDecomposer",
     )
 
-    (
-        levels,
-        bellman_costs,
-        bellman_duals,
-        bellman_controls,
-        _,
-    ) = get_bellman_values_from_costs(
+    levels = multi_stock_management.get_disc(
         param=param,
-        multi_stock_management=multi_stock_management,
-        costs_approx=costs_approx,
-        future_costs_approx=None,
-        nSteps_bellman=len_bellman,
-        name_solver=name_solver,
-        verbose=verbose,
-        method="lines",
+        xNsteps=len_bellman,
         trajectory={
             TimeScenarioIndex(w, s): {
                 a: mng.reservoir.bottom_rule_curve[0] * 0.7
@@ -699,10 +660,35 @@ def precalculated_method(
             for w in range(param.len_week)
             for s in range(param.len_scenario)
         },
-        correlations=get_correlation_matrix(
+        correlation_matrix=get_correlation_matrix(
             multi_stock_management=multi_stock_management,
             corr_type="no_corrs",
         ),
+        method="lines",
+    )
+
+    (
+        bellman_costs,
+        bellman_duals,
+        bellman_controls,
+        _,
+    ) = get_bellman_values_from_costs(
+        param=param,
+        multi_stock_management=multi_stock_management,
+        costs_approx=costs_approx,
+        future_costs_approx=None,
+        name_solver=name_solver,
+        verbose=verbose,
+        levels=levels,
+        trajectory={
+            TimeScenarioIndex(w, s): {
+                a: mng.reservoir.bottom_rule_curve[0] * 0.7
+                + mng.reservoir.upper_rule_curve[0] * 0.3
+                for a, mng in multi_stock_management.dict_reservoirs.items()
+            }
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
         n_cycle=2,
     )
 
@@ -1160,8 +1146,15 @@ def cutting_plane_method(
         if verbose:
             pbar.describe("Dynamic Programming")
 
+        levels = multi_stock_management.get_disc(
+            param=param,
+            xNsteps=nSteps_bellman,
+            trajectory=trajectory,
+            correlation_matrix=correlations,
+            method=method,
+        )
+
         (
-            levels,
             bellman_costs,
             _,
             _,
@@ -1171,11 +1164,9 @@ def cutting_plane_method(
             multi_stock_management=multi_stock_management,
             costs_approx=costs_approx,
             future_costs_approx=future_costs_approx,
-            nSteps_bellman=nSteps_bellman,
             name_solver=name_solver,
-            method=method,
             trajectory=trajectory,
-            correlations=correlations,
+            levels=levels,
             divisor=divisor,
             verbose=verbose,
         )

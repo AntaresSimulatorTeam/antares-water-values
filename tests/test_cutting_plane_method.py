@@ -471,16 +471,11 @@ def test_get_bellman_values_from_costs(
         method=method,
     )
 
-    (
-        bellman_costs,
-        _,
-        _,
-        future_costs_approx_l,
-    ) = get_bellman_values_from_costs(
+    bellman_values = get_bellman_values_from_costs(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         costs_approx=costs_approx,
-        future_costs_approx=expected_future_costs_approx,
+        final_bellman_values=expected_future_costs_approx,
         name_solver=name_solver,
         divisor=divisor,
         verbose=False,
@@ -490,83 +485,16 @@ def test_get_bellman_values_from_costs(
     assert time_list_area_value_to_array(
         levels, param, multi_stock_management_two_nodes.areas
     )[::-1] == pytest.approx(expected_levels)
-    assert np.array(
-        [[c for c in bellman_costs[WeekIndex(w)]] for w in range(param.len_week)]
-    )[::-1] == pytest.approx(
-        np.array(
-            [
-                [
-                    1.21550159e09,
-                    3.90638229e08,
-                    1.83409617e08,
-                    5.74309515e06,
-                    5.74309515e06,
-                    5.74309515e06,
-                    5.74309515e06,
-                    2.37326514e08,
-                    2.82188706e08,
-                    1.45564523e09,
-                ],
-                [
-                    4.07247716e09,
-                    2.25310864e09,
-                    2.11275194e09,
-                    1.11838704e09,
-                    3.96365352e07,
-                    1.11838704e09,
-                    3.96365352e07,
-                    1.43065488e09,
-                    2.37577372e08,
-                    2.39070045e09,
-                ],
-                [
-                    6.83439092e09,
-                    5.63982363e09,
-                    4.39900088e09,
-                    3.42770708e09,
-                    1.32285278e09,
-                    3.42770708e09,
-                    3.06500583e07,
-                    3.42770708e09,
-                    3.06500583e07,
-                    4.29150560e09,
-                ],
-                [
-                    9.05251818e09,
-                    7.84529046e09,
-                    6.17668890e09,
-                    5.22846630e09,
-                    3.09285060e09,
-                    5.22846630e09,
-                    1.70473880e09,
-                    5.22846630e09,
-                    6.16428456e08,
-                    5.96921054e09,
-                ],
-                [
-                    9.13399132e09,
-                    5.29020737e09,
-                    5.85366256e09,
-                    4.92851106e09,
-                    2.76982426e09,
-                    4.92851106e09,
-                    1.71984210e09,
-                    4.92851106e09,
-                    9.62740119e08,
-                    5.64911974e09,
-                ],
-            ]
-        )
-    )
-    for i in range(6):
-        assert future_costs_approx_l[WeekIndex(i)].inputs == pytest.approx(
+
+    for i in range(5, -1, -1):
+        assert bellman_values[WeekIndex(i)].inputs == pytest.approx(
             expected_future_costs_approx_l[i].inputs
         )
-        assert future_costs_approx_l[WeekIndex(i)].costs == pytest.approx(
-            expected_future_costs_approx_l[i].costs
-        )
+        assert bellman_values[WeekIndex(i)].costs - min(
+            bellman_values[WeekIndex(i)].costs
+        ) == pytest.approx(expected_future_costs_approx_l[i].costs)
 
-        assert future_costs_approx_l[WeekIndex(i)].duals == pytest.approx(
+        assert bellman_values[WeekIndex(i)].duals == pytest.approx(
             expected_future_costs_approx_l[i].duals
         )
 

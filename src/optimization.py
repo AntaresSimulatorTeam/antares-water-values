@@ -965,7 +965,7 @@ class WeeklyBellmanProblem:
             s: [
                 self.solver.Add(
                     future_cost_per_scenario[s]
-                    >= cost / self.div_euros
+                    >= (cost - min(future_costs_estimation.costs)) / self.div_euros
                     + sum(
                         [
                             (next_levels[area][s] - levels[r] / self.div_energy)
@@ -1231,6 +1231,7 @@ class WeeklyBellmanProblem:
         # Precaution
         future_costs_estimation.round(precision=self.precision)
         future_costs_estimation.count_redundant(tolerance=0, remove=True)
+        self.future_costs_estimation = future_costs_estimation
 
         # Base variables and constraints
         controls, initial_levels, next_levels, overflows = self.get_control_dynamic(
@@ -1314,6 +1315,7 @@ class WeeklyBellmanProblem:
         # Removing unwanted parts of the cost
         cost -= self.future_cost.solution_value() * remove_future_costs
         cost -= self.penalty_cost.solution_value() * remove_penalties
+        cost += min(self.future_costs_estimation.costs) / self.div_euros
         penalty_duals = {
             area: self.initial_level_csts[area].dual_value() * self.div_price
             for area in self.managements

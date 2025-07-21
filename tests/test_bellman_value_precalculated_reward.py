@@ -19,8 +19,6 @@ from type_definition import (
     Dict,
     List,
     TimeScenarioIndex,
-    WeekIndex,
-    time_list_area_value_to_array,
     timescenario_list_area_value_to_array,
     timescenario_list_value_to_array,
 )
@@ -245,7 +243,7 @@ def test_bellman_value_precalculated_reward_with_multi_stock(
 
     xNsteps = 20
 
-    _, _, bellman_costs, _, _, _ = precalculated_method(
+    _, _, bellman_values, _ = precalculated_method(
         len_controls=20,
         param=param,
         multi_stock_management=multi_stock_management_one_node,
@@ -253,7 +251,7 @@ def test_bellman_value_precalculated_reward_with_multi_stock(
         len_bellman=xNsteps,
     )
 
-    # assert np.transpose(bellman_costs) == pytest.approx(
+    # assert np.transpose([v for v in bellman_values[WeekIndex(w)].costs]) == pytest.approx(
     #     expected_vb[:, : param.len_week]
     # )
 

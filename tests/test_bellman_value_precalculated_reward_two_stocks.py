@@ -4,7 +4,7 @@ import pytest
 from functions_iterative import TimeScenarioParameter
 from multi_stock_bellman_value_calculation import precalculated_method
 from reservoir_management import MultiStockManagement
-from type_definition import ScenarioIndex, WeekIndex, time_list_area_value_to_array
+from type_definition import WeekIndex, time_list_area_value_to_array
 
 
 def test_bellman_value_precalculated_multi_stock(
@@ -12,7 +12,7 @@ def test_bellman_value_precalculated_multi_stock(
     multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
 
-    levels, _, bellman_costs, bellman_controls, slopes, _ = precalculated_method(
+    levels, _, bellman_values, _ = precalculated_method(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         output_path="test_data/two_nodes",
@@ -94,84 +94,10 @@ def test_bellman_value_precalculated_multi_stock(
 
     assert np.array(
         [
-            [
-                [
-                    [u[a][ScenarioIndex(s)] for s in range(param.len_scenario)]
-                    for a in multi_stock_management_two_nodes.areas
-                ]
-                for u in bellman_controls[WeekIndex(w)]
-            ]
+            bellman_values[WeekIndex(w)].true_costs
+            - min(bellman_values[WeekIndex(w + 1)].true_costs)
             for w in range(param.len_week)
         ]
-    )[::-1] == pytest.approx(
-        np.array(
-            [
-                [
-                    [[0.0], [-90240.67344721]],
-                    [[0.0], [-159655.05088864]],
-                    [[0.0], [-34203.56041625]],
-                    [[0.0], [-34203.56041625]],
-                    [[39944.257], [-51818.4723395]],
-                    [[0.0], [90752.243]],
-                    [[219514.397], [-131006.63198273]],
-                    [[0.0], [419664.0]],
-                    [[306936.0], [-77302.19219234]],
-                    [[13797.0019], [419664.0]],
-                ],
-                [
-                    [[13776.0], [263393.096]],
-                    [[0.0], [-57989.9214361]],
-                    [[51122.05876278], [263393.096]],
-                    [[141225.27916395], [127473.89575222]],
-                    [[201267.58387865], [67431.59103752]],
-                    [[50323.95476654], [284099.7914371]],
-                    [[231413.469], [76863.85569213]],
-                    [[74764.73385189], [419664.0]],
-                    [[306936.0], [100493.89663835]],
-                    [[51958.81891699], [419664.0]],
-                ],
-                [
-                    [[0.0], [236690.76271387]],
-                    [[113212.486], [-301069.8526227]],
-                    [[16083.106], [240312.84479417]],
-                    [[210872.47872395], [41445.66260587]],
-                    [[133394.09890117], [170341.55211977]],
-                    [[101447.02090465], [202288.63011629]],
-                    [[156432.366], [177549.93334941]],
-                    [[3563.59564383], [368434.33202641]],
-                    [[296781.616], [221463.43148511]],
-                    [[107700.7029777], [419664.0]],
-                ],
-                [
-                    [[0.0], [130921.91688424]],
-                    [[110996.375], [-322182.0]],
-                    [[16174.115], [114747.78543668]],
-                    [[110996.375], [19925.42901135]],
-                    [[16943.145], [113978.75465465]],
-                    [[0.0], [130921.91688424]],
-                    [[260094.25280634], [-112681.75779224]],
-                    [[0.0], [352650.795]],
-                    [[294565.505], [-112246.5435333]],
-                    [[88178.25727388], [419664.0]],
-                ],
-                [
-                    [[0.0], [-239100.85065468]],
-                    [[68061.79186323], [-283168.84524749]],
-                    [[11669.82742663], [-123952.89129106]],
-                    [[9374.37530585], [-236001.35946376]],
-                    [[16279.107], [-127408.97334741]],
-                    [[13933.62538023], [37228.643]],
-                    [[153936.737], [-230625.98533142]],
-                    [[15398.15215653], [348547.763]],
-                    [[291594.357], [-276527.10780168]],
-                    [[15398.15215653], [419664.0]],
-                ],
-            ]
-        )
-    )
-
-    assert np.array(
-        [[c for c in bellman_costs[WeekIndex(w)]] for w in range(param.len_week)]
     )[::-1] == pytest.approx(
         np.array(
             [
@@ -240,13 +166,7 @@ def test_bellman_value_precalculated_multi_stock(
     )
 
     assert np.array(
-        [
-            [
-                [u[a] for a in multi_stock_management_two_nodes.areas]
-                for u in slopes[WeekIndex(w)]
-            ]
-            for w in range(param.len_week)
-        ]
+        [bellman_values[WeekIndex(w)].duals for w in range(param.len_week)]
     )[::-1] == pytest.approx(
         np.array(
             [

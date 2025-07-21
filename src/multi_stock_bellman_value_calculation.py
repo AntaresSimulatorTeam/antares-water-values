@@ -36,7 +36,6 @@ from type_definition import (
     time_list_area_value_to_array,
     time_list_to_array,
     timescenario_area_value_to_array,
-    timescenario_area_value_to_weekly_mean_area_values,
     timescenario_list_area_value_to_array,
     timescenario_list_value_to_array,
 )
@@ -117,18 +116,13 @@ def get_bellman_values_from_costs(
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
     costs_approx: LinearCostEstimator,
-    future_costs_approx: Optional[LinearInterpolator],
+    final_bellman_values: Optional[LinearInterpolator],
     name_solver: str,
     levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
     verbose: bool = False,
     n_cycle: int = 1,
-) -> tuple[
-    Dict[WeekIndex, List[float]],
-    Dict[WeekIndex, List[Dict[AreaIndex, float]]],
-    Dict[WeekIndex, List[Dict[AreaIndex, Dict[ScenarioIndex, float]]]],
-    Dict[WeekIndex, LinearInterpolator],
-]:
+) -> Dict[WeekIndex, LinearInterpolator]:
     """
     Dynamically solves the problem of minimizing the optimal control problem for every discretized level,
     balancing between saving costs this week or saving stock to avoid future costs
@@ -138,7 +132,7 @@ def get_bellman_values_from_costs(
         param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
         multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
         costs_approx:LinearInterpolator: All precalculated lower bounding hyperplains of weekly cost estimation,
-        future_costs_approx:LinearInterpolator: All previously obtained lower bounding hyperplains of future cost estimation,
+        final_bellman_values:LinearInterpolator: All previously obtained lower bounding hyperplains of future cost estimation,
         nSteps_bellman:int: Discretization level used
         name_solver:str: Solver chosen for the optimization problem, default -> CLP
         method:str: Method used to select levels to check
@@ -149,7 +143,7 @@ def get_bellman_values_from_costs(
         levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]]: Level discretization used,
         costs:Dict[WeekIndex, List[float]]: Objective value at every week (and for every level combination),
         duals:Dict[WeekIndex, List[Dict[AreaIndex, float]]]: Dual values of the initial level constraint at every week (and for every level combination),
-        future_costs_approx:LinearInterpolator: Final estimation of total system prices
+        final_bellman_values:LinearInterpolator: Final estimation of total system prices
     """
     # Initializing the Weekly Bellman Problem instance
     problem = WeeklyBellmanProblem(
@@ -160,8 +154,8 @@ def get_bellman_values_from_costs(
         divisor=divisor,
     )
 
-    if future_costs_approx is None:
-        future_costs_approx = initialize_future_costs(
+    if final_bellman_values is None:
+        final_bellman_values = initialize_future_costs(
             multi_stock_management=multi_stock_management
         )
 
@@ -169,21 +163,13 @@ def get_bellman_values_from_costs(
 
     for i in range(n_cycle):
         # Keeping in memory all future costs approximations
-        future_costs_approx_l = {WeekIndex(param.len_week): future_costs_approx}
-
-        # Initializing controls, costs and duals
-        controls: Dict[WeekIndex, List[Dict[AreaIndex, Dict[ScenarioIndex, float]]]] = (
-            {}
-        )
-        costs: Dict[WeekIndex, List[float]] = {}
-        duals: Dict[WeekIndex, List[Dict[AreaIndex, float]]] = {}
+        bellman_values = {WeekIndex(param.len_week): final_bellman_values}
 
         # Starting from last week dynamically solving the optimal control problem (from every starting level)
         week_range = range(n_weeks - 1, -1, -1)
         if verbose:
             week_range = tqdm(week_range, colour="Green", desc="Dynamic Solving")
         for week in week_range:
-            controls_w: List[Dict[AreaIndex, Dict[ScenarioIndex, float]]] = []
             costs_w: List[float] = []
             duals_w: List[Dict[AreaIndex, float]] = []
             for lvl_init in levels[WeekIndex(week)]:
@@ -196,35 +182,22 @@ def get_bellman_values_from_costs(
                 problem.write_problem(
                     week=week,
                     level_init=lvl_init,
-                    future_costs_estimation=future_costs_approx,
+                    future_costs_estimation=bellman_values[WeekIndex(week + 1)],
                 )
 
-                controls_wls, cost_wl, duals_wl, _ = problem.solve()
+                _, cost_wl, duals_wl, _ = problem.solve()
 
                 # Writing down results
-                controls_w.append(controls_wls)
                 costs_w.append(cost_wl)
                 duals_w.append(duals_wl)
 
-            controls[WeekIndex(week)] = controls_w
-            costs[WeekIndex(week)] = costs_w
-            duals[WeekIndex(week)] = duals_w
-
-            # Updating the future estimator
-            # costs_w - np.min(costs_w)
-            future_costs_approx = LinearInterpolator(
+            bellman_values[WeekIndex(week)] = LinearInterpolator(
                 controls=list_area_value_to_array(levels[WeekIndex(week)]),
-                costs=costs_w - np.min(costs_w),
+                costs=np.array(costs_w),
                 duals=list_area_value_to_array(duals_w),
             )
-            future_costs_approx_l[WeekIndex(week)] = future_costs_approx
-        future_costs_approx = future_costs_approx_l[WeekIndex(0)]
-    return (
-        costs,
-        duals,
-        controls,
-        future_costs_approx_l,
-    )
+        final_bellman_values = bellman_values[WeekIndex(0)]
+    return bellman_values
 
 
 def initialize_future_costs(
@@ -593,9 +566,7 @@ def precalculated_method(
 ) -> tuple[
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     LinearCostEstimator,
-    Dict[WeekIndex, List[float]],
-    Dict[WeekIndex, List[Dict[AreaIndex, Dict[ScenarioIndex, float]]]],
-    Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    Dict[WeekIndex, LinearInterpolator],
     Dict[TimeScenarioIndex, List[float]],
 ]:
     """
@@ -668,16 +639,11 @@ def precalculated_method(
         method="lines",
     )
 
-    (
-        bellman_costs,
-        bellman_duals,
-        bellman_controls,
-        _,
-    ) = get_bellman_values_from_costs(
+    bellman_values = get_bellman_values_from_costs(
         param=param,
         multi_stock_management=multi_stock_management,
         costs_approx=costs_approx,
-        future_costs_approx=None,
+        final_bellman_values=None,
         name_solver=name_solver,
         verbose=verbose,
         levels=levels,
@@ -687,9 +653,7 @@ def precalculated_method(
     return (
         levels,
         costs_approx,
-        bellman_costs,
-        bellman_controls,
-        bellman_duals,
+        bellman_values,
         times,
     )
 
@@ -1075,7 +1039,7 @@ def cutting_plane_method(
     starting_pt: Dict[AreaIndex, float],
     costs_approx: LinearCostEstimator,
     costs: Dict[TimeScenarioIndex, List[float]],
-    future_costs_approx: LinearInterpolator,
+    final_bellman_values: LinearInterpolator,
     nSteps_bellman: int,
     method: str,
     correlations: np.ndarray,
@@ -1086,7 +1050,6 @@ def cutting_plane_method(
     output_path: str = "",
     verbose: bool = False,
 ) -> tuple[
-    Dict[WeekIndex, List[float]],
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     Dict[WeekIndex, LinearInterpolator],
     LinearCostEstimator,
@@ -1146,29 +1109,24 @@ def cutting_plane_method(
             method=method,
         )
 
-        (
-            bellman_costs,
-            _,
-            _,
-            future_costs_approx_l,
-        ) = get_bellman_values_from_costs(
+        bellman_values = get_bellman_values_from_costs(
             param=param,
             multi_stock_management=multi_stock_management,
             costs_approx=costs_approx,
-            future_costs_approx=future_costs_approx,
+            final_bellman_values=final_bellman_values,
             name_solver=name_solver,
             levels=levels,
             divisor=divisor,
             verbose=verbose,
         )
-        future_costs_approx = future_costs_approx_l[WeekIndex(0)]
+        final_bellman_values = bellman_values[WeekIndex(0)]
 
         # Evaluate optimal
         trajectory, pseudo_opt_controls, _ = solve_for_optimal_trajectory(
             param=param,
             multi_stock_management=multi_stock_management,
             costs_approx=costs_approx,
-            future_costs_approx_l=future_costs_approx_l,
+            future_costs_approx_l=bellman_values,
             starting_pt=starting_pt,
             name_solver=name_solver,
             divisor=divisor,
@@ -1226,7 +1184,7 @@ def cutting_plane_method(
                 multi_stock_management=multi_stock_management,
                 name_solver=name_solver,
                 costs_approx=costs_approx,
-                future_costs_approx_l=future_costs_approx_l,
+                future_costs_approx_l=bellman_values,
                 optimal_trajectory=trajectory,
                 nSteps_bellman=nSteps_bellman,
                 correlations=correlations,
@@ -1251,7 +1209,7 @@ def cutting_plane_method(
 
     if verbose:
         pbar.close()
-    return bellman_costs, levels, future_costs_approx_l, costs_approx, trajectory
+    return levels, bellman_values, costs_approx, trajectory
 
 
 def iter_bell_vals(
@@ -1270,7 +1228,6 @@ def iter_bell_vals(
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
     verbose: bool = False,
 ) -> tuple[
-    Dict[WeekIndex, List[float]],
     LinearCostEstimator,
     Dict[WeekIndex, LinearInterpolator],
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
@@ -1355,7 +1312,7 @@ def iter_bell_vals(
     )
 
     # Iterative part
-    bellman_costs, levels, future_costs_approx_l, costs_approx, optimal_trajectory = (
+    levels, future_costs_approx_l, costs_approx, optimal_trajectory = (
         cutting_plane_method(
             param=param,
             multi_stock_management=multi_stock_management,
@@ -1364,7 +1321,7 @@ def iter_bell_vals(
             costs_approx=costs_approx,
             saving_dir=saving_dir,
             costs=costs,
-            future_costs_approx=future_costs_approx,
+            final_bellman_values=future_costs_approx,
             nSteps_bellman=nSteps_bellman,
             method=method,
             correlations=correlations,
@@ -1389,7 +1346,6 @@ def iter_bell_vals(
     )
 
     return (
-        bellman_costs,
         costs_approx,
         future_costs_approx_l,
         levels,

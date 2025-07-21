@@ -15,9 +15,8 @@ def test_bellman_value_iterative_method(
 ) -> None:
 
     (
-        bell_costs,
         cost_approx,
-        _,
+        bellman_values,
         levels,
         opt_trajectory,
         usage_values,
@@ -51,7 +50,11 @@ def test_bellman_value_iterative_method(
     )
 
     assert np.array(
-        [[c for c in bell_costs[WeekIndex(w)]] for w in range(param.len_week)]
+        [
+            bellman_values[WeekIndex(w)].true_costs
+            - min(bellman_values[WeekIndex(w + 1)].true_costs)
+            for w in range(param.len_week)
+        ]
     ) == pytest.approx(
         np.array(
             [

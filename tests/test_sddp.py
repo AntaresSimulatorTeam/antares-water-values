@@ -3,13 +3,12 @@ import numpy as np
 import pytest
 
 from calculate_reward_and_bellman_values import calculate_VU
-from estimation import LinearInterpolator
+from estimation import LinearCostEstimator, LinearInterpolator
 from functions_iterative import (
     MultiStockManagement,
     TimeScenarioParameter,
     solve_weekly_problem_with_approximation,
 )
-from simple_bellman_value_calculation import calculate_complete_reward
 from type_definition import AreaIndex, Dict, List, TimeScenarioIndex, WeekIndex
 
 opt_cost = 4410020520.96
@@ -32,7 +31,9 @@ opt_trajectory = [
 
 def test_call_sddp(
     param: TimeScenarioParameter,
-    controls_precalculated_one_node_10: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    controls_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
     costs_precalculated_one_node_10: Dict[TimeScenarioIndex, List[float]],
     slopes_precalculated_one_node_10: Dict[
         TimeScenarioIndex, List[Dict[AreaIndex, float]]
@@ -70,7 +71,9 @@ def test_call_sddp(
                     controls=np.array(
                         [
                             [x for x in u.values()]
-                            for u in controls_precalculated_one_node_10[WeekIndex(w)]
+                            for u in controls_precalculated_one_node_10[
+                                TimeScenarioIndex(w, s)
+                            ]
                         ]
                     ),
                     costs=np.array(
@@ -132,25 +135,21 @@ def test_call_sddp(
 
 def test_compare_sddp_to_precalculated(
     param: TimeScenarioParameter,
-    controls_precalculated_one_node_10: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    controls_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
     costs_precalculated_one_node_10: Dict[TimeScenarioIndex, List[float]],
     slopes_precalculated_one_node_10: Dict[
         TimeScenarioIndex, List[Dict[AreaIndex, float]]
     ],
     multi_stock_management_one_node: MultiStockManagement,
 ) -> None:
-    reward = calculate_complete_reward(
-        controls={
-            TimeScenarioIndex(w, s): [
-                ctrl for ctrl in controls_precalculated_one_node_10[WeekIndex(w)]
-            ]
-            for w in range(param.len_week)
-            for s in range(param.len_scenario)
-        },
+    reward = LinearCostEstimator(
+        controls=controls_precalculated_one_node_10,
         param=param,
-        multi_stock_management=multi_stock_management_one_node,
         costs=costs_precalculated_one_node_10,
-        slopes=slopes_precalculated_one_node_10,
+        duals=slopes_precalculated_one_node_10,
+        type_estimator="LinearInterpolator",
     )
     for area, mng in multi_stock_management_one_node.dict_reservoirs.items():
         X = np.linspace(0, mng.reservoir.capacity, num=20)
@@ -159,7 +158,7 @@ def test_compare_sddp_to_precalculated(
             stock_discretization=X,
             time_scenario_param=param,
             reservoir_management=mng,
-            reward=reward[area],
+            reward=reward,
         )
 
         lb = V[WeekIndex(0)](mng.reservoir.initial_level)
@@ -182,7 +181,7 @@ def test_compare_sddp_to_precalculated(
                     V_fut=V[WeekIndex(week + 1)],
                     reservoir_management=mng,
                     param=param,
-                    reward=reward[area][TimeScenarioIndex(week, scenario)],
+                    reward=reward[TimeScenarioIndex(week, scenario)],
                 )
                 ub += cost
 

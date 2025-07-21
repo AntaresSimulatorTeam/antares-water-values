@@ -8,7 +8,12 @@ from calculate_reward_and_bellman_values import (
     calculate_VU,
     solve_weekly_problem_with_approximation,
 )
-from estimation import Estimator, PieceWiseLinearInterpolator, UniVariateEstimator
+from estimation import (
+    Estimator,
+    LinearCostEstimator,
+    PieceWiseLinearInterpolator,
+    UniVariateEstimator,
+)
 from optimization import AntaresProblem, Basis
 from reservoir_management import MultiStockManagement
 from type_definition import (
@@ -26,7 +31,7 @@ from type_definition import (
 def compute_x_multi_scenario(
     param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
-    reward: Dict[TimeScenarioIndex, LinearInterpolator],
+    reward: LinearCostEstimator,
     V: Dict[WeekIndex, PieceWiseLinearInterpolator],
     itr: int,
 ) -> tuple[Dict[TimeScenarioIndex, float], Dict[TimeScenarioIndex, float]]:
@@ -84,9 +89,7 @@ def compute_upper_bound(
     param: TimeScenarioParameter,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
     V: Dict[WeekIndex, Estimator],
-    reward_approximation: Optional[
-        Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]]
-    ] = None,
+    reward_approximation: Optional[LinearCostEstimator] = None,
 ) -> tuple[
     float,
     Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
@@ -121,22 +124,32 @@ def compute_upper_bound(
     times = {}
 
     if reward_approximation is None:
-        reward: Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]] = {}
-        for (
-            area,
-            reservoir_management,
-        ) in multi_stock_management.dict_reservoirs.items():
-            reward[area] = {}
-            for week in range(param.len_week):
-                for scenario in range(param.len_scenario):
-                    r = LinearInterpolator(
-                        controls=np.array(
-                            [reservoir_management.reservoir.max_generating[week]]
-                        ),
-                        costs=np.array([0]),
-                        duals=np.array([0]),
-                    )
-                    reward[area][TimeScenarioIndex(week, scenario)] = r
+        reward = LinearCostEstimator(
+            param=param,
+            controls={
+                TimeScenarioIndex(week, scenario): [
+                    {
+                        area: res_management.reservoir.max_generating[week]
+                        for area, res_management in multi_stock_management.dict_reservoirs.items()
+                    }
+                ]
+                for week in range(param.len_week)
+                for scenario in range(param.len_scenario)
+            },
+            costs={
+                TimeScenarioIndex(week, scenario): [0]
+                for week in range(param.len_week)
+                for scenario in range(param.len_scenario)
+            },
+            duals={
+                TimeScenarioIndex(week, scenario): [
+                    {area: 0 for area in multi_stock_management.areas}
+                ]
+                for week in range(param.len_week)
+                for scenario in range(param.len_scenario)
+            },
+            type_estimator="LinearInterpolator",
+        )
     else:
         reward = reward_approximation
 
@@ -172,13 +185,13 @@ def calculate_reward(
     param: TimeScenarioParameter,
     controls: Dict[TimeScenarioIndex, float],
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    G: Dict[TimeScenarioIndex, LinearInterpolator],
+    G: LinearCostEstimator,
     i: int,
     name_reservoir: AreaIndex,
 ) -> tuple[
     Dict[TimeScenarioIndex, int],
     Dict[TimeScenarioIndex, float],
-    Dict[TimeScenarioIndex, LinearInterpolator],
+    LinearCostEstimator,
 ]:
     """
     Evaluate reward for a set of given controls for each week and each scenario to update reward approximation.
@@ -247,7 +260,7 @@ def itr_control(
     solver: str = "GLOP",
 ) -> tuple[
     Dict[WeekIndex, List[float]],
-    Dict[TimeScenarioIndex, LinearInterpolator],
+    LinearCostEstimator,
     List[Dict[TimeScenarioIndex, int]],
     List[float],
     List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
@@ -340,7 +353,7 @@ def itr_control(
                 )
                 for week in range(param.len_week + 1)
             },
-            reward_approximation={reservoir_management.reservoir.area: G},
+            reward_approximation=G,
         )
         itr_tot.append(current_itr)
         controls_upper.append(ctr)
@@ -379,7 +392,7 @@ def init_iterative_calculation(
     List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
     List[Dict[TimeScenarioIndex, float]],
     float,
-    Dict[TimeScenarioIndex, LinearInterpolator],
+    LinearCostEstimator,
 ]:
     len_week = param.len_week
     len_scenario = param.len_scenario
@@ -415,17 +428,33 @@ def init_iterative_calculation(
         for week in range(len_week + 1)
     }
 
-    G: Dict[TimeScenarioIndex, LinearInterpolator] = {}
-    for week in range(len_week):
-        for scenario in range(len_scenario):
-            r = LinearInterpolator(
-                controls=np.array(
-                    [reservoir_management.reservoir.max_generating[week]]
-                ),
-                costs=np.array([0]),
-                duals=np.array([0]),
-            )
-            G[TimeScenarioIndex(week, scenario)] = r
+    G = LinearCostEstimator(
+        param=param,
+        controls={
+            TimeScenarioIndex(week, scenario): [
+                {
+                    reservoir_management.reservoir.area: reservoir_management.reservoir.max_generating[
+                        week
+                    ]
+                }
+            ]
+            for week in range(len_week)
+            for scenario in range(len_scenario)
+        },
+        costs={
+            TimeScenarioIndex(week, scenario): [0]
+            for week in range(len_week)
+            for scenario in range(len_scenario)
+        },
+        duals={
+            TimeScenarioIndex(week, scenario): [
+                {reservoir_management.reservoir.area: 0}
+            ]
+            for week in range(len_week)
+            for scenario in range(len_scenario)
+        },
+        type_estimator="LinearInterpolator",
+    )
 
     itr_tot: List = []
     controls_upper: List = []

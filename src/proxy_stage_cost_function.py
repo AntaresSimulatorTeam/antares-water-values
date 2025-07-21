@@ -1,5 +1,4 @@
-from read_antares_data import Reservoir
-from read_antares_data import NetLoad
+from read_antares_data import Reservoir,NetLoad
 import numpy as np
 from scipy.interpolate import interp1d
 
@@ -9,9 +8,6 @@ class Proxy:
         self.name_area = name_area
         self.reservoir = Reservoir(dir_study, name_area)
 
-        # self.max_daily_generating=self.reservoir.max_daily_generating-1
-        # self.max_daily_pumping=self.reservoir.max_daily_pumping-1 if not np.allclose(self.reservoir.max_daily_pumping,0) else self.reservoir.max_daily_pumping
-
         self.turb_efficiency=1
         self.alpha=alpha
         self.coeff = coeff
@@ -20,6 +16,7 @@ class Proxy:
         self.scenarios=range(MC_years)
         
         self.weighted_net_load = self.compute_weighted_net_load()
+        self.ub_cost = self.global_upper_bound_cost()
 
     
     def compute_weighted_net_load(self)-> np.ndarray:
@@ -100,3 +97,18 @@ class Proxy:
     def compute_stage_cost_functions(self)->np.ndarray:
         cost_functions=np.array([[self.stage_cost_function(w,s) for s in self.scenarios] for w in range(self.nb_weeks)])
         return cost_functions
+
+    def upper_bound_cost(self,scenario:int,week:int)->float:
+        return 168*(
+            np.max(
+                np.abs(self.weighted_net_load[week * 168:(week + 1) * 168, scenario])
+            )**self.alpha
+        )
+
+    def global_upper_bound_cost(self) -> float:
+        return max(
+            sum(self.upper_bound_cost(s, w) for w in range(self.nb_weeks))
+            for s in self.scenarios
+        )
+    
+    

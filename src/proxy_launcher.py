@@ -34,7 +34,7 @@ class Launch:
         self.bv = BellmanValuesProxy(self.proxy,enable_logging=self.enable_logging, export_dir=export_dir)
         self.trajectories = OptimalTrajectories(self.bv)
         end = time.time()
-        print(f"Stage cost functions, Bellman values and trajectories computed in : {end-start} s.")
+        print(f"Stage cost functions, Bellman values and trajectories for area {self.name_area} computed in : {end-start} s.")
 
         self.plotter = Plotter(self.bv,self.trajectories)
         self.exporter = Exporter(self.proxy, self.bv,self.trajectories)
@@ -136,7 +136,7 @@ def main() -> None:
     parser.add_argument("--area", type=str, nargs='+', required=True, help="Liste des zones d'étude (séparées par un espace).")
     parser.add_argument("--MC_years", type=int, required=False, default=200, help="Nombre d'années Monte-Carlo à simuler.")
     parser.add_argument("--alpha", type=float, required=False,default=2, help="Coefficient alpha de la fonction de coût, par défaut vaut 2.")
-    parser.add_argument("--coeff_cost", type=int, required=False,default=1000000000, help="Facteur d'échelle pour la fonction de coût, par défaut vaut 1e9.")
+    parser.add_argument("--coeff_cost", type=int, required=False,default=1, help="Facteur d'échelle pour la fonction de coût, par défaut vaut 1e9.")
     parser.add_argument("--enable_logging", type=bool, default=False, help="Activer les logs.")
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="Liste des actions à effectuer (ex: export_bellman_values, plot_trajectories, modify_antares_data, undo_modifications, etc.)")
 

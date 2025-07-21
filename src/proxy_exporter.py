@@ -104,7 +104,7 @@ class ModifyAntaresStudy:
         inflows = np.loadtxt(inflow_backup_path)
         inflows[:, :] = 0
 
-        np.savetxt(inflow_path, inflows, fmt="%.8f", delimiter="\t")
+        np.savetxt(inflow_path, inflows, fmt="%.6f", delimiter="\t")
 
     def overwrite_hydro_ini_file(self) -> None:
         flag_dir = os.path.join(self.dir_study, "tmp", "hydro_flags")
@@ -151,20 +151,23 @@ enabled = true
             self.dir_study, "input", "st-storage", "series", self.name_area, f"lt_stock_proxy_{self.name_area}"
         )
         os.makedirs(folder_path, exist_ok=True)
-        np.savetxt(os.path.join(folder_path, "PMAX-injection.txt"), modulation_injection, fmt="%.8f")
-        np.savetxt(os.path.join(folder_path, "PMAX-withdrawal.txt"), modulation_withdrawal, fmt="%.8f")
+        np.savetxt(os.path.join(folder_path, "PMAX-injection.txt"), modulation_injection, fmt="%.6f")
+        np.savetxt(os.path.join(folder_path, "PMAX-withdrawal.txt"), modulation_withdrawal, fmt="%.6f")
 
     def create_rule_curve_file(self) -> None:
         folder_path = os.path.join(
             self.dir_study, "input", "st-storage", "series", self.name_area, f"lt_stock_proxy_{self.name_area}"
         )
         os.makedirs(folder_path, exist_ok=True)
+        if hasattr(self.trajectories, "final_lower_rule_curve") and hasattr(self.trajectories, "final_upper_rule_curve"):
+            lower_arr = np.clip(self.trajectories.final_lower_rule_curve / self.bv.proxy.reservoir.capacity, 0, 1)
+            lower_arr = np.floor(lower_arr * 1e6) / 1e6
 
-        lower_arr = np.clip(self.trajectories.final_lower_rule_curve / self.bv.proxy.reservoir.capacity, 0, 1)
-        lower_arr = np.floor(lower_arr * 1e6) / 1e6
-
-        upper_arr = np.clip(self.trajectories.final_upper_rule_curve / self.bv.proxy.reservoir.capacity, 0, 1)
-        upper_arr = np.ceil(upper_arr * 1e6) / 1e6
+            upper_arr = np.clip(self.trajectories.final_upper_rule_curve / self.bv.proxy.reservoir.capacity, 0, 1)
+            upper_arr = np.ceil(upper_arr * 1e6) / 1e6
+        else:
+            lower_arr = np.zeros(8760)
+            upper_arr = np.ones(8760)
 
         np.savetxt(os.path.join(folder_path, "lower-rule-curve.txt"), lower_arr, fmt="%.6f")
         np.savetxt(os.path.join(folder_path, "upper-rule-curve.txt"), upper_arr, fmt="%.6f")
@@ -184,13 +187,17 @@ enabled = true
         with open(os.path.join(sb_dir, f"{self.name_area}.txt"), "w") as f:
             f.write("\n".join(lines) + "\n")
 
-    def distribute_daily_inflows_exactly(self,daily_values: np.ndarray) -> np.ndarray:
-        hourly_values = np.zeros(168)
-        for i, val in enumerate(daily_values):
-            base_value = val / 24
-            hourly_values[i*24:(i+1)*24 - 1] = base_value
-            hourly_values[(i+1)*24 - 1] = val - base_value * 23  # correction dernière heure
-        return hourly_values
+    def adjust_inflow_pmax_withdrawal_constraint(self,balance: np.ndarray,week : int) -> np.ndarray:
+        delta=np.sum(balance)-np.sum(self.bv.proxy.reservoir.max_weekly_turb[week]*self.bv.proxy.turb_efficiency)
+        if delta>0:
+            balance[-1]-= np.ceil(delta/1e-6)*1e-6
+        return balance
+    
+    def adjust_inflows_pmax_injection_constraint(self, balance: np.ndarray, week: int) -> np.ndarray:
+        delta = np.sum(balance) + np.sum(self.bv.proxy.reservoir.max_weekly_pump[week]*self.bv.proxy.reservoir.efficiency)
+        if delta < 0:
+            balance[-1] -= np.floor(delta/1e-6)*1e-6
+        return balance
 
     def create_inflows_sts(self) -> None:
         balance = np.zeros((168 * self.nb_weeks, len(self.scenarios)))
@@ -206,14 +213,24 @@ enabled = true
                 balance[hour_start + 167, s] = self.bv.proxy.reservoir.capacity / 2 - hlevel_end
                 hourly_inflow = self.bv.proxy.reservoir.hourly_inflow[hour_start:hour_start+168,s]
                 balance[hour_start:hour_start + 168, s] += hourly_inflow
-                balance[hour_start:hour_start + 168, s] -= self.trajectories.delta_inflow_correction[w, s, :]
 
+                # balance[hour_start:hour_start + 168, s] -= self.trajectories.inflow_adjust_rule_curves[w, s, :]
+                balance[hour_start:hour_start + 168, s] -= self.trajectories.inflow_adjust_overflow[w, s, :]
+                balance[hour_start:hour_start + 168, s] = self.adjust_inflow_pmax_withdrawal_constraint(balance[hour_start:hour_start + 168, s], w)
+                balance[hour_start:hour_start + 168, s] = self.adjust_inflows_pmax_injection_constraint(balance[hour_start:hour_start + 168, s], w)
+                # if np.sum(balance[hour_start:hour_start + 168, s])>self.bv.proxy.reservoir.max_weekly_turb[w]*self.bv.proxy.turb_efficiency \
+                #     or np.sum(balance[hour_start:hour_start + 168, s])<-self.bv.proxy.reservoir.max_weekly_pump[w]*self.bv.proxy.reservoir.efficiency:
+                #     raise ValueError(
+                #         f"Erreur pour la zone {self.name_area} dans la semaine {w} pour le scénario {s}: controle : {np.sum(balance[hour_start:hour_start + 168, s])}, \
+                #         turb_max : {self.bv.proxy.reservoir.max_weekly_turb[w]*self.bv.proxy.turb_efficiency},\
+                #         pump_max : {-self.bv.proxy.reservoir.max_weekly_pump[w]*self.bv.proxy.reservoir.efficiency}"
+                #     )
         balance = np.vstack([balance, np.zeros((24, len(self.scenarios)))])
         path = os.path.join(
             self.dir_study, "input", "st-storage", "series", self.name_area,
             f"lt_stock_proxy_{self.name_area}", "inflows.txt"
         )
-        np.savetxt(path, balance, fmt="%.12f", delimiter="\t")
+        np.savetxt(path, balance, fmt="%.20f", delimiter="\t")
 
     def apply_all(self) -> None:
         self.overwrite_inflows()

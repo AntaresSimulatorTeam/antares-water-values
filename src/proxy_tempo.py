@@ -20,11 +20,11 @@ python "path"/tempo.py --dir_study "path_to_study" --area "name_area" --cvar flo
 class GainFunctionTempo:
     def __init__(self, net_load : NetLoad, max_control:int):
         
-        self.net_load=net_load.net_load
+        self.net_load=net_load.compute_net_load()
         juillet_aout = self.net_load[24:65*24, :]
         self.net_load = np.concatenate((self.net_load, juillet_aout), axis=0)
         self.nb_scenarios=net_load.nb_scenarios
-        self.daily_net_load=net_load.net_load.reshape(365+64,24,self.nb_scenarios).sum(axis=1)
+        self.daily_net_load=self.net_load.reshape(365+64,24,self.nb_scenarios).sum(axis=1)
         self.max_control=max_control
 
     def gain_for_week_control_and_scenario(self, week_index: int, control : int, scenario : int) -> float:
@@ -531,7 +531,7 @@ class LaunchTempo :
         day_end = day_start + 7
 
         # Résumé journalier
-        net_load_reshaped = net_load.net_load.reshape(-1, 24, net_load.nb_scenarios)
+        net_load_reshaped = net_load.compute_net_load().reshape(-1, 24, net_load.nb_scenarios)
         daily_net_load = net_load_reshaped.sum(axis=1)
         week_values = daily_net_load[day_start:day_end, scenario]
 

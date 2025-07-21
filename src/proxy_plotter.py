@@ -250,13 +250,14 @@ class Plotter:
 
     def plot_adjusted_rule_curves(self) -> None:
         plt.figure(figsize=(16, 6))
+        if hasattr(self.trajectories, "final_lower_rule_curve") and hasattr(self.trajectories, "final_upper_rule_curve"):
+            plt.plot(self.trajectories.final_lower_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Inférieure ajustée", color="blue", linewidth=2)
+            plt.plot(self.trajectories.hourly_lower_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Inférieure interpolée", color="cyan", linestyle="--", linewidth=1.5)
 
-        plt.plot(self.trajectories.final_lower_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Inférieure ajustée", color="blue", linewidth=2)
-        plt.plot(self.trajectories.hourly_lower_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Inférieure interpolée", color="cyan", linestyle="--", linewidth=1.5)
-
-        plt.plot(self.trajectories.final_upper_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Supérieure ajustée", color="darkred", linewidth=2)
-        plt.plot(self.trajectories.hourly_upper_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Supérieure interpolée", color="orange", linestyle="--", linewidth=1.5)
-
+            plt.plot(self.trajectories.final_upper_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Supérieure ajustée", color="darkred", linewidth=2)
+            plt.plot(self.trajectories.hourly_upper_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Supérieure interpolée", color="orange", linestyle="--", linewidth=1.5)
+        else:
+            return
         plt.xlabel("Heure de l'année")
         plt.ylabel("Stock (%)")
         area = getattr(self.bv.proxy, 'name_area', None)

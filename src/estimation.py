@@ -5,8 +5,8 @@ from hyperplane_decomposition import decompose_hyperplanes
 from hyperplane_interpolation import get_interpolation
 from stock_discretization import StockDiscretization
 from type_definition import (
+    AreaIndex,
     Array1D,
-    Callable,
     Dict,
     List,
     Optional,
@@ -216,17 +216,6 @@ class LinearInterpolator:
             ],
             axis=0,
         )
-
-    def dualize(self, x: np.ndarray) -> float:
-        return self.duals[
-            np.argmax(
-                [
-                    self.costs[id] + np.dot(x - val, self.duals[id])
-                    for id, val in enumerate(self.inputs)
-                ],
-                axis=0,
-            )
-        ]
 
     def get_owner(self, x: np.ndarray) -> List[int]:
         """
@@ -521,10 +510,12 @@ class LinearCostEstimator:
     def __init__(
         self,
         param: TimeScenarioParameter,
-        controls: np.ndarray,
-        costs: np.ndarray,
-        duals: np.ndarray,
+        controls: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
+        costs: Dict[TimeScenarioIndex, List[float]],
+        duals: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
+        type_estimator: str,
         correlations: Optional[np.ndarray] = None,
+        interp_mode: bool = False,
     ) -> None:
         """
         Instanciates a LinearCostEstimator
@@ -540,13 +531,42 @@ class LinearCostEstimator:
         estimators: Dict[TimeScenarioIndex, LinearInterpolator] = {}
         for week in range(param.len_week):
             for scenario in range(param.len_scenario):
-                r = LinearDecomposer(
-                    inputs=controls[week, scenario],
-                    costs=costs[week, scenario],
-                    duals=duals[week, scenario],
-                    correlations=correlations,
-                )
-                estimators[TimeScenarioIndex(week, scenario)] = r
+                if type_estimator == "LinearDecomposer":
+                    estimators[TimeScenarioIndex(week, scenario)] = LinearDecomposer(
+                        inputs=np.array(
+                            [
+                                [x for x in u.values()]
+                                for u in controls[TimeScenarioIndex(week, scenario)]
+                            ]
+                        ),
+                        costs=np.array(costs[TimeScenarioIndex(week, scenario)]),
+                        duals=np.array(
+                            [
+                                [y for y in x.values()]
+                                for x in duals[TimeScenarioIndex(week, scenario)]
+                            ]
+                        ),
+                        correlations=correlations,
+                    )
+                elif type_estimator == "LinearInterpolator":
+                    estimators[TimeScenarioIndex(week, scenario)] = LinearInterpolator(
+                        controls=np.array(
+                            [
+                                [x for x in u.values()]
+                                for u in controls[TimeScenarioIndex(week, scenario)]
+                            ]
+                        ),
+                        costs=np.array(costs[TimeScenarioIndex(week, scenario)]),
+                        duals=np.array(
+                            [
+                                [y for y in x.values()]
+                                for x in duals[TimeScenarioIndex(week, scenario)]
+                            ]
+                        ),
+                        interp_mode=interp_mode,
+                    )
+                else:
+                    raise NotImplementedError
         self.estimators = estimators
         self.param = param
 

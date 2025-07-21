@@ -658,42 +658,14 @@ def precalculated_method(
     # Initialize cost functions
     costs_approx = LinearCostEstimator(
         param=param,
-        controls=np.array(
-            [
-                np.broadcast_to(
-                    [[x for x in u.values()] for u in controls_list[WeekIndex(w)]],
-                    [
-                        param.len_scenario,
-                        len(controls_list[WeekIndex(w)]),
-                        len(multi_stock_management.dict_reservoirs),
-                    ],
-                )
-                for w in range(param.len_week)
-            ]
-        ),
-        costs=np.array(
-            [
-                [
-                    np.array(costs[TimeScenarioIndex(w, s)])
-                    for s in range(param.len_scenario)
-                ]
-                for w in range(param.len_week)
-            ]
-        ),
-        duals=np.array(
-            [
-                [
-                    np.array(
-                        [
-                            [y for y in x.values()]
-                            for x in slopes[TimeScenarioIndex(w, s)]
-                        ]
-                    )
-                    for s in range(param.len_scenario)
-                ]
-                for w in range(param.len_week)
-            ]
-        ),
+        controls={
+            TimeScenarioIndex(w, s): [ctrl for ctrl in controls_list[WeekIndex(w)]]
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
+        costs=costs,
+        duals=slopes,
+        type_estimator="LinearDecomposer",
     )
 
     starting_pt = {
@@ -1390,13 +1362,10 @@ def iter_bell_vals(
 
     costs_approx = LinearCostEstimator(
         param=param,
-        controls=timescenario_list_area_value_to_array(
-            controls, param, multi_stock_management.areas
-        ),
-        costs=timescenario_list_value_to_array(costs, param),
-        duals=timescenario_list_area_value_to_array(
-            duals, param, multi_stock_management.areas
-        ),
+        controls=controls,
+        costs=costs,
+        duals=duals,
+        type_estimator="LinearDecomposer",
     )
 
     # Initialize our approximation on future costs
@@ -1664,13 +1633,10 @@ def iter_bell_vals_v2(
 
     costs_approx = LinearCostEstimator(
         param=param,
-        controls=timescenario_list_area_value_to_array(
-            controls_list, param, multi_stock_management.areas
-        ),
-        costs=timescenario_list_value_to_array(costs, param),
-        duals=timescenario_list_area_value_to_array(
-            duals, param, multi_stock_management.areas
-        ),
+        controls=controls_list,
+        costs=costs,
+        duals=duals,
+        type_estimator="LinearDecomposer",
     )
     # Iterative part
     usage_values, bellman_costs, costs_approx, all_uvs, levels_uv, lower_bound = (

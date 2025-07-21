@@ -192,6 +192,16 @@ def array_to_timescenario_list_area_value(
     }
 
 
+def array_to_timescenario_list_value(
+    x: Array4D, param: TimeScenarioParameter
+) -> Dict[TimeScenarioIndex, List[float]]:
+    return {
+        TimeScenarioIndex(w, s): list(x[w, s])
+        for w in range(param.len_week)
+        for s in range(param.len_scenario)
+    }
+
+
 def array_to_timescenario_area_value(
     x: Array3D, param: TimeScenarioParameter, list_areas: List[AreaIndex]
 ) -> Dict[TimeScenarioIndex, Dict[AreaIndex, float]]:

@@ -5,9 +5,9 @@ from functions_iterative import TimeScenarioParameter
 from multi_stock_bellman_value_calculation import *
 from reservoir_management import MultiStockManagement
 from type_definition import (
-    array_to_area_value,
     array_to_timescenario_area_value,
     array_to_timescenario_list_area_value,
+    array_to_timescenario_list_value,
     list_to_week_value,
     time_list_area_value_to_array,
     timescenario_area_value_to_array,
@@ -370,12 +370,19 @@ expected_controls_to_explore = np.array(
 
 
 @pytest.fixture
-def costs_approx(param: TimeScenarioParameter) -> LinearCostEstimator:
+def costs_approx(
+    param: TimeScenarioParameter, multi_stock_management_two_nodes: MultiStockManagement
+) -> LinearCostEstimator:
     return LinearCostEstimator(
         param=param,
-        controls=expected_controls,
-        costs=expected_costs,
-        duals=expected_duals,
+        controls=array_to_timescenario_list_area_value(
+            expected_controls, param, multi_stock_management_two_nodes.areas
+        ),
+        costs=array_to_timescenario_list_value(expected_costs, param),
+        duals=array_to_timescenario_list_area_value(
+            expected_duals, param, multi_stock_management_two_nodes.areas
+        ),
+        type_estimator="LinearDecomposer",
     )
 
 

@@ -1,7 +1,11 @@
 import numpy as np
 from scipy.optimize import minimize
 
-from estimation import LinearInterpolator, PieceWiseLinearInterpolator
+from estimation import (
+    LinearCostEstimator,
+    LinearInterpolator,
+    PieceWiseLinearInterpolator,
+)
 from reservoir_management import ReservoirManagement
 from type_definition import (
     Array1D,
@@ -95,7 +99,7 @@ def calculate_VU(
     stock_discretization: Array1D,
     time_scenario_param: TimeScenarioParameter,
     reservoir_management: ReservoirManagement,
-    reward: Dict[TimeScenarioIndex, LinearInterpolator],
+    reward: LinearCostEstimator,
     final_values: Array1D = np.zeros(1, dtype=np.float32),
 ) -> Dict[WeekIndex, PieceWiseLinearInterpolator]:
     """

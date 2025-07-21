@@ -117,7 +117,7 @@ def get_bellman_values_from_costs(
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
     costs_approx: LinearCostEstimator,
-    future_costs_approx: LinearInterpolator,
+    future_costs_approx: Optional[LinearInterpolator],
     nSteps_bellman: int,
     name_solver: str,
     method: str,
@@ -125,6 +125,7 @@ def get_bellman_values_from_costs(
     correlations: np.ndarray,
     divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
     verbose: bool = False,
+    n_cycle: int = 1,
 ) -> tuple[
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     Dict[WeekIndex, List[float]],
@@ -163,80 +164,89 @@ def get_bellman_values_from_costs(
         divisor=divisor,
     )
 
-    # Keeping in memory all future costs approximations
-    future_costs_approx_l = {WeekIndex(param.len_week): future_costs_approx}
+    if future_costs_approx is None:
+        future_costs_approx = initialize_future_costs(
+            multi_stock_management=multi_stock_management,
+            starting_pt=trajectory[TimeScenarioIndex(0, 0)],
+        )
 
-    # Parameters
     n_weeks = param.len_week
 
-    # Initializing controls, costs and duals
-    controls: Dict[WeekIndex, List[Dict[AreaIndex, Dict[ScenarioIndex, float]]]] = {}
-    costs: Dict[WeekIndex, List[float]] = {}
-    duals: Dict[WeekIndex, List[Dict[AreaIndex, float]]] = {}
-    all_levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]] = {}
+    for i in range(n_cycle):
+        # Keeping in memory all future costs approximations
+        future_costs_approx_l = {WeekIndex(param.len_week): future_costs_approx}
 
-    # Starting from last week dynamically solving the optimal control problem (from every starting level)
-    week_range = range(n_weeks - 1, -1, -1)
-    if verbose:
-        week_range = tqdm(week_range, colour="Green", desc="Dynamic Solving")
-    for week in week_range:
-        # Getting levels along which we heck
-        levels = multi_stock_management.get_disc(
-            week=week,
-            xNsteps=nSteps_bellman,
-            reference_pt=timescenario_area_value_to_weekly_mean_area_values(
-                trajectory, week, param, multi_stock_management.areas
-            ),
-            correlation_matrix=correlations,
-            method=method,
+        # Initializing controls, costs and duals
+        controls: Dict[WeekIndex, List[Dict[AreaIndex, Dict[ScenarioIndex, float]]]] = (
+            {}
         )
-        all_levels[WeekIndex(week)] = levels
+        costs: Dict[WeekIndex, List[float]] = {}
+        duals: Dict[WeekIndex, List[Dict[AreaIndex, float]]] = {}
+        all_levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]] = {}
 
-        controls_w: List[Dict[AreaIndex, Dict[ScenarioIndex, float]]] = []
-        costs_w: List[float] = []
-        duals_w: List[Dict[AreaIndex, float]] = []
-        for lvl_init in levels:
-
-            # Remove previous constraints / vars
-            problem.solver = pywraplp.Solver.CreateSolver(name_solver)
-            # problem.reset_solver()
-
-            # Rewrite problem
-            problem.write_problem(
+        # Starting from last week dynamically solving the optimal control problem (from every starting level)
+        week_range = range(n_weeks - 1, -1, -1)
+        if verbose:
+            week_range = tqdm(week_range, colour="Green", desc="Dynamic Solving")
+        for week in week_range:
+            # Getting levels along which we heck
+            levels = multi_stock_management.get_disc(
                 week=week,
-                level_init=lvl_init,
-                future_costs_estimation=future_costs_approx,
+                xNsteps=nSteps_bellman,
+                reference_pt=timescenario_area_value_to_weekly_mean_area_values(
+                    trajectory, week, param, multi_stock_management.areas
+                ),
+                correlation_matrix=correlations,
+                method=method,
             )
+            all_levels[WeekIndex(week)] = levels
 
-            # Solve, should we make use of previous Bases ? Not yet, computations still tractable for n<=2
-            try:
-                controls_wls, cost_wl, duals_wl, _ = problem.solve()
-            except ValueError:
-                print(
-                    f"""Failed to solve at week {week} with initial levels {lvl_init}"""
+            controls_w: List[Dict[AreaIndex, Dict[ScenarioIndex, float]]] = []
+            costs_w: List[float] = []
+            duals_w: List[Dict[AreaIndex, float]] = []
+            for lvl_init in levels:
+
+                # Remove previous constraints / vars
+                problem.solver = pywraplp.Solver.CreateSolver(name_solver)
+                # problem.reset_solver()
+
+                # Rewrite problem
+                problem.write_problem(
+                    week=week,
+                    level_init=lvl_init,
+                    future_costs_estimation=future_costs_approx,
                 )
-                print(
-                    f"We were using the following future costs estimation: {[f'Cost(lvl) >= {cost} +  (lvl_0 - {input[0]})*{duals[0]} + (lvl_1 - {input[1]})*{duals[1]}' for input, cost, duals in zip(future_costs_approx.inputs, future_costs_approx.costs, future_costs_approx.duals)]}"
-                )
-                raise ValueError
 
-            # Writing down results
-            controls_w.append(controls_wls)
-            costs_w.append(cost_wl)
-            duals_w.append(duals_wl)
+                # Solve, should we make use of previous Bases ? Not yet, computations still tractable for n<=2
+                try:
+                    controls_wls, cost_wl, duals_wl, _ = problem.solve()
+                except ValueError:
+                    print(
+                        f"""Failed to solve at week {week} with initial levels {lvl_init}"""
+                    )
+                    print(
+                        f"We were using the following future costs estimation: {[f'Cost(lvl) >= {cost} +  (lvl_0 - {input[0]})*{duals[0]} + (lvl_1 - {input[1]})*{duals[1]}' for input, cost, duals in zip(future_costs_approx.inputs, future_costs_approx.costs, future_costs_approx.duals)]}"
+                    )
+                    raise ValueError
 
-        controls[WeekIndex(week)] = controls_w
-        costs[WeekIndex(week)] = costs_w
-        duals[WeekIndex(week)] = duals_w
+                # Writing down results
+                controls_w.append(controls_wls)
+                costs_w.append(cost_wl)
+                duals_w.append(duals_wl)
 
-        # Updating the future estimator
-        # costs_w - np.min(costs_w)
-        future_costs_approx = LinearInterpolator(
-            controls=list_area_value_to_array(levels),
-            costs=costs_w - np.min(costs_w),
-            duals=list_area_value_to_array(duals_w),
-        )
-        future_costs_approx_l[WeekIndex(week)] = future_costs_approx
+            controls[WeekIndex(week)] = controls_w
+            costs[WeekIndex(week)] = costs_w
+            duals[WeekIndex(week)] = duals_w
+
+            # Updating the future estimator
+            # costs_w - np.min(costs_w)
+            future_costs_approx = LinearInterpolator(
+                controls=list_area_value_to_array(levels),
+                costs=costs_w - np.min(costs_w),
+                duals=list_area_value_to_array(duals_w),
+            )
+            future_costs_approx_l[WeekIndex(week)] = future_costs_approx
+        future_costs_approx = future_costs_approx_l[WeekIndex(0)]
     return (
         all_levels,
         costs,
@@ -335,7 +345,7 @@ def get_week_scenario_costs(
 def get_all_costs(
     param: TimeScenarioParameter,
     list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    controls_list: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    controls_list: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
     saving_dir: Optional[str] = None,
     verbose: bool = False,
     already_init: bool = False,
@@ -389,11 +399,11 @@ def get_all_costs(
             try:
                 costs_ws, slopes_ws, iters, times_ws = get_week_scenario_costs(
                     m=m,
-                    controls_list=controls_list[WeekIndex(week)],
+                    controls_list=controls_list[TimeScenarioIndex(week, scenario)],
                 )
             except ValueError:
                 print(
-                    f"Failed at week {week}, the conditions on control were: {controls_list[WeekIndex(week)]}"
+                    f"Failed at week {week}, the conditions on control were: {controls_list[TimeScenarioIndex(week,scenario)]}"
                 )
                 raise ValueError
             tot_iter += iters
@@ -492,7 +502,7 @@ def generate_controls(
     multi_stock_management: MultiStockManagement,
     controls_looked_up: str,
     xNsteps: int,
-) -> Dict[WeekIndex, List[Dict[AreaIndex, float]]]:
+) -> Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]]:
     """
     Generates controls that will be precalculated for every week / scenario
 
@@ -587,11 +597,12 @@ def generate_controls(
 
     controls = np.moveaxis(controls, -1, 0)
     dict_control = {
-        WeekIndex(week): [
+        TimeScenarioIndex(week, scenario): [
             {area: cont for area, cont in zip(multi_stock_management.areas, u)}
             for u in controls[week]
         ]
         for week in range(param.len_week)
+        for scenario in range(param.len_scenario)
     }
     return dict_control
 
@@ -658,88 +669,42 @@ def precalculated_method(
     # Initialize cost functions
     costs_approx = LinearCostEstimator(
         param=param,
-        controls=np.array(
-            [
-                np.broadcast_to(
-                    [[x for x in u.values()] for u in controls_list[WeekIndex(w)]],
-                    [
-                        param.len_scenario,
-                        len(controls_list[WeekIndex(w)]),
-                        len(multi_stock_management.dict_reservoirs),
-                    ],
-                )
-                for w in range(param.len_week)
-            ]
-        ),
-        costs=np.array(
-            [
-                [
-                    np.array(costs[TimeScenarioIndex(w, s)])
-                    for s in range(param.len_scenario)
-                ]
-                for w in range(param.len_week)
-            ]
-        ),
-        duals=np.array(
-            [
-                [
-                    np.array(
-                        [
-                            [y for y in x.values()]
-                            for x in slopes[TimeScenarioIndex(w, s)]
-                        ]
-                    )
-                    for s in range(param.len_scenario)
-                ]
-                for w in range(param.len_week)
-            ]
-        ),
+        controls=controls_list,
+        costs=costs,
+        duals=slopes,
+        type_estimator="LinearDecomposer",
     )
 
-    starting_pt = {
-        a: mng.reservoir.bottom_rule_curve[0] * 0.7
-        + mng.reservoir.upper_rule_curve[0] * 0.3
-        for a, mng in multi_stock_management.dict_reservoirs.items()
-    }
-
-    future_costs_approx = initialize_future_costs(
+    (
+        levels,
+        bellman_costs,
+        bellman_duals,
+        bellman_controls,
+        _,
+    ) = get_bellman_values_from_costs(
+        param=param,
         multi_stock_management=multi_stock_management,
-        starting_pt=starting_pt,
-    )
-
-    trajectory = {
-        TimeScenarioIndex(w, s): {a: x for a, x in starting_pt.items()}
-        for w in range(param.len_week)
-        for s in range(param.len_scenario)
-    }
-
-    correlations = get_correlation_matrix(
-        multi_stock_management=multi_stock_management,
-        corr_type="no_corrs",
-    )
-
-    method = "lines"
-
-    for i in range(2):
-        (
-            levels,
-            bellman_costs,
-            bellman_duals,
-            bellman_controls,
-            future_costs_approx_l,
-        ) = get_bellman_values_from_costs(
-            param=param,
+        costs_approx=costs_approx,
+        future_costs_approx=None,
+        nSteps_bellman=len_bellman,
+        name_solver=name_solver,
+        verbose=verbose,
+        method="lines",
+        trajectory={
+            TimeScenarioIndex(w, s): {
+                a: mng.reservoir.bottom_rule_curve[0] * 0.7
+                + mng.reservoir.upper_rule_curve[0] * 0.3
+                for a, mng in multi_stock_management.dict_reservoirs.items()
+            }
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
+        correlations=get_correlation_matrix(
             multi_stock_management=multi_stock_management,
-            costs_approx=costs_approx,
-            future_costs_approx=future_costs_approx,
-            nSteps_bellman=len_bellman,
-            name_solver=name_solver,
-            verbose=verbose,
-            method=method,
-            trajectory=trajectory,
-            correlations=correlations,
-        )
-        future_costs_approx = future_costs_approx_l[WeekIndex(0)]
+            corr_type="no_corrs",
+        ),
+        n_cycle=2,
+    )
 
     return (
         levels,
@@ -1390,13 +1355,10 @@ def iter_bell_vals(
 
     costs_approx = LinearCostEstimator(
         param=param,
-        controls=timescenario_list_area_value_to_array(
-            controls, param, multi_stock_management.areas
-        ),
-        costs=timescenario_list_value_to_array(costs, param),
-        duals=timescenario_list_area_value_to_array(
-            duals, param, multi_stock_management.areas
-        ),
+        controls=controls,
+        costs=costs,
+        duals=duals,
+        type_estimator="LinearDecomposer",
     )
 
     # Initialize our approximation on future costs
@@ -1664,13 +1626,10 @@ def iter_bell_vals_v2(
 
     costs_approx = LinearCostEstimator(
         param=param,
-        controls=timescenario_list_area_value_to_array(
-            controls_list, param, multi_stock_management.areas
-        ),
-        costs=timescenario_list_value_to_array(costs, param),
-        duals=timescenario_list_area_value_to_array(
-            duals, param, multi_stock_management.areas
-        ),
+        controls=controls_list,
+        costs=costs,
+        duals=duals,
+        type_estimator="LinearDecomposer",
     )
     # Iterative part
     usage_values, bellman_costs, costs_approx, all_uvs, levels_uv, lower_bound = (

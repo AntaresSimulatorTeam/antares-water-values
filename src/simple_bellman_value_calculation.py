@@ -4,6 +4,7 @@ from calculate_reward_and_bellman_values import LinearInterpolator, calculate_VU
 from estimation import (
     BellmanValueEstimation,
     Estimator,
+    LinearCostEstimator,
     PieceWiseLinearInterpolator,
     UniVariateEstimator,
 )
@@ -28,34 +29,6 @@ from type_definition import (
 )
 
 
-def calculate_complete_reward(
-    controls: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-    param: TimeScenarioParameter,
-    multi_stock_management: MultiStockManagement,
-    costs: Dict[TimeScenarioIndex, List[float]],
-    slopes: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-) -> Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]]:
-    reward: Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]] = {}
-
-    for area in multi_stock_management.areas:
-        reward[area] = {}
-        for week in range(param.len_week):
-            for scenario in range(param.len_scenario):
-                r = LinearInterpolator(
-                    controls=np.array(
-                        [u[area] for u in controls[TimeScenarioIndex(week, scenario)]]
-                    ),
-                    costs=np.array(costs[TimeScenarioIndex(week, scenario)]),
-                    duals=np.array(
-                        [s[area] for s in slopes[TimeScenarioIndex(week, scenario)]]
-                    ),
-                )
-
-                reward[area][TimeScenarioIndex(week, scenario)] = r
-
-    return reward
-
-
 def calculate_bellman_value_with_precalculated_reward(
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
@@ -65,7 +38,7 @@ def calculate_bellman_value_with_precalculated_reward(
     name_solver: str = "CLP",
 ) -> tuple[
     Array2D,
-    Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]],
+    LinearCostEstimator,
 ]:
     """
     Algorithm to evaluate Bellman values. First reward is approximated thanks to multiple simulations. Then, Bellman values are computed with the reward approximation.
@@ -112,16 +85,12 @@ def calculate_bellman_value_with_precalculated_reward(
         param=param, list_models=list_models, controls_list=controls
     )
 
-    reward = calculate_complete_reward(
-        controls={
-            TimeScenarioIndex(w, s): [ctrl for ctrl in controls[WeekIndex(w)]]
-            for w in range(param.len_week)
-            for s in range(param.len_scenario)
-        },
+    reward = LinearCostEstimator(
         param=param,
-        multi_stock_management=multi_stock_management,
+        controls=controls,
         costs=costs,
-        slopes=slopes,
+        duals=slopes,
+        type_estimator="LinearInterpolator",
     )
 
     for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
@@ -131,7 +100,7 @@ def calculate_bellman_value_with_precalculated_reward(
             stock_discretization=X,
             time_scenario_param=param,
             reservoir_management=reservoir_management,
-            reward=reward[area],
+            reward=reward,
         )
 
     V0 = V[WeekIndex(0)](reservoir_management.reservoir.initial_level)

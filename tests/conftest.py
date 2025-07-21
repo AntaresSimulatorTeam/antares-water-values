@@ -101,9 +101,9 @@ def starting_pt(
 @pytest.fixture
 def controls_precalculated_one_node_10(
     param: TimeScenarioParameter, reservoir_one_node: Reservoir
-) -> Dict[WeekIndex, List[Dict[AreaIndex, float]]]:
+) -> Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]]:
     return {
-        WeekIndex(w): [
+        TimeScenarioIndex(w, s): [
             {reservoir_one_node.area: x}
             for x in np.linspace(
                 -reservoir_one_node.max_pumping[w] * reservoir_one_node.efficiency,
@@ -112,6 +112,7 @@ def controls_precalculated_one_node_10(
             )
         ]
         for w in range(param.len_week)
+        for s in range(param.len_scenario)
     }
 
 

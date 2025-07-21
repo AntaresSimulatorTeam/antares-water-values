@@ -661,9 +661,7 @@ class AntaresProblem:
         take_into_account_z_and_y: bool,
         find_optimal_basis: bool = True,
         param: Optional[TimeScenarioParameter] = None,
-        reward: Optional[
-            Dict[AreaIndex, Dict[TimeScenarioIndex, LinearInterpolator]]
-        ] = None,
+        reward: Optional[LinearCostEstimator] = None,
     ) -> tuple[
         float,
         int,
@@ -698,7 +696,7 @@ class AntaresProblem:
                                     area
                                 ],
                                 param=param,
-                                reward=reward[area][
+                                reward=reward[
                                     TimeScenarioIndex(self.week, self.scenario)
                                 ],
                             )

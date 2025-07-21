@@ -3,11 +3,7 @@ import pytest
 
 from calculate_reward_and_bellman_values import solve_weekly_problem_with_approximation
 from estimation import PieceWiseLinearInterpolator
-from functions_iterative import (
-    MultiStockManagement,
-    TimeScenarioParameter,
-    solve_weekly_problem_with_approximation,
-)
+from functions_iterative import MultiStockManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import (
     MultiStockManagement,
     generate_controls,
@@ -243,7 +239,7 @@ def test_bellman_value_precalculated_reward(
             assert G[area][TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0])
 
     for week in range(param.len_week - 1, -1, -1):
-        assert vb[:, week] == pytest.approx(-expected_vb[:, week])
+        assert vb[:, week] == pytest.approx(expected_vb[:, week])
 
 
 def test_bellman_value_precalculated_reward_with_multi_stock(
@@ -365,7 +361,7 @@ def test_solve_weekly_problem_with_approximation(
             reward=reward[area][TimeScenarioIndex(week, scenario)],
         )
 
-        assert Vu == pytest.approx(539893423.7863245)
+        assert Vu == pytest.approx(-539893423.7863245)
         assert xf == pytest.approx(2280000.0)
         assert control == pytest.approx(3014776.8947368413)
         assert cost == pytest.approx(539893423.7863245)

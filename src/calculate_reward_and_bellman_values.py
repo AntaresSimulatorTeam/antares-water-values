@@ -53,7 +53,7 @@ def solve_weekly_problem_with_approximation(
                 + level_i
                 + reservoir_management.reservoir.inflow[week, scenario]
             )
-            + V_fut(x_fut[0])
+            - V_fut(x_fut[0])
             + pen(x_fut[0])
             + noise_penalty(x_fut[0])
         )
@@ -88,7 +88,7 @@ def solve_weekly_problem_with_approximation(
     Vu = Vu - noise_penalty(xf)
     cost = reward(control)
 
-    return (Vu, xf, control, cost)
+    return (-Vu, xf, control, cost)
 
 
 def calculate_VU(

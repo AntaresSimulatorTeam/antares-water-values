@@ -186,10 +186,10 @@ expected_vb = np.array(
     ]
 )
 true_list_cut = [
-    (300.0022431781, -848257117.7874993),
-    (200.08020216786073, -943484691.5152471),
-    (100.0003310016, -828694927.2829424),
     (0.0, 0.0),
+    (300.0022431781, -848257117.7874993),
+    (100.0003310016, -828694927.2829424),
+    (200.08020216786073, -943484691.5152471),
 ]
 
 
@@ -218,7 +218,7 @@ def test_itr_control(param: TimeScenarioParameter) -> None:
         assert -G[TimeScenarioIndex(0, 0)].costs[i] + G[TimeScenarioIndex(0, 0)].duals[
             i
         ] * G[TimeScenarioIndex(0, 0)].inputs[i] == pytest.approx(cut[1])
-        assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(cut[0])
+        assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0])
 
     assert -lb == pytest.approx(4410020694.484235)
     assert ub == pytest.approx(4410021160.928989)
@@ -262,7 +262,7 @@ def test_itr_control_with_xpress(param: TimeScenarioParameter) -> None:
             assert -G[TimeScenarioIndex(0, 0)].costs[i] + G[
                 TimeScenarioIndex(0, 0)
             ].duals[i] * G[TimeScenarioIndex(0, 0)].inputs[i] == pytest.approx(cut[1])
-            assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(cut[0])
+            assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0])
 
         assert -lb == pytest.approx(4410020694.484235)
         assert ub == pytest.approx(4410021160.928989)

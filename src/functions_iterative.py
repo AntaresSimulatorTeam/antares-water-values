@@ -63,7 +63,7 @@ def compute_x_multi_scenario(
             np.random.permutation(range(param.len_scenario))
         ):
 
-            obj, xf, u, _ = solve_weekly_problem_with_approximation(
+            _, xf, u, _ = solve_weekly_problem_with_approximation(
                 week=week,
                 scenario=scenario,
                 level_i=initial_x[TimeScenarioIndex(week, trajectory)],
@@ -72,22 +72,6 @@ def compute_x_multi_scenario(
                 param=param,
                 reward=reward[TimeScenarioIndex(week, scenario)],
             )
-
-            if obj == 0:
-                xf = min(
-                    V[WeekIndex(week + 1)].inputs[
-                        V[WeekIndex(week + 1)].inputs
-                        >= reservoir_management.reservoir.bottom_rule_curve[week]
-                    ]
-                )
-                u = min(
-                    -(
-                        xf
-                        - initial_x[TimeScenarioIndex(week, trajectory)]
-                        - reservoir_management.reservoir.inflow[week, scenario]
-                    ),
-                    reservoir_management.reservoir.max_generating[week],
-                )
 
             initial_x[TimeScenarioIndex(week + 1, trajectory)] = xf
             controls[TimeScenarioIndex(week, scenario)] = u
@@ -361,8 +345,8 @@ def itr_control(
         itr_tot.append(current_itr)
         controls_upper.append(ctr)
 
-        print(upper_bound - V0, upper_bound, V0)
-        gap = (upper_bound - V0) / V0
+        print(upper_bound + V0, upper_bound, -V0)
+        gap = (upper_bound + V0) / -V0
         i += 1
         fin = time()
         tot_t.append(fin - debut)

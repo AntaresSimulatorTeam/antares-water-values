@@ -239,8 +239,8 @@ def calculate_reward(
                 basis_0 = Basis([], [])
 
             G[TimeScenarioIndex(week, scenario)].update(
-                controls=np.array([controls[TimeScenarioIndex(week, scenario)]]),
-                duals=np.array([lamb[name_reservoir]]),
+                controls=np.array([[controls[TimeScenarioIndex(week, scenario)]]]),
+                duals=np.array([[lamb[name_reservoir]]]),
                 costs=np.array([beta]),
             )
 

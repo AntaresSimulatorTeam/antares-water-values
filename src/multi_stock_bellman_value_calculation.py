@@ -4,9 +4,7 @@ from itertools import product
 from pathlib import Path
 
 import numpy as np
-import ortools.linear_solver.pywraplp as pywraplp
 from juliacall import Main as jl
-from ortools.linear_solver.python import model_builder
 from scipy.stats import random_correlation
 from tqdm import tqdm
 
@@ -15,8 +13,8 @@ from estimation import LinearCostEstimator, LinearInterpolator
 from functions_iterative import compute_upper_bound
 from optimization import (
     AntaresProblem,
-    Basis,
     WeeklyBellmanProblem,
+    initialize_antares_problems,
     solve_for_optimal_trajectory,
 )
 from reservoir_management import MultiStockManagement
@@ -25,7 +23,6 @@ from type_definition import (
     Dict,
     List,
     Optional,
-    ScenarioIndex,
     TimeScenarioIndex,
     TimeScenarioParameter,
     WeekIndex,
@@ -39,77 +36,6 @@ from type_definition import (
     timescenario_list_area_value_to_array,
     timescenario_list_value_to_array,
 )
-
-
-def initialize_antares_problems(
-    param: TimeScenarioParameter,
-    multi_stock_management: MultiStockManagement,
-    output_path: str,
-    name_solver: str,
-    direct_bellman_calc: bool = True,
-    verbose: bool = False,
-    save_protos: bool = False,
-    load_from_protos: bool = False,
-    saving_dir: Optional[str] = None,
-) -> Dict[TimeScenarioIndex, AntaresProblem]:
-    """
-    Creates Instances of the Antares problem for every week / scenario
-
-    Parameters
-    ----------
-    param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
-    multi_stock_management:MultiStockManagement: Management information for every stock ,
-    output_path:str: Folder containing the mps files generated for our study,
-    name_solver:str: Name of the solver used,
-    direct_bellman_calc:bool: Integrate future costs in the LP formulation
-    verbose:bool: Control displays at runnning time
-
-    Returns
-    -------
-    list_models: Dict[TimeScenarioIndex, AntaresProblem]: Dictionnary with all problems
-    """
-    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
-    week_range = range(param.len_week)
-    if verbose:
-        week_range = tqdm(week_range, desc="Problem initialization", colour="Yellow")
-    for week in week_range:
-        for scenario in range(param.len_scenario):
-            if saving_dir is not None:
-                proto_path = (
-                    saving_dir
-                    + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
-                )
-                already_processed = Path(proto_path).is_file() and load_from_protos
-            else:
-                already_processed = False
-            m = AntaresProblem(
-                scenario=scenario,
-                week=week,
-                path=output_path,
-                saving_directory=saving_dir,
-                itr=1,
-                name_solver=name_solver,
-                name_scenario=param.name_scenario[scenario],
-                already_processed=already_processed,
-            )
-            if already_processed:
-                m.reset_from_loaded_version(
-                    multi_stock_management=multi_stock_management
-                )
-            else:
-                m.create_weekly_problem_itr(
-                    param=param,
-                    multi_stock_management=multi_stock_management,
-                    direct_bellman_calc=direct_bellman_calc,
-                )
-                if save_protos:
-                    proto = model_builder.ModelBuilder().export_to_proto()  # type: ignore[no-untyped-call]
-                    m.solver.ExportModelToProto(output_model=proto)
-                    with open(proto_path, "wb") as file:
-                        pkl.dump((proto, m.stored_variables_and_constraints_ids), file)
-
-            list_models[TimeScenarioIndex(week, scenario)] = m
-    return list_models
 
 
 def get_bellman_values_from_costs(
@@ -163,20 +89,21 @@ def get_bellman_values_from_costs(
         for week in week_range:
             costs_w: List[float] = []
             duals_w: List[Dict[AreaIndex, float]] = []
+            problem = WeeklyBellmanProblem(
+                param=param,
+                multi_stock_management=multi_stock_management,
+                week_costs_estimation=costs_approx.get_week_estimators(week),
+                name_solver=name_solver,
+                divisor=divisor,
+                week=week,
+            )
+
             for lvl_init in levels[WeekIndex(week)]:
 
-                problem = WeeklyBellmanProblem(
-                    param=param,
-                    multi_stock_management=multi_stock_management,
-                    week_costs_estimation=costs_approx.get_week_estimators(week),
-                    name_solver=name_solver,
-                    divisor=divisor,
-                    week=week,
+                _, cost_wl, duals_wl, _ = problem.solve(
                     level_init=lvl_init,
                     future_costs_estimation=bellman_values[WeekIndex(week + 1)],
                 )
-
-                _, cost_wl, duals_wl, _ = problem.solve()
 
                 # Writing down results
                 costs_w.append(cost_wl)
@@ -254,9 +181,6 @@ def get_week_scenario_costs(
     tot_iter = 0
     times = []
 
-    # Initialize Basis
-    basis = Basis([], [])
-
     # Initialize costs
     costs: List[float] = []
     slopes: List[Dict[AreaIndex, float]] = []
@@ -264,7 +188,7 @@ def get_week_scenario_costs(
 
         # Solving the problem
         control_cost, control_slopes, itr, time_taken = (
-            m.solve_with_predefined_controls(control=u, prev_basis=basis)
+            m.solve_with_predefined_controls(control=u)
         )
         tot_iter += itr
         times.append(time_taken)
@@ -273,10 +197,6 @@ def get_week_scenario_costs(
         # print(f"Imposing control {control} costs {costs}, with duals {control_slopes}")
         costs.append(control_cost)
         slopes.append(control_slopes)
-
-        # Save basis
-        rstatus, cstatus = m.get_basis()
-        basis = Basis(rstatus=rstatus, cstatus=cstatus)
     return costs, slopes, tot_iter, times
 
 
@@ -363,8 +283,7 @@ def Lget_costs(
     controls_list: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
     saving_directory: str,
     verbose: bool = False,
-    direct_bellman_calc: bool = True,
-    load_from_protos: bool = False,
+    save_protos: bool = False,
     prefix: str = "",
 ) -> tuple[
     Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
@@ -390,37 +309,16 @@ def Lget_costs(
     for week in week_range:
         if week >= week_start:
             for scenario in range(param.len_scenario):
-                if not (os.path.exists(saving_directory)):
-                    os.makedirs(saving_directory)
-                proto_path = (
-                    saving_directory
-                    + f"/problem-{param.name_scenario[scenario]}-{week+1}.pkl"
-                )
-                already_processed = load_from_protos and Path(proto_path).is_file()
                 m = AntaresProblem(
                     scenario=scenario,
                     week=week,
                     path=output_path,
                     saving_directory=saving_directory,
-                    itr=1,
                     name_solver=name_solver,
-                    name_scenario=param.name_scenario[scenario],
-                    already_processed=already_processed,
+                    save_protos=save_protos,
+                    param=param,
+                    multi_stock_management=multi_stock_management,
                 )
-                if already_processed:
-                    m.reset_from_loaded_version(
-                        multi_stock_management=multi_stock_management
-                    )
-                else:
-                    m.create_weekly_problem_itr(
-                        param=param,
-                        multi_stock_management=multi_stock_management,
-                        direct_bellman_calc=direct_bellman_calc,
-                    )
-                    proto = model_builder.ModelBuilder().export_to_proto()  # type: ignore[no-untyped-call]
-                    m.solver.ExportModelToProto(output_model=proto)
-                    with open(proto_path, "wb") as file:
-                        pkl.dump((proto, m.stored_variables_and_constraints_ids), file)
                 costs_ws, slopes_ws, _, _ = get_week_scenario_costs(
                     m=m,
                     controls_list=controls_list[TimeScenarioIndex(week, scenario)],
@@ -584,7 +482,6 @@ def precalculated_method(
         multi_stock_management=multi_stock_management,
         output_path=output_path,
         name_solver=name_solver,
-        direct_bellman_calc=False,
         verbose=verbose,
     )
 
@@ -943,14 +840,17 @@ def compute_usage_values_from_costs(
                     name_solver=name_solver,
                     divisor=divisor,
                     week=week,
-                    level_init=array_to_area_value(
-                        levels, multi_stock_management.areas
-                    ),
-                    future_costs_estimation=future_costs_approx_l[WeekIndex(week + 1)],
                 )
                 try:
                     # Solve
-                    _, _, dual_vals, level = problem.solve()
+                    _, _, dual_vals, level = problem.solve(
+                        level_init=array_to_area_value(
+                            levels, multi_stock_management.areas
+                        ),
+                        future_costs_estimation=future_costs_approx_l[
+                            WeekIndex(week + 1)
+                        ],
+                    )
                 except ValueError:
                     levels_dict = {
                         area: levels[i]
@@ -1134,7 +1034,7 @@ def cutting_plane_method(
             output_path=output_path,
             name_solver=name_solver,
             verbose=verbose,
-            load_from_protos=True,
+            save_protos=True,
             prefix=f"cut_plan_iter_{iter}_",
         )
 
@@ -1270,7 +1170,7 @@ def iter_bell_vals(
         saving_directory=saving_dir,
         name_solver=name_solver,
         controls_list=controls_list,
-        load_from_protos=True,
+        save_protos=True,
         verbose=verbose,
     )
 
@@ -1452,7 +1352,7 @@ def sddp_cutting_planes(
             saving_directory=saving_dir,
             name_solver=name_solver,
             verbose=False,
-            load_from_protos=True,
+            save_protos=True,
             prefix=f"SDDP_iter_{iter}_",
         )
 
@@ -1539,7 +1439,7 @@ def iter_bell_vals_v2(
         saving_directory=saving_dir,
         name_solver=name_solver,
         controls_list=controls_list,
-        load_from_protos=False,
+        save_protos=False,
         verbose=verbose,
     )
 

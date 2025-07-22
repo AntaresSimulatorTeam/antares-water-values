@@ -1,6 +1,7 @@
 import numpy as np
 import pytest
 
+from optimization import AntaresProblem
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement, ReservoirManagement
 from type_definition import (
@@ -10,7 +11,6 @@ from type_definition import (
     List,
     TimeScenarioIndex,
     TimeScenarioParameter,
-    WeekIndex,
 )
 
 
@@ -263,3 +263,59 @@ def slopes_precalculated_one_node_10() -> (
             ]
         ],
     }
+
+
+@pytest.fixture
+def antares_problem_one_node_xpress(
+    param_one_week: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
+) -> AntaresProblem:
+    return AntaresProblem(
+        scenario=0,
+        week=0,
+        path="test_data/one_node",
+        name_solver="XPRESS_LP",
+        param=param_one_week,
+        multi_stock_management=multi_stock_management_one_node,
+    )
+
+
+@pytest.fixture
+def antares_problem_one_node(
+    param_one_week: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
+) -> AntaresProblem:
+    return AntaresProblem(
+        scenario=0,
+        week=0,
+        path="test_data/one_node",
+        param=param_one_week,
+        multi_stock_management=multi_stock_management_one_node,
+    )
+
+
+@pytest.fixture
+def antares_problem_two_nodes(
+    param: TimeScenarioParameter, multi_stock_management_two_nodes: MultiStockManagement
+) -> AntaresProblem:
+    return AntaresProblem(
+        scenario=0,
+        week=0,
+        path="test_data/two_nodes",
+        param=param,
+        multi_stock_management=multi_stock_management_two_nodes,
+    )
+
+
+@pytest.fixture
+def antares_problem_two_nodes_xpress(
+    param: TimeScenarioParameter, multi_stock_management_two_nodes: MultiStockManagement
+) -> AntaresProblem:
+    return AntaresProblem(
+        scenario=0,
+        week=0,
+        path="test_data/two_nodes",
+        param=param,
+        name_solver="XPRESS_LP",
+        multi_stock_management=multi_stock_management_two_nodes,
+    )

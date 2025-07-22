@@ -9,12 +9,8 @@ from estimation import (
     UniVariateEstimator,
 )
 from functions_iterative import compute_upper_bound
-from multi_stock_bellman_value_calculation import (
-    generate_controls,
-    get_all_costs,
-    initialize_antares_problems,
-)
-from optimization import AntaresProblem
+from multi_stock_bellman_value_calculation import generate_controls, get_all_costs
+from optimization import initialize_antares_problems
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
 from type_definition import (
@@ -70,7 +66,6 @@ def calculate_bellman_value_with_precalculated_reward(
         multi_stock_management=multi_stock_management,
         output_path=output_path,
         name_solver=name_solver,
-        direct_bellman_calc=True,
     )
 
     controls = generate_controls(
@@ -159,21 +154,12 @@ def calculate_bellman_value_directly(
         Bellman values
     """
 
-    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
-    for week in range(param.len_week):
-        for scenario in range(param.len_scenario):
-            m = AntaresProblem(
-                scenario=scenario,
-                week=week,
-                path=output_path,
-                itr=1,
-                name_solver=solver,
-            )
-            m.create_weekly_problem_itr(
-                param=param,
-                multi_stock_management=multi_stock_management,
-            )
-            list_models[TimeScenarioIndex(week, scenario)] = m
+    list_models = initialize_antares_problems(
+        output_path=output_path,
+        name_solver=solver,
+        param=param,
+        multi_stock_management=multi_stock_management,
+    )
 
     stock_discretization = StockDiscretization(X)
 

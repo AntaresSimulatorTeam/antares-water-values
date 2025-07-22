@@ -4,6 +4,7 @@ import pytest
 from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
 from functions_iterative import TimeScenarioParameter, compute_upper_bound
 from multi_stock_bellman_value_calculation import *
+from optimization import initialize_antares_problems
 from reservoir_management import MultiStockManagement
 from type_definition import time_list_area_value_to_array
 
@@ -363,21 +364,12 @@ def test_bellman_value_iterative_method_with_sddp(
         n_states=10,
     )
 
-    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {}
-    for week in range(param.len_week):
-        for scenario in range(param.len_scenario):
-            m = AntaresProblem(
-                scenario=scenario,
-                week=week,
-                path="test_data/two_nodes",
-                itr=1,
-                name_solver="CLP",
-            )
-            m.create_weekly_problem_itr(
-                param=param,
-                multi_stock_management=multi_stock_management_two_nodes,
-            )
-            list_models[TimeScenarioIndex(week, scenario)] = m
+    list_models = initialize_antares_problems(
+        output_path="test_data/two_nodes",
+        name_solver="CLP",
+        param=param,
+        multi_stock_management=multi_stock_management_two_nodes,
+    )
 
     ub, _, _, _ = compute_upper_bound(
         multi_stock_management=multi_stock_management_two_nodes,

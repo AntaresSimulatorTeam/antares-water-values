@@ -35,22 +35,10 @@ def test_iterate_over_stock_discretization() -> None:
 
 
 def test_solve_with_bellman_multi_stock(
-    param: TimeScenarioParameter,
     discretization_two_nodes: Dict[AreaIndex, Array1D],
     multi_stock_management_two_nodes: MultiStockManagement,
+    antares_problem_two_nodes: AntaresProblem,
 ) -> None:
-
-    m = AntaresProblem(
-        scenario=0,
-        week=0,
-        path="test_data/two_nodes",
-        itr=1,
-    )
-    m.create_weekly_problem_itr(
-        param=param,
-        multi_stock_management=multi_stock_management_two_nodes,
-    )
-
     V = {
         "intercept": np.array(
             [
@@ -415,11 +403,13 @@ def test_solve_with_bellman_multi_stock(
         ),
     }
 
-    _, _, Vu, slope, _, xf, _ = m.solve_problem_with_bellman_values(
-        multi_stock_management=multi_stock_management_two_nodes,
-        V=BellmanValueEstimation(V, StockDiscretization(discretization_two_nodes)),
-        level_i=multi_stock_management_two_nodes.get_initial_level(),
-        take_into_account_z_and_y=True,
+    _, _, Vu, slope, _, xf, _ = (
+        antares_problem_two_nodes.solve_problem_with_bellman_values(
+            multi_stock_management=multi_stock_management_two_nodes,
+            V=BellmanValueEstimation(V, StockDiscretization(discretization_two_nodes)),
+            level_i=multi_stock_management_two_nodes.get_initial_level(),
+            take_into_account_z_and_y=True,
+        )
     )
 
     assert Vu == pytest.approx(601088655.5179563)

@@ -10,36 +10,22 @@ from type_definition import AreaIndex, Array1D, Dict
 
 
 def test_create_and_modify_weekly_problem(
-    param: TimeScenarioParameter,
-    multi_stock_management_one_node: MultiStockManagement,
+    antares_problem_one_node: AntaresProblem,
 ) -> None:
-    problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
 
-    problem.create_weekly_problem_itr(
-        param=param, multi_stock_management=multi_stock_management_one_node
-    )
-
-    beta, lamb, _, _ = problem.solve_with_predefined_controls(
+    beta, lamb, _, _ = antares_problem_one_node.solve_with_predefined_controls(
         control={AreaIndex("area"): 0}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(943484691.8759749)
     assert lamb[AreaIndex("area")] == pytest.approx(-200.08020911704824)
 
-    problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
-    problem.create_weekly_problem_itr(
-        param=param, multi_stock_management=multi_stock_management_one_node
-    )
-    beta, lamb, _, _ = problem.solve_with_predefined_controls(
+    beta, lamb, _, _ = antares_problem_one_node.solve_with_predefined_controls(
         control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(38709056.48535345)
     assert lamb[AreaIndex("area")] == pytest.approx(0.0004060626000000001)
 
-    problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
-    problem.create_weekly_problem_itr(
-        param=param, multi_stock_management=multi_stock_management_one_node
-    )
-    beta, lamb, _, _ = problem.solve_with_predefined_controls(
+    beta, lamb, _, _ = antares_problem_one_node.solve_with_predefined_controls(
         control={AreaIndex("area"): -8400000}, prev_basis=Basis([], [])
     )
     assert beta == pytest.approx(20073124196.898315)
@@ -47,53 +33,32 @@ def test_create_and_modify_weekly_problem(
 
 
 def test_create_and_modify_weekly_problem_with_xpress(
-    param: TimeScenarioParameter,
-    multi_stock_management_one_node: MultiStockManagement,
+    antares_problem_one_node_xpress: AntaresProblem,
 ) -> None:
 
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
     if solver:
 
-        problem = AntaresProblem(
-            scenario=0,
-            week=0,
-            path="test_data/one_node",
-            itr=1,
-            name_solver="XPRESS_LP",
-        )
-
-        problem.create_weekly_problem_itr(
-            param=param, multi_stock_management=multi_stock_management_one_node
-        )
-
-        beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={AreaIndex("area"): 0}, prev_basis=Basis([], [])
+        beta, lamb, _, _ = (
+            antares_problem_one_node_xpress.solve_with_predefined_controls(
+                control={AreaIndex("area"): 0}, prev_basis=Basis([], [])
+            )
         )
         assert beta == pytest.approx(943484691.8759749)
         assert lamb[AreaIndex("area")] == pytest.approx(-200.08020911704824)
 
-        problem = AntaresProblem(
-            scenario=0,
-            week=0,
-            path="test_data/one_node",
-            itr=1,
-            name_solver="XPRESS_LP",
-        )
-        problem.create_weekly_problem_itr(
-            param=param, multi_stock_management=multi_stock_management_one_node
-        )
-        beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
+        beta, lamb, _, _ = (
+            antares_problem_one_node_xpress.solve_with_predefined_controls(
+                control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
+            )
         )
         assert beta == pytest.approx(38709056.48535345)
         assert lamb[AreaIndex("area")] == pytest.approx(0.0004060626000000001)
 
-        problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
-        problem.create_weekly_problem_itr(
-            param=param, multi_stock_management=multi_stock_management_one_node
-        )
-        beta, lamb, _, _ = problem.solve_with_predefined_controls(
-            control={AreaIndex("area"): -8400000}, prev_basis=Basis([], [])
+        beta, lamb, _, _ = (
+            antares_problem_one_node_xpress.solve_with_predefined_controls(
+                control={AreaIndex("area"): -8400000}, prev_basis=Basis([], [])
+            )
         )
         assert beta == pytest.approx(20073124196.898315)
         assert lamb[AreaIndex("area")] == pytest.approx(-3000.0013996873)
@@ -102,9 +67,9 @@ def test_create_and_modify_weekly_problem_with_xpress(
 
 
 def test_create_and_modify_weekly_problem_with_bellman_values(
-    param: TimeScenarioParameter,
     multi_stock_management_one_node: MultiStockManagement,
     discretization_one_node: Dict[AreaIndex, Array1D],
+    antares_problem_one_node: AntaresProblem,
 ) -> None:
     multi_stock_management_one_node.dict_reservoirs[
         AreaIndex("area")
@@ -112,11 +77,7 @@ def test_create_and_modify_weekly_problem_with_bellman_values(
     multi_stock_management_one_node.dict_reservoirs[
         AreaIndex("area")
     ].penalty_upper_rule_curve = 1000
-    problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
 
-    problem.create_weekly_problem_itr(
-        param=param, multi_stock_management=multi_stock_management_one_node
-    )
     V = {
         week: PieceWiseLinearInterpolator(
             discretization_one_node[area], np.linspace(-5e9, -3e9, num=20)
@@ -125,22 +86,24 @@ def test_create_and_modify_weekly_problem_with_bellman_values(
         for area in multi_stock_management_one_node.areas
     }
 
-    problem.set_constraints_initial_level_and_bellman_values(
+    antares_problem_one_node._set_constraints_initial_level_and_bellman_values(
         UniVariateEstimator({"area": V[1]}),
         multi_stock_management_one_node.get_initial_level(),
     )
 
-    lp = problem.solver.ExportModelAsLpFormat(False)
+    lp = antares_problem_one_node.solver.ExportModelAsLpFormat(False)
 
     with open("test_data/one_node/lp_problem.txt", "r") as file:
         assert lp == file.read()
 
-    _, _, cout, _, optimal_controls, _, _ = problem.solve_problem_with_bellman_values(
-        multi_stock_management_one_node,
-        UniVariateEstimator({"area": V[1]}),
-        multi_stock_management_one_node.get_initial_level(),
-        True,
-        False,
+    _, _, cout, _, optimal_controls, _, _ = (
+        antares_problem_one_node.solve_problem_with_bellman_values(
+            multi_stock_management_one_node,
+            UniVariateEstimator({"area": V[1]}),
+            multi_stock_management_one_node.get_initial_level(),
+            True,
+            False,
+        )
     )
 
     assert cout == pytest.approx(5046990806.783945)

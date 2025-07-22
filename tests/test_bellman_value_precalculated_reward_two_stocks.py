@@ -44,6 +44,9 @@ def test_weekly_bellman_problem(
         name_solver="CLP",
         divisor={"euro": 1e8, "energy": 1e4},
         week=week,
+    )
+
+    controls, cost, duals, levels = problem.solve(
         level_init={
             a: res.reservoir.capacity / 2
             for a, res in multi_stock_management_two_nodes.dict_reservoirs.items()
@@ -52,8 +55,6 @@ def test_weekly_bellman_problem(
             multi_stock_management_two_nodes
         ),
     )
-
-    controls, cost, duals, levels = problem.solve()
 
     assert np.array(
         [controls[a][ScenarioIndex(0)] for a in multi_stock_management_two_nodes.areas]

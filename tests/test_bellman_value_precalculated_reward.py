@@ -279,7 +279,6 @@ def test_get_all_cost(
         multi_stock_management=multi_stock_management_one_node,
         output_path="test_data/one_node",
         name_solver="CLP",
-        direct_bellman_calc=False,
         verbose=False,
     )
 

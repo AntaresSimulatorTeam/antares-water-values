@@ -16,38 +16,28 @@ from type_definition import AreaIndex, Array1D, Dict, WeekIndex
 def test_basis_with_xpress(
     param_one_week: TimeScenarioParameter,
     multi_stock_management_one_node: MultiStockManagement,
+    antares_problem_one_node_xpress: AntaresProblem,
 ) -> None:
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
     if solver:
 
-        problem = AntaresProblem(
-            scenario=0,
-            week=0,
-            path="test_data/one_node",
-            itr=1,
-            name_solver="XPRESS_LP",
-        )
-
-        problem.create_weekly_problem_itr(
-            param=param_one_week, multi_stock_management=multi_stock_management_one_node
-        )
-
-        beta_1, _, _, _ = problem.solve_with_predefined_controls(
-            control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
+        beta_1, _, _, _ = (
+            antares_problem_one_node_xpress.solve_with_predefined_controls(
+                control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
+            )
         )
 
         problem_2 = AntaresProblem(
             scenario=0,
             week=0,
             path="test_data/one_node",
-            itr=1,
             name_solver="XPRESS_LP",
-        )
-        problem_2.create_weekly_problem_itr(
-            param=param_one_week, multi_stock_management=multi_stock_management_one_node
+            param=param_one_week,
+            multi_stock_management=multi_stock_management_one_node,
         )
         beta_2, _, itr_with_basis, _ = problem_2.solve_with_predefined_controls(
-            control={AreaIndex("area"): 8400000}, prev_basis=problem.basis[-1]
+            control={AreaIndex("area"): 8400000},
+            prev_basis=antares_problem_one_node_xpress.basis[-1],
         )
 
         assert itr_with_basis == 0
@@ -58,23 +48,11 @@ def test_basis_with_upper_bound(
     param_one_week: TimeScenarioParameter,
     multi_stock_management_one_node: MultiStockManagement,
     discretization_one_node: Dict[AreaIndex, Array1D],
+    antares_problem_one_node_xpress: AntaresProblem,
 ) -> None:
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
     if solver:
-        problem = AntaresProblem(
-            scenario=0,
-            week=0,
-            path="test_data/one_node",
-            itr=1,
-            name_solver="XPRESS_LP",
-        )
-
-        problem.create_weekly_problem_itr(
-            param=param_one_week,
-            multi_stock_management=multi_stock_management_one_node,
-        )
-
-        list_models = {TimeScenarioIndex(0, 0): problem}
+        list_models = {TimeScenarioIndex(0, 0): antares_problem_one_node_xpress}
 
         V = {
             area.area: PieceWiseLinearInterpolator(
@@ -83,7 +61,7 @@ def test_basis_with_upper_bound(
             for area in multi_stock_management_one_node.areas
         }
 
-        _, _, _, _ = problem.solve_with_predefined_controls(
+        _, _, _, _ = antares_problem_one_node_xpress.solve_with_predefined_controls(
             control={AreaIndex("area"): 0}, prev_basis=Basis([], [])
         )
 
@@ -97,7 +75,7 @@ def test_basis_with_upper_bound(
             },
         )
 
-        _, _, _, _ = problem.solve_with_predefined_controls(
+        _, _, _, _ = antares_problem_one_node_xpress.solve_with_predefined_controls(
             control={AreaIndex("area"): 8400000}, prev_basis=Basis([], [])
         )
 

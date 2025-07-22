@@ -407,7 +407,7 @@ def test_Lget_costs(
         controls_list=array_to_timescenario_list_area_value(
             expected_controls_list, param, multi_stock_management_two_nodes.areas
         ),
-        load_from_protos=True,
+        save_protos=True,
         verbose=False,
     )
     assert timescenario_list_area_value_to_array(
@@ -570,7 +570,7 @@ def test_get_opt_gap(
         output_path=output_path,
         name_solver=name_solver,
         verbose=False,
-        load_from_protos=True,
+        save_protos=True,
         prefix=f"test_get_opt_gap",
     )
 

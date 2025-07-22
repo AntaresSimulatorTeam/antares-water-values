@@ -10,6 +10,7 @@ from type_definition import (
     Dict,
     List,
     Optional,
+    ScenarioIndex,
     TimeScenarioIndex,
     TimeScenarioParameter,
     Union,
@@ -583,6 +584,12 @@ class LinearCostEstimator:
             Array of ... or LinearInterpolator
         """
         return self.estimators[index]
+
+    def get_week_estimators(self, week: int) -> Dict[ScenarioIndex, LinearInterpolator]:
+        return {
+            ScenarioIndex(s): self.estimators[TimeScenarioIndex(week, s)]
+            for s in range(self.param.len_scenario)
+        }
 
     def update(
         self,

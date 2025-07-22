@@ -811,8 +811,11 @@ class WeeklyBellmanProblem:
         self,
         param: TimeScenarioParameter,
         multi_stock_management: MultiStockManagement,
-        week_costs_estimation: LinearCostEstimator,
+        week_costs_estimation: Dict[ScenarioIndex, LinearInterpolator],
         name_solver: str,
+        week: int,
+        level_init: Dict[AreaIndex, float],
+        future_costs_estimation: LinearInterpolator,
         divisor: dict[str, float] = {"euro": 1.0, "energy": 1.0},
     ) -> None:
         """
@@ -827,8 +830,9 @@ class WeeklyBellmanProblem:
         """
 
         self.precision = 6
-        week_costs_estimation.round(precision=self.precision)
-        week_costs_estimation.remove_redundants(tolerance=0)
+        for estimator in week_costs_estimation.values():
+            estimator.round(precision=self.precision)
+            estimator.count_redundant(tolerance=0, remove=True)
         self.scenarios = {ScenarioIndex(s) for s in range(param.len_scenario)}
         self.name_solver = name_solver
         self.managements = multi_stock_management.dict_reservoirs
@@ -839,13 +843,41 @@ class WeeklyBellmanProblem:
         self.div_energy = divisor["energy"]
         self.div_price = divisor["euro"] / divisor["energy"]
 
+        # Precaution
+        future_costs_estimation.round(precision=self.precision)
+        future_costs_estimation.count_redundant(tolerance=0, remove=True)
+        self.future_costs_estimation = future_costs_estimation
+        self.week = week
+
+        # Base variables and constraints
+        controls, initial_levels, next_levels, overflows = self.get_control_dynamic(
+            level_init=level_init,
+        )
+        control_cost = self.get_control_cost(
+            controls=controls,
+        )
+        future_cost = self.get_future_cost(
+            next_levels=next_levels,
+            future_costs_estimation=future_costs_estimation,
+        )
+        penalty_cost = self.get_penalty_cost(
+            next_levels=next_levels,
+            initial_levels=initial_levels,
+            overflows=overflows,
+        )
+
+        # Create objective function
+        objective = self.solver.Objective()
+        objective.SetCoefficient(control_cost, 1)
+        objective.SetCoefficient(future_cost, 1)
+        objective.SetCoefficient(penalty_cost, 1)
+        objective.SetMinimization()
+
     def reset_solver(self) -> None:
         """Reinitializes the solver so as not to cumulate variables and constraints"""
         self.solver.Clear()
 
-    def get_control_dynamic(
-        self, week: int, level_init: Dict[AreaIndex, float]
-    ) -> tuple[
+    def get_control_dynamic(self, level_init: Dict[AreaIndex, float]) -> tuple[
         Dict[AreaIndex, Dict[ScenarioIndex, pywraplp.Variable]],
         Dict[AreaIndex, pywraplp.Variable],
         Dict[AreaIndex, Dict[ScenarioIndex, pywraplp.Variable]],
@@ -857,13 +889,13 @@ class WeeklyBellmanProblem:
             area: {
                 s: self.solver.NumVar(
                     np.round(
-                        -mng.reservoir.max_pumping[week]
+                        -mng.reservoir.max_pumping[self.week]
                         * mng.reservoir.efficiency
                         / self.div_energy,
                         self.precision,
                     ),
                     np.round(
-                        mng.reservoir.max_generating[week] / self.div_energy,
+                        mng.reservoir.max_generating[self.week] / self.div_energy,
                         self.precision,
                     ),
                     name=f"control_{area}_{s}",
@@ -924,7 +956,7 @@ class WeeklyBellmanProblem:
                 s: self.solver.Add(
                     next_levels[area][s] + overflows[area][s]
                     == np.round(
-                        (level_init[area] + mng.reservoir.inflow[week, s.scenario])
+                        (level_init[area] + mng.reservoir.inflow[self.week, s.scenario])
                         / self.div_energy,
                         self.precision,
                     )
@@ -1002,7 +1034,6 @@ class WeeklyBellmanProblem:
 
     def get_control_cost(
         self,
-        week: int,
         controls: Dict[AreaIndex, Dict[ScenarioIndex, float]],
     ) -> pywraplp.Variable:
         inf = self.solver.infinity()
@@ -1034,15 +1065,9 @@ class WeeklyBellmanProblem:
                 )
                 for ctrl_id, (control, cost, duals) in enumerate(
                     zip(
-                        self.week_costs_estimation[
-                            TimeScenarioIndex(week, s.scenario)
-                        ].inputs,
-                        self.week_costs_estimation[
-                            TimeScenarioIndex(week, s.scenario)
-                        ].costs,
-                        self.week_costs_estimation[
-                            TimeScenarioIndex(week, s.scenario)
-                        ].duals,
+                        self.week_costs_estimation[ScenarioIndex(s.scenario)].inputs,
+                        self.week_costs_estimation[ScenarioIndex(s.scenario)].costs,
+                        self.week_costs_estimation[ScenarioIndex(s.scenario)].duals,
                     )
                 )
             ]
@@ -1065,7 +1090,6 @@ class WeeklyBellmanProblem:
 
     def get_penalty_cost(
         self,
-        week: int,
         next_levels: Dict[AreaIndex, Dict[ScenarioIndex, float]],
         initial_levels: Dict[AreaIndex, float],
         overflows: Dict[AreaIndex, Dict[ScenarioIndex, float]],
@@ -1111,7 +1135,7 @@ class WeeklyBellmanProblem:
                 s: self.solver.Add(
                     curve_penalties[area][s]
                     >= (
-                        mng.reservoir.bottom_rule_curve[week] / self.div_energy
+                        mng.reservoir.bottom_rule_curve[self.week] / self.div_energy
                         - initial_levels[area]
                     )
                     * mng.penalty_bottom_rule_curve
@@ -1131,7 +1155,7 @@ class WeeklyBellmanProblem:
                     curve_penalties[area][s]
                     >= (
                         initial_levels[area]
-                        - mng.reservoir.upper_rule_curve[week] / self.div_energy
+                        - mng.reservoir.upper_rule_curve[self.week] / self.div_energy
                     )
                     * mng.penalty_upper_rule_curve
                     / (len(self.scenarios) * self.div_price),
@@ -1148,7 +1172,7 @@ class WeeklyBellmanProblem:
                 s: self.solver.Add(
                     late_curve_penalties[area][s]
                     >= (
-                        mng.reservoir.bottom_rule_curve[week + 1] / self.div_energy
+                        mng.reservoir.bottom_rule_curve[self.week + 1] / self.div_energy
                         - next_levels[area][s]
                     )
                     * mng.penalty_bottom_rule_curve
@@ -1168,7 +1192,8 @@ class WeeklyBellmanProblem:
                     late_curve_penalties[area][s]
                     >= (
                         next_levels[area][s]
-                        - mng.reservoir.upper_rule_curve[week + 1] / self.div_energy
+                        - mng.reservoir.upper_rule_curve[self.week + 1]
+                        / self.div_energy
                     )
                     * mng.penalty_upper_rule_curve
                     / self.div_price,
@@ -1220,45 +1245,6 @@ class WeeklyBellmanProblem:
         self.overflow_csts = overflow_constraints
         self.total_penalty_cost_cst = total_penalty_cost_constraint
         return penalty_cost
-
-    def write_problem(
-        self,
-        week: int,
-        level_init: Dict[AreaIndex, float],
-        future_costs_estimation: LinearInterpolator,
-    ) -> None:
-
-        # Precaution
-        future_costs_estimation.round(precision=self.precision)
-        future_costs_estimation.count_redundant(tolerance=0, remove=True)
-        self.future_costs_estimation = future_costs_estimation
-
-        # Base variables and constraints
-        controls, initial_levels, next_levels, overflows = self.get_control_dynamic(
-            week=week,
-            level_init=level_init,
-        )
-        control_cost = self.get_control_cost(
-            week=week,
-            controls=controls,
-        )
-        future_cost = self.get_future_cost(
-            next_levels=next_levels,
-            future_costs_estimation=future_costs_estimation,
-        )
-        penalty_cost = self.get_penalty_cost(
-            week=week,
-            next_levels=next_levels,
-            initial_levels=initial_levels,
-            overflows=overflows,
-        )
-
-        # Create objective function
-        objective = self.solver.Objective()
-        objective.SetCoefficient(control_cost, 1)
-        objective.SetCoefficient(future_cost, 1)
-        objective.SetCoefficient(penalty_cost, 1)
-        objective.SetMinimization()
 
     def solve(
         self,
@@ -1371,13 +1357,6 @@ def solve_for_optimal_trajectory(
               Dict[WeekIndex, float],]:
         Optimal trajectory, optimal controls, corresponding costs
     """
-    problem = WeeklyBellmanProblem(
-        param=param,
-        multi_stock_management=multi_stock_management,
-        week_costs_estimation=costs_approx,
-        divisor=divisor,
-        name_solver=name_solver,
-    )
     trajectory = {}
     for scenario in range(param.len_scenario):
         trajectory[TimeScenarioIndex(-1, scenario)] = starting_pt
@@ -1386,8 +1365,12 @@ def solve_for_optimal_trajectory(
     for week in range(param.len_week):
         if week >= 0:
             # Write problem
-            problem.reset_solver()
-            problem.write_problem(
+            problem = WeeklyBellmanProblem(
+                param=param,
+                multi_stock_management=multi_stock_management,
+                week_costs_estimation=costs_approx.get_week_estimators(week),
+                divisor=divisor,
+                name_solver=name_solver,
                 week=week,
                 level_init=timescenario_area_value_to_weekly_mean_area_values(
                     trajectory, week - 1, param, multi_stock_management.areas
@@ -1396,7 +1379,7 @@ def solve_for_optimal_trajectory(
             )
 
             # Solve, might be cool to reuse bases
-            controls_w, cost_w, duals_w, levels_w = problem.solve()
+            controls_w, cost_w, _, levels_w = problem.solve()
             for scenario in range(param.len_scenario):
                 trajectory[TimeScenarioIndex(week, scenario)] = {
                     a: max(

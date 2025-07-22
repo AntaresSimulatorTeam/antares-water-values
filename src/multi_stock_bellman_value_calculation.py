@@ -145,15 +145,6 @@ def get_bellman_values_from_costs(
         duals:Dict[WeekIndex, List[Dict[AreaIndex, float]]]: Dual values of the initial level constraint at every week (and for every level combination),
         final_bellman_values:LinearInterpolator: Final estimation of total system prices
     """
-    # Initializing the Weekly Bellman Problem instance
-    problem = WeeklyBellmanProblem(
-        param=param,
-        multi_stock_management=multi_stock_management,
-        week_costs_estimation=costs_approx,
-        name_solver=name_solver,
-        divisor=divisor,
-    )
-
     if final_bellman_values is None:
         final_bellman_values = initialize_future_costs(
             multi_stock_management=multi_stock_management
@@ -174,12 +165,12 @@ def get_bellman_values_from_costs(
             duals_w: List[Dict[AreaIndex, float]] = []
             for lvl_init in levels[WeekIndex(week)]:
 
-                # Remove previous constraints / vars
-                problem.solver = pywraplp.Solver.CreateSolver(name_solver)
-                # problem.reset_solver()
-
-                # Rewrite problem
-                problem.write_problem(
+                problem = WeeklyBellmanProblem(
+                    param=param,
+                    multi_stock_management=multi_stock_management,
+                    week_costs_estimation=costs_approx.get_week_estimators(week),
+                    name_solver=name_solver,
+                    divisor=divisor,
                     week=week,
                     level_init=lvl_init,
                     future_costs_estimation=bellman_values[WeekIndex(week + 1)],
@@ -868,15 +859,6 @@ def compute_usage_values_from_costs(
     Returns:
         dict[AreaIndex, Dict[WeekIndex,List[float]]]: _description_
     """
-    # Initialize problem
-    problem = WeeklyBellmanProblem(
-        param=param,
-        multi_stock_management=multi_stock_management,
-        week_costs_estimation=costs_approx,
-        name_solver=name_solver,
-        divisor=divisor,
-    )
-
     # Parameter
     n_reservoirs = len(multi_stock_management.dict_reservoirs)
     n_weeks = param.len_week
@@ -953,20 +935,20 @@ def compute_usage_values_from_costs(
     for week in week_range:
         for i, (area, _) in enumerate(multi_stock_management.dict_reservoirs.items()):
             for j, levels in enumerate(levels_to_test[week, :, i]):
-                # Remove previous constraints / vars
-                problem.reset_solver()
-                try:
-                    # Rewrite problem
-                    problem.write_problem(
-                        week=week,
-                        level_init=array_to_area_value(
-                            levels, multi_stock_management.areas
-                        ),
-                        future_costs_estimation=future_costs_approx_l[
-                            WeekIndex(week + 1)
-                        ],
-                    )
 
+                problem = WeeklyBellmanProblem(
+                    param=param,
+                    multi_stock_management=multi_stock_management,
+                    week_costs_estimation=costs_approx.get_week_estimators(week),
+                    name_solver=name_solver,
+                    divisor=divisor,
+                    week=week,
+                    level_init=array_to_area_value(
+                        levels, multi_stock_management.areas
+                    ),
+                    future_costs_estimation=future_costs_approx_l[WeekIndex(week + 1)],
+                )
+                try:
                     # Solve
                     _, _, dual_vals, level = problem.solve()
                 except ValueError:

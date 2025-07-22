@@ -1,6 +1,6 @@
 import numpy as np
 
-from calculate_reward_and_bellman_values import LinearInterpolator, calculate_VU
+from calculate_reward_and_bellman_values import calculate_VU
 from estimation import (
     BellmanValueEstimation,
     Estimator,
@@ -22,7 +22,6 @@ from type_definition import (
     Array1D,
     Array2D,
     Dict,
-    List,
     TimeScenarioIndex,
     TimeScenarioParameter,
     WeekIndex,

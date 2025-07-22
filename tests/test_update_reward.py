@@ -1,7 +1,6 @@
 import numpy as np
-from pytest import approx
 
-from calculate_reward_and_bellman_values import LinearInterpolator
+from estimation import LinearInterpolator
 
 
 def test_init_reward() -> None:

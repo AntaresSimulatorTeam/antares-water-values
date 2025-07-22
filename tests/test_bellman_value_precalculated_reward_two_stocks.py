@@ -1,10 +1,70 @@
 import numpy as np
 import pytest
 
+from estimation import LinearInterpolator
 from functions_iterative import TimeScenarioParameter
-from multi_stock_bellman_value_calculation import precalculated_method
+from multi_stock_bellman_value_calculation import (
+    initialize_future_costs,
+    precalculated_method,
+)
+from optimization import WeeklyBellmanProblem
 from reservoir_management import MultiStockManagement
-from type_definition import WeekIndex, time_list_area_value_to_array
+from type_definition import (
+    ScenarioIndex,
+    TimeScenarioIndex,
+    WeekIndex,
+    time_list_area_value_to_array,
+)
+
+
+def test_weekly_bellman_problem(
+    param: TimeScenarioParameter, multi_stock_management_two_nodes: MultiStockManagement
+) -> None:
+    week = param.len_week - 1
+    # Initialize cost functions
+    costs_approx = {
+        ScenarioIndex(0): LinearInterpolator(
+            controls=np.array(
+                [
+                    [
+                        res.reservoir.max_generating[week]
+                        for res in multi_stock_management_two_nodes.dict_reservoirs.values()
+                    ]
+                ]
+            ),
+            costs=np.array([1e7]),
+            duals=np.array([[-100 for a in multi_stock_management_two_nodes.areas]]),
+        )
+    }
+
+    problem = WeeklyBellmanProblem(
+        param=param,
+        multi_stock_management=multi_stock_management_two_nodes,
+        week_costs_estimation=costs_approx,
+        name_solver="CLP",
+        divisor={"euro": 1e8, "energy": 1e4},
+        week=week,
+        level_init={
+            a: res.reservoir.capacity / 2
+            for a, res in multi_stock_management_two_nodes.dict_reservoirs.items()
+        },
+        future_costs_estimation=initialize_future_costs(
+            multi_stock_management_two_nodes
+        ),
+    )
+
+    controls, cost, duals, levels = problem.solve()
+
+    assert np.array(
+        [controls[a][ScenarioIndex(0)] for a in multi_stock_management_two_nodes.areas]
+    ) == pytest.approx(np.array([236048.693, 419664.0]))
+    assert cost == pytest.approx(17088730.699999996)
+    assert np.array(
+        [duals[a] for a in multi_stock_management_two_nodes.areas]
+    ) == pytest.approx(np.array([-100, 0]))
+    assert np.array(
+        [levels[a][ScenarioIndex(0)] for a in multi_stock_management_two_nodes.areas]
+    ) == pytest.approx(np.array([162266.807, 481561.5]))
 
 
 def test_bellman_value_precalculated_multi_stock(

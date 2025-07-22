@@ -3,7 +3,6 @@ from time import time
 import numpy as np
 
 from calculate_reward_and_bellman_values import (
-    LinearInterpolator,
     ReservoirManagement,
     calculate_VU,
     solve_weekly_problem_with_approximation,

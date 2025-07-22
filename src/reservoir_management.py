@@ -57,54 +57,6 @@ class ReservoirManagement:
         else:
             self.final_level = False
 
-    def get_penalty(self, week: int, len_week: int) -> Callable:
-        """
-        Return a function to evaluate penalities for violating rule curves for any level of stock.
-
-        Parameters
-        ----------
-        week:int :
-            Week considered
-        len_week:int :
-            Total number of weeks
-
-        Returns
-        -------
-
-        """
-        if week == len_week - 1 and self.final_level:
-            pen = interp1d(
-                [
-                    0,
-                    self.final_level,
-                    self.reservoir.capacity,
-                ],
-                [
-                    self.penalty_final_level * (self.final_level),
-                    0,
-                    self.penalty_final_level
-                    * (self.reservoir.capacity - self.final_level),
-                ],
-            )
-        else:
-            pen = interp1d(
-                [
-                    0,
-                    self.reservoir.bottom_rule_curve[week],
-                    self.reservoir.upper_rule_curve[week],
-                    self.reservoir.capacity,
-                ],
-                [
-                    self.penalty_bottom_rule_curve
-                    * (self.reservoir.bottom_rule_curve[week]),
-                    0,
-                    0,
-                    self.penalty_upper_rule_curve
-                    * (self.reservoir.capacity - self.reservoir.upper_rule_curve[week]),
-                ],
-            )
-        return pen
-
 
 class MultiStockManagement:
 

@@ -1,11 +1,7 @@
 import numpy as np
-from scipy.optimize import minimize
 
-from estimation import (
-    LinearCostEstimator,
-    LinearInterpolator,
-    PieceWiseLinearInterpolator,
-)
+from estimation import LinearCostEstimator, PieceWiseLinearInterpolator
+from optimization import solve_weekly_problem_with_approximation
 from reservoir_management import ReservoirManagement
 from type_definition import (
     Array1D,
@@ -14,85 +10,6 @@ from type_definition import (
     TimeScenarioParameter,
     WeekIndex,
 )
-
-
-def solve_weekly_problem_with_approximation(
-    week: int,
-    scenario: int,
-    level_i: float,
-    V_fut: PieceWiseLinearInterpolator,
-    reservoir_management: ReservoirManagement,
-    param: TimeScenarioParameter,
-    reward: LinearInterpolator,
-) -> tuple[float, float, float, float]:
-    """
-    Optimize control of reservoir during a week based on reward approximation and current Bellman values.
-
-    Parameters
-    ----------
-    level_i:float :
-        Initial level of reservoir at the beginning of the week
-    V_fut:callable :
-        Bellman values at the end of the week
-
-    Returns
-    -------
-    Vu:float :
-        Optimal objective value
-    xf:float :
-        Final level of sotck
-    control:float :
-        Optimal control
-    """
-
-    pen = reservoir_management.get_penalty(week=week, len_week=param.len_week)
-
-    def noise_penalty(x: float) -> float:
-        return -0.01 * x
-
-    def objective(x_fut: Array1D) -> float:
-        return (
-            reward(
-                -x_fut[0]
-                + level_i
-                + reservoir_management.reservoir.inflow[week, scenario]
-            )
-            - V_fut(x_fut[0])
-            + pen(x_fut[0])
-            + noise_penalty(x_fut[0])
-        )
-
-    lb = max(
-        0,
-        level_i
-        + reservoir_management.reservoir.inflow[week, scenario]
-        - reservoir_management.reservoir.max_generating[week],
-    )
-    ub = min(
-        reservoir_management.reservoir.capacity,
-        level_i
-        + reservoir_management.reservoir.inflow[week, scenario]
-        + reservoir_management.reservoir.max_pumping[week]
-        * reservoir_management.reservoir.efficiency,
-    )
-
-    res = minimize(
-        objective,
-        x0=[(lb + ub) / 2],
-        method="Nelder-Mead",
-        bounds=[(lb, ub)],
-    )
-    assert res.status == 0
-    xf = res.x[0]
-    control = min(
-        -(xf - level_i - reservoir_management.reservoir.inflow[week, scenario]),
-        reservoir_management.reservoir.max_generating[week],
-    )
-    Vu = objective(np.array([xf]))
-    Vu = Vu - noise_penalty(xf)
-    cost = reward(control)
-
-    return (-Vu, xf, control, cost)
 
 
 def calculate_VU(

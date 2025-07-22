@@ -8,19 +8,21 @@ from typing import Optional
 import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
+from scipy.optimize import minimize
 from tqdm import tqdm
 
-from calculate_reward_and_bellman_values import solve_weekly_problem_with_approximation
 from estimation import (
     BellmanValueEstimation,
     Estimator,
     LinearCostEstimator,
     LinearInterpolator,
+    PieceWiseLinearInterpolator,
     UniVariateEstimator,
 )
-from reservoir_management import MultiStockManagement
+from reservoir_management import MultiStockManagement, ReservoirManagement
 from type_definition import (
     AreaIndex,
+    Array1D,
     Dict,
     List,
     ScenarioIndex,
@@ -149,7 +151,7 @@ class AntaresProblem:
             self._create_weekly_problem_itr(
                 param=param, multi_stock_management=multi_stock_management
             )
-            if save_protos:
+            if save_protos and saving_directory is not None:
                 if not (os.path.exists(saving_directory)):
                     os.makedirs(saving_directory)
                 proto = model_builder.ModelBuilder().export_to_proto()  # type: ignore[no-untyped-call]
@@ -890,7 +892,7 @@ class WeeklyBellmanProblem:
         for estimator in week_costs_estimation.values():
             estimator.round(precision=self.precision)
             estimator.count_redundant(tolerance=0, remove=True)
-        self.scenarios = {ScenarioIndex(s) for s in range(param.len_scenario)}
+        self.scenarios = week_costs_estimation.keys()
         self.name_solver = name_solver
         self.managements = multi_stock_management.dict_reservoirs
         self.week_costs_estimation = week_costs_estimation
@@ -1009,30 +1011,53 @@ class WeeklyBellmanProblem:
         # 0 <= future_cost
         future_cost = self.solver.NumVar(0, inf, name=f"future_cost")
 
-        future_cost_constraints = {
-            s: [
-                self.solver.Add(
-                    future_cost_per_scenario[s]
-                    >= (cost - min(self.future_costs_estimation.costs)) / self.div_euros
-                    + sum(
-                        [
-                            (self.next_levels[area][s] - levels[r] / self.div_energy)
-                            * np.round(duals[r] / self.div_price, self.precision)
-                            for r, area in enumerate(self.managements.keys())
-                        ]
-                    ),
-                    name=f"f_cost_lb_{lvl_id}_{s}",
-                )
-                for lvl_id, (levels, cost, duals) in enumerate(
-                    zip(
-                        self.future_costs_estimation.inputs,
-                        self.future_costs_estimation.costs,
-                        self.future_costs_estimation.duals,
+        if type(self.future_costs_estimation) is LinearInterpolator:
+            future_cost_constraints = {
+                s: [
+                    self.solver.Add(
+                        future_cost_per_scenario[s]
+                        >= (cost - min(self.future_costs_estimation.costs))
+                        / self.div_euros
+                        + sum(
+                            [
+                                (
+                                    self.next_levels[area][s]
+                                    - levels[r] / self.div_energy
+                                )
+                                * np.round(duals[r] / self.div_price, self.precision)
+                                for r, area in enumerate(self.managements.keys())
+                            ]
+                        ),
+                        name=f"f_cost_lb_{lvl_id}_{s}",
                     )
-                )
-            ]
-            for s in self.scenarios
-        }
+                    for lvl_id, (levels, cost, duals) in enumerate(
+                        zip(
+                            self.future_costs_estimation.inputs,
+                            self.future_costs_estimation.costs,
+                            self.future_costs_estimation.duals,
+                        )
+                    )
+                ]
+                for s in self.scenarios
+            }
+        elif type(self.future_costs_estimation) is PieceWiseLinearInterpolator:
+            for area in self.managements:
+                bellman_value = self.future_costs_estimation
+
+                X = bellman_value.inputs
+                cost = bellman_value.costs
+                for s in self.scenarios:
+                    for j in range(len(X) - 1):
+                        if (cost[j + 1] < float("inf")) & (cost[j] < float("inf")):
+                            cst = self.solver.Add(
+                                future_cost_per_scenario[s]
+                                >= (-cost[j + 1] + cost[j])
+                                / (X[j + 1] - X[j])
+                                / self.div_price
+                                * (self.next_levels[area][s] - X[j] / self.div_energy)
+                                - cost[j] / self.div_euros,
+                                name=f"f_cost_lb_{area}_{j}_{s}",
+                            )
 
         # Average all future costs
         # n_scenarios * future_cost >= Σ([future_cost_per_scenario])
@@ -1044,7 +1069,6 @@ class WeeklyBellmanProblem:
 
         self.future_cost_per_scenario = future_cost_per_scenario
         self.future_cost = future_cost
-        self.future_cost_csts = future_cost_constraints
         self.future_cost_tot_cst = future_cost_tot_constraint
 
     def _get_control_cost(
@@ -1216,7 +1240,7 @@ class WeeklyBellmanProblem:
     def solve(
         self,
         level_init: Dict[AreaIndex, float],
-        future_costs_estimation: LinearInterpolator,
+        future_costs_estimation: Union[LinearInterpolator, PieceWiseLinearInterpolator],
         remove_future_costs: bool = False,
         remove_penalties: bool = False,
     ) -> tuple[
@@ -1239,8 +1263,9 @@ class WeeklyBellmanProblem:
             duals:Dict[AreaIndex, Dict[ScenarioIndex, float]]: Dual values of the initial level constraint
         """
         # Precaution
-        future_costs_estimation.round(precision=self.precision)
-        future_costs_estimation.count_redundant(tolerance=0, remove=True)
+        if type(future_costs_estimation) is LinearInterpolator:
+            future_costs_estimation.round(precision=self.precision)
+            future_costs_estimation.count_redundant(tolerance=0, remove=True)
         self.future_costs_estimation = future_costs_estimation
 
         self._get_future_cost()
@@ -1291,6 +1316,13 @@ class WeeklyBellmanProblem:
         cost -= self.future_cost.solution_value() * remove_future_costs
         cost -= self.penalty_cost.solution_value() * remove_penalties
         cost += min(self.future_costs_estimation.costs) / self.div_euros
+        cost -= sum(
+            [
+                self.noise / self.div_price * self.next_levels[area][s].solution_value()
+                for area in self.managements
+                for s in self.scenarios
+            ]
+        ) / len(self.scenarios)
         duals = {
             area: initial_level_constraints[area].dual_value() * self.div_price
             for area in self.managements
@@ -1376,3 +1408,61 @@ def solve_for_optimal_trajectory(
             costs[WeekIndex(week)] = cost_w
 
     return trajectory, controls, costs
+
+
+def solve_weekly_problem_with_approximation(
+    week: int,
+    scenario: int,
+    level_i: float,
+    V_fut: PieceWiseLinearInterpolator,
+    reservoir_management: ReservoirManagement,
+    param: TimeScenarioParameter,
+    reward: LinearInterpolator,
+) -> tuple[float, float, float, float]:
+    """
+    Optimize control of reservoir during a week based on reward approximation and current Bellman values.
+
+    Parameters
+    ----------
+    level_i:float :
+        Initial level of reservoir at the beginning of the week
+    V_fut:callable :
+        Bellman values at the end of the week
+
+    Returns
+    -------
+    Vu:float :
+        Optimal objective value
+    xf:float :
+        Final level of sotck
+    control:float :
+        Optimal control
+    """
+
+    problem = WeeklyBellmanProblem(
+        param=param,
+        multi_stock_management=MultiStockManagement([reservoir_management]),
+        week_costs_estimation={ScenarioIndex(scenario): reward},
+        name_solver="CLP",
+        divisor={"euro": 1e8, "energy": 1e4},
+        week=week,
+        noise=-0.01,
+    )
+
+    control, Vu, _, xf = problem.solve(
+        level_init={reservoir_management.reservoir.area: level_i},
+        future_costs_estimation=V_fut,
+    )
+
+    cost = reward(
+        np.array(
+            [control[reservoir_management.reservoir.area][ScenarioIndex(scenario)]]
+        )
+    )
+
+    return (
+        -Vu,
+        xf[reservoir_management.reservoir.area][ScenarioIndex(scenario)],
+        control[reservoir_management.reservoir.area][ScenarioIndex(scenario)],
+        cost,
+    )

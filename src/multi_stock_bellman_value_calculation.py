@@ -269,7 +269,7 @@ def get_all_costs(
             times[TimeScenarioIndex(week, scenario)] = times_ws
             costs[TimeScenarioIndex(week, scenario)] = costs_ws
             slopes[TimeScenarioIndex(week, scenario)] = slopes_ws
-        if keep_intermed_res:
+        if keep_intermed_res and saving_dir is not None:
             if not (os.path.exists(saving_dir)):
                 os.makedirs(saving_dir)
             with open(filename, "wb") as file:

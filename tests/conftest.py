@@ -1,4 +1,5 @@
 import numpy as np
+import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
 from optimization import AntaresProblem
@@ -269,15 +270,20 @@ def slopes_precalculated_one_node_10() -> (
 def antares_problem_one_node_xpress(
     param_one_week: TimeScenarioParameter,
     multi_stock_management_one_node: MultiStockManagement,
+    antares_problem_one_node: AntaresProblem,
 ) -> AntaresProblem:
-    return AntaresProblem(
-        scenario=0,
-        week=0,
-        path="test_data/one_node",
-        name_solver="XPRESS_LP",
-        param=param_one_week,
-        multi_stock_management=multi_stock_management_one_node,
-    )
+    solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
+    if solver:
+        return AntaresProblem(
+            scenario=0,
+            week=0,
+            path="test_data/one_node",
+            name_solver="XPRESS_LP",
+            param=param_one_week,
+            multi_stock_management=multi_stock_management_one_node,
+        )
+    else:
+        return antares_problem_one_node
 
 
 @pytest.fixture
@@ -309,13 +315,19 @@ def antares_problem_two_nodes(
 
 @pytest.fixture
 def antares_problem_two_nodes_xpress(
-    param: TimeScenarioParameter, multi_stock_management_two_nodes: MultiStockManagement
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+    antares_problem_two_nodes: AntaresProblem,
 ) -> AntaresProblem:
-    return AntaresProblem(
-        scenario=0,
-        week=0,
-        path="test_data/two_nodes",
-        param=param,
-        name_solver="XPRESS_LP",
-        multi_stock_management=multi_stock_management_two_nodes,
-    )
+    solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
+    if solver:
+        return AntaresProblem(
+            scenario=0,
+            week=0,
+            path="test_data/two_nodes",
+            param=param,
+            name_solver="XPRESS_LP",
+            multi_stock_management=multi_stock_management_two_nodes,
+        )
+    else:
+        return antares_problem_two_nodes

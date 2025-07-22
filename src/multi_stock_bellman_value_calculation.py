@@ -270,6 +270,8 @@ def get_all_costs(
             costs[TimeScenarioIndex(week, scenario)] = costs_ws
             slopes[TimeScenarioIndex(week, scenario)] = slopes_ws
         if keep_intermed_res:
+            if not (os.path.exists(saving_dir)):
+                os.makedirs(saving_dir)
             with open(filename, "wb") as file:
                 pkl.dump((costs, slopes), file)
     # print(f"Number of simplex pivot {tot_iter}")
@@ -326,6 +328,8 @@ def Lget_costs(
                 )
                 costs[TimeScenarioIndex(week, scenario)] = costs_ws
                 slopes[TimeScenarioIndex(week, scenario)] = slopes_ws
+            if not (os.path.exists(saving_directory)):
+                os.makedirs(saving_directory)
             with open(filename, "wb") as file:
                 pkl.dump(
                     (week, controls_list, costs, slopes),

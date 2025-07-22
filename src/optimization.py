@@ -1,3 +1,4 @@
+import os as os
 import pickle as pkl
 import re
 from pathlib import Path
@@ -149,6 +150,8 @@ class AntaresProblem:
                 param=param, multi_stock_management=multi_stock_management
             )
             if save_protos:
+                if not (os.path.exists(saving_directory)):
+                    os.makedirs(saving_directory)
                 proto = model_builder.ModelBuilder().export_to_proto()  # type: ignore[no-untyped-call]
                 self.solver.ExportModelToProto(output_model=proto)
                 with open(proto_path, "wb") as file:
@@ -870,6 +873,7 @@ class WeeklyBellmanProblem:
         week_costs_estimation: Dict[ScenarioIndex, LinearInterpolator],
         name_solver: str,
         divisor: dict[str, float] = {"euro": 1.0, "energy": 1.0},
+        noise: float = 0,
     ) -> None:
         """
         Instanciates a Weekly Bellman Problem
@@ -895,32 +899,22 @@ class WeeklyBellmanProblem:
         self.div_euros = divisor["euro"]
         self.div_energy = divisor["energy"]
         self.div_price = divisor["euro"] / divisor["energy"]
-
+        self.param = param
         self.week = week
+        self.noise = noise
 
         # Base variables and constraints
-        controls, initial_levels, next_levels, overflows = self._get_control_dynamic()
-        control_cost = self._get_control_cost(
-            controls=controls,
-        )
-        penalty_cost = self._get_penalty_cost(
-            next_levels=next_levels,
-            initial_levels=initial_levels,
-            overflows=overflows,
-        )
+        self._get_control_dynamic()
+        self._get_control_cost()
+        self._get_penalty_cost()
 
         # Create objective function
         objective = self.solver.Objective()
-        objective.SetCoefficient(control_cost, 1)
-        objective.SetCoefficient(penalty_cost, 1)
+        objective.SetCoefficient(self.control_cost, 1)
+        objective.SetCoefficient(self.penalty_cost, 1)
         objective.SetMinimization()
 
-    def _get_control_dynamic(self) -> tuple[
-        Dict[AreaIndex, Dict[ScenarioIndex, pywraplp.Variable]],
-        Dict[AreaIndex, pywraplp.Variable],
-        Dict[AreaIndex, Dict[ScenarioIndex, pywraplp.Variable]],
-        Dict[AreaIndex, Dict[ScenarioIndex, pywraplp.Variable]],
-    ]:
+    def _get_control_dynamic(self) -> None:
         # ========= Variables =========
         # Controls -max_pumping * efficiency <= X <= max_generating
         controls = {
@@ -1001,13 +995,8 @@ class WeeklyBellmanProblem:
         self.next_levels = next_levels
         self.overflows = overflows
         self.next_level_csts = next_level_constraints
-        return controls, initial_levels, next_levels, overflows
 
-    def _get_future_cost(
-        self,
-        next_levels: Dict[AreaIndex, Dict[ScenarioIndex, float]],
-        future_costs_estimation: LinearInterpolator,
-    ) -> pywraplp.Variable:
+    def _get_future_cost(self) -> None:
 
         inf = self.solver.infinity()
         # ========= Variables ==========
@@ -1024,10 +1013,10 @@ class WeeklyBellmanProblem:
             s: [
                 self.solver.Add(
                     future_cost_per_scenario[s]
-                    >= (cost - min(future_costs_estimation.costs)) / self.div_euros
+                    >= (cost - min(self.future_costs_estimation.costs)) / self.div_euros
                     + sum(
                         [
-                            (next_levels[area][s] - levels[r] / self.div_energy)
+                            (self.next_levels[area][s] - levels[r] / self.div_energy)
                             * np.round(duals[r] / self.div_price, self.precision)
                             for r, area in enumerate(self.managements.keys())
                         ]
@@ -1036,9 +1025,9 @@ class WeeklyBellmanProblem:
                 )
                 for lvl_id, (levels, cost, duals) in enumerate(
                     zip(
-                        future_costs_estimation.inputs,
-                        future_costs_estimation.costs,
-                        future_costs_estimation.duals,
+                        self.future_costs_estimation.inputs,
+                        self.future_costs_estimation.costs,
+                        self.future_costs_estimation.duals,
                     )
                 )
             ]
@@ -1057,12 +1046,10 @@ class WeeklyBellmanProblem:
         self.future_cost = future_cost
         self.future_cost_csts = future_cost_constraints
         self.future_cost_tot_cst = future_cost_tot_constraint
-        return future_cost
 
     def _get_control_cost(
         self,
-        controls: Dict[AreaIndex, Dict[ScenarioIndex, float]],
-    ) -> pywraplp.Variable:
+    ) -> None:
         inf = self.solver.infinity()
         # ========= Variables ==========
         # 0 <= control_cost_per_scenario
@@ -1083,7 +1070,7 @@ class WeeklyBellmanProblem:
                     >= cost / self.div_euros
                     + sum(
                         [
-                            (controls[area][s] - control[r] / self.div_energy)
+                            (self.controls[area][s] - control[r] / self.div_energy)
                             * np.round(duals[r] / self.div_price, self.precision)
                             for r, area in enumerate(self.managements.keys())
                         ]
@@ -1115,23 +1102,9 @@ class WeeklyBellmanProblem:
         self.control_cost_tot_cst = control_cost_tot_constraint
         return control_cost
 
-    def _get_penalty_cost(
-        self,
-        next_levels: Dict[AreaIndex, Dict[ScenarioIndex, float]],
-        initial_levels: Dict[AreaIndex, float],
-        overflows: Dict[AreaIndex, Dict[ScenarioIndex, float]],
-    ) -> pywraplp.Variable:
+    def _get_penalty_cost(self) -> None:
         inf = self.solver.infinity()
         # ========= Variables =========
-        # Curve penalties (>= 0)
-        curve_penalties = {
-            area: {
-                s: self.solver.NumVar(0, inf, name=f"curve_penalty_{area}_{s}")
-                for s in self.scenarios
-            }
-            for area in self.managements.keys()
-        }
-
         # Late penalties (>=0)
         late_curve_penalties = {
             area: {
@@ -1154,82 +1127,52 @@ class WeeklyBellmanProblem:
         penalty_cost = self.solver.NumVar(0, inf, f"penalty_cost")
 
         # ========= Constraints =========
-
-        # Lower curve constraints
         # curve_penalties >= (lvl_low - lvl)*penalty_low
-        low_curve_constraints = {
-            area: {
-                s: self.solver.Add(
-                    curve_penalties[area][s]
-                    >= (
-                        mng.reservoir.bottom_rule_curve[self.week] / self.div_energy
-                        - initial_levels[area]
+        for area, mng in self.managements.items():
+            for s in self.scenarios:
+                if self.week != self.param.len_week - 1 or not mng.final_level:
+                    self.solver.Add(
+                        late_curve_penalties[area][s]
+                        >= (
+                            mng.reservoir.bottom_rule_curve[self.week] / self.div_energy
+                            - self.next_levels[area][s]
+                        )
+                        * mng.penalty_bottom_rule_curve
+                        / self.div_price,
+                        name=f"late_low_curve_cst_{area}_{s}",
                     )
-                    * mng.penalty_bottom_rule_curve
-                    / (len(self.scenarios) * self.div_price),
-                    name=f"low_curve_cst_{area}_{s}",
-                )
-                for s in self.scenarios
-            }
-            for area, mng in self.managements.items()
-        }
-
-        # Upper curve constraints
-        # curve_penalties >= (lvl - lvl_high)*penalty_high
-        sup_curve_constraints = {
-            area: {
-                s: self.solver.Add(
-                    curve_penalties[area][s]
-                    >= (
-                        initial_levels[area]
-                        - mng.reservoir.upper_rule_curve[self.week] / self.div_energy
+                    self.solver.Add(
+                        late_curve_penalties[area][s]
+                        >= (
+                            self.next_levels[area][s]
+                            - mng.reservoir.upper_rule_curve[self.week]
+                            / self.div_energy
+                        )
+                        * mng.penalty_upper_rule_curve
+                        / self.div_price,
+                        name=f"late_sup_curve_cst_{area}_{s}",
                     )
-                    * mng.penalty_upper_rule_curve
-                    / (len(self.scenarios) * self.div_price),
-                    name=f"sup_curve_cst_{area}_{s}",
-                )
-                for s in self.scenarios
-            }
-            for area, mng in self.managements.items()
-        }
-
-        # curve_penalties >= (lvl_low - lvl)*penalty_low
-        late_low_curve_constraints = {
-            area: {
-                s: self.solver.Add(
-                    late_curve_penalties[area][s]
-                    >= (
-                        mng.reservoir.bottom_rule_curve[self.week + 1] / self.div_energy
-                        - next_levels[area][s]
+                else:
+                    self.solver.Add(
+                        late_curve_penalties[area][s]
+                        >= (
+                            mng.final_level / self.div_energy
+                            - self.next_levels[area][s]
+                        )
+                        * mng.penalty_final_level
+                        / self.div_price,
+                        name=f"late_low_curve_cst_{area}_{s}",
                     )
-                    * mng.penalty_bottom_rule_curve
-                    / self.div_price,
-                    name=f"late_low_curve_cst_{area}_{s}",
-                )
-                for s in self.scenarios
-            }
-            for area, mng in self.managements.items()
-        }
-
-        # Upper curve constraints
-        # curve_penalties >= (lvl - lvl_high) * penalty_high
-        late_sup_curve_constraints = {
-            area: {
-                s: self.solver.Add(
-                    late_curve_penalties[area][s]
-                    >= (
-                        next_levels[area][s]
-                        - mng.reservoir.upper_rule_curve[self.week + 1]
-                        / self.div_energy
+                    self.solver.Add(
+                        late_curve_penalties[area][s]
+                        >= (
+                            self.next_levels[area][s]
+                            - mng.final_level / self.div_energy
+                        )
+                        * mng.penalty_final_level
+                        / self.div_price,
+                        name=f"late_sup_curve_cst_{area}_{s}",
                     )
-                    * mng.penalty_upper_rule_curve
-                    / self.div_price,
-                    name=f"late_sup_curve_cst_{area}_{s}",
-                )
-                for s in self.scenarios
-            }
-            for area, mng in self.managements.items()
-        }
 
         # Overflow constraints
         # overflow_penalties >= ((lvl_init - X + inflow) - next_level) * penalty_overflow
@@ -1237,7 +1180,7 @@ class WeeklyBellmanProblem:
             area: {
                 s: self.solver.Add(
                     overflow_penalties[area][s]
-                    >= overflows[area][s]
+                    >= self.overflows[area][s]
                     * (2 * mng.penalty_upper_rule_curve)
                     / self.div_price,
                     name=f"overflow_cst_{area}_{s}",
@@ -1253,7 +1196,9 @@ class WeeklyBellmanProblem:
             len(self.scenarios) * penalty_cost
             >= sum(
                 [
-                    late_curve_penalties[area][s] + overflow_penalties[area][s]
+                    late_curve_penalties[area][s]
+                    + overflow_penalties[area][s]
+                    + self.noise / self.div_price * self.next_levels[area][s]
                     for s in self.scenarios
                     for area in self.managements
                 ]
@@ -1262,13 +1207,8 @@ class WeeklyBellmanProblem:
         )
 
         self.penalty_cost = penalty_cost
-        self.curve_penalties = curve_penalties
         self.late_curve_penalties = late_curve_penalties
         self.overflow_penalties = overflow_penalties
-        self.late_sup_curve_constraints = late_sup_curve_constraints
-        self.late_low_curve_constraints = late_low_curve_constraints
-        self.low_curve_csts = low_curve_constraints
-        self.sup_curve_csts = sup_curve_constraints
         self.overflow_csts = overflow_constraints
         self.total_penalty_cost_cst = total_penalty_cost_constraint
         return penalty_cost
@@ -1303,13 +1243,10 @@ class WeeklyBellmanProblem:
         future_costs_estimation.count_redundant(tolerance=0, remove=True)
         self.future_costs_estimation = future_costs_estimation
 
-        future_cost = self._get_future_cost(
-            next_levels=self.next_levels,
-            future_costs_estimation=future_costs_estimation,
-        )
+        self._get_future_cost()
 
         objective = self.solver.Objective()
-        objective.SetCoefficient(future_cost, 1)
+        objective.SetCoefficient(self.future_cost, 1)
 
         # Initial level constraint  initial_levels == level_init
         initial_level_constraints = {

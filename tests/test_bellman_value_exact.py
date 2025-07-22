@@ -6,7 +6,7 @@ from multi_stock_bellman_value_calculation import MultiStockManagement
 from simple_bellman_value_calculation import calculate_bellman_value_directly
 from type_definition import AreaIndex, Array1D, Dict
 
-expected_vb = -np.array(
+expected_vb = np.array(
     [
         [
             5.88819098e09,

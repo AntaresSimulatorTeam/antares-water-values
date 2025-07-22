@@ -89,16 +89,17 @@ def get_bellman_values_from_costs(
         for week in week_range:
             costs_w: List[float] = []
             duals_w: List[Dict[AreaIndex, float]] = []
-            problem = WeeklyBellmanProblem(
-                param=param,
-                multi_stock_management=multi_stock_management,
-                week_costs_estimation=costs_approx.get_week_estimators(week),
-                name_solver=name_solver,
-                divisor=divisor,
-                week=week,
-            )
 
             for lvl_init in levels[WeekIndex(week)]:
+
+                problem = WeeklyBellmanProblem(
+                    param=param,
+                    multi_stock_management=multi_stock_management,
+                    week_costs_estimation=costs_approx.get_week_estimators(week),
+                    name_solver=name_solver,
+                    divisor=divisor,
+                    week=week,
+                )
 
                 _, cost_wl, duals_wl, _ = problem.solve(
                     level_init=lvl_init,

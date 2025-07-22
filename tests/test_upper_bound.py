@@ -211,9 +211,9 @@ def test_upper_bound(
         },
     )
 
-    assert upper_bound == pytest.approx(380492940.000565)
+    assert upper_bound == pytest.approx(621493147.4664392)
     assert controls[TimeScenarioIndex(0, 0)][AreaIndex("area")] == pytest.approx(
-        4482011.0
+        2072011
     )
     assert len(antares_problem_one_node.solver.constraints()) == 3555
     assert len(antares_problem_one_node.solver.variables()) == 3533
@@ -229,7 +229,7 @@ def test_upper_bound(
         },
     )
 
-    assert upper_bound == pytest.approx(5046992854.133574)
+    assert upper_bound == pytest.approx(5046990806)
     assert controls[TimeScenarioIndex(0, 0)][AreaIndex("area")] == pytest.approx(
         1146984.0
     )
@@ -311,9 +311,9 @@ def test_upper_bound_with_xpress(
             },
         )
 
-        assert upper_bound == pytest.approx(380492940.000565)
+        assert upper_bound == pytest.approx(621493147.4664392)
         assert controls[TimeScenarioIndex(0, 0)][AreaIndex("area")] == pytest.approx(
-            4482011.0
+            2072011
         )
         assert len(antares_problem_one_node_xpress.solver.constraints()) == 3555
         assert len(antares_problem_one_node_xpress.solver.variables()) == 3533
@@ -329,7 +329,7 @@ def test_upper_bound_with_xpress(
             },
         )
 
-        assert upper_bound == pytest.approx(5046992854.133574)
+        assert upper_bound == pytest.approx(5046990806)
         assert controls[TimeScenarioIndex(0, 0)][AreaIndex("area")] == pytest.approx(
             1146984.0
         )

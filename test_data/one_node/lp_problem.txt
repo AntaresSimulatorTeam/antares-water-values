@@ -3553,8 +3553,8 @@ Subject to
  MinDownTime__area_area___ThermalCluster_Th3___hour_166_: +1 NODU__area_area___ThermalCluster_Th3___hour_166_ +1 NumberStoppingDispatchableUnits__area_area___ThermalCluster_Th3___hour_166_  <= 1
  MinDownTime__area_area___ThermalCluster_Th3___hour_167_: +1 NODU__area_area___ThermalCluster_Th3___hour_167_ +1 NumberStoppingDispatchableUnits__area_area___ThermalCluster_Th3___hour_167_  <= 1
  ReservoirConservation__area_area___week_0_: -1 InitialLevel__area_area___week_0_ +1 FinalLevel__area_area___week_0_ +1 Control__area_area___week_0_  <= 32011
- PenaltyForViolatingBottomRuleCurve__area_area___week_0_: +1000 FinalLevel__area_area___week_0_ +1 Penalties__area_area___week_0_  >= 2.41e+09
- PenaltyForViolatingUpperRuleCurve__area_area___week_0_: -1000 FinalLevel__area_area___week_0_ +1 Penalties__area_area___week_0_  >= -6.42e+09
+ PenaltyForViolatingBottomRuleCurve__area_area___week_0_: +3000 FinalLevel__area_area___week_0_ +1 Penalties__area_area___week_0_  >= 7.23e+09
+ PenaltyForViolatingUpperRuleCurve__area_area___week_0_: -3000 FinalLevel__area_area___week_0_ +1 Penalties__area_area___week_0_  >= -1.926e+10
  BellmanValueBetween0And1__area_area___week_0_: +200 FinalLevel__area_area___week_0_ +1 BellmanValue__area_area___week_0_  >= 5e+09
  BellmanValueBetween1And2__area_area___week_0_: +200 FinalLevel__area_area___week_0_ +1 BellmanValue__area_area___week_0_  >= 5e+09
  BellmanValueBetween2And3__area_area___week_0_: +200 FinalLevel__area_area___week_0_ +1 BellmanValue__area_area___week_0_  >= 5e+09

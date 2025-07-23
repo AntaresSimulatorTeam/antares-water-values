@@ -9,7 +9,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 class Launch:
-    def __init__(self, dir_study: str, area: str, MC_years: int, alpha: float, coeff_cost: int, enable_logging: bool, global_export_dir: str | None = None):
+    def __init__(self, dir_study: str, area: str,area_target:str|None, MC_years: int, alpha: float, coeff_cost: int, enable_logging: bool, global_export_dir: str | None = None):
         self.dir_study = dir_study
         self.name_area = area
         self.nb_scenarios = MC_years
@@ -17,11 +17,12 @@ class Launch:
         self.coeff = coeff_cost
         self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir
+        self.area_target = area_target if area_target else area  # Use area_target if provided, otherwise use area
 
     def run(self, actions: list[str] | None = None) -> None:
         # Si uniquement undo_modifications, ne crée aucun dossier d'export ni objet inutile
         if actions is not None and len(actions) == 1 and actions[0] == "undo_modifications":
-            UndoAntaresModifications(self.dir_study, self.name_area).undo_all()
+            UndoAntaresModifications(self.dir_study, self.name_area, self.area_target).undo_all()
             return
 
         if self.global_export_dir is None:
@@ -38,7 +39,7 @@ class Launch:
 
         self.plotter = Plotter(self.bv,self.trajectories)
         self.exporter = Exporter(self.proxy, self.bv,self.trajectories)
-        self.modifier = ModifyAntaresStudy(self.bv,self.trajectories)
+        self.modifier = ModifyAntaresStudy(self.bv,self.trajectories,self.area_target)
 
         if actions is None:
             actions = ["modify_antares_data"]
@@ -75,34 +76,36 @@ class Launch:
             elif action == "modify_antares_data":
                 self.modifier.apply_all()
             elif action == "undo_modifications":
-                UndoAntaresModifications(self.dir_study, self.name_area).undo_all()
+                UndoAntaresModifications(self.dir_study, self.name_area,self.area_target).undo_all()
             else:
                 print(f"Unknown action: {action}")
 
-def run_for_area(area: str, dir_study: str, MC_years: int, alpha: float, coeff_cost: int, enable_logging: bool, actions: list[str] | None = None, global_export_dir: str | None = None) -> None:
+def run_for_area(area: str,area_target:str|None, dir_study: str, MC_years: int, alpha: float, coeff_cost: int, enable_logging: bool, actions: list[str] | None = None, global_export_dir: str | None = None) -> None:
     # Si uniquement undo_modifications, ne passe pas d'export dir
     if actions is not None and len(actions) == 1 and actions[0] == "undo_modifications":
         Launch(
             dir_study=dir_study,
             area=area,
+            area_target=area_target,
             MC_years=MC_years,
             alpha=alpha,
             coeff_cost=coeff_cost,
             enable_logging=enable_logging,
-            global_export_dir=None
+            global_export_dir=None,
         ).run(actions=actions)
     else:
         Launch(
             dir_study=dir_study,
             area=area,
+            area_target=area_target,
             MC_years=MC_years,
             alpha=alpha,
             coeff_cost=coeff_cost,
             enable_logging=enable_logging,
-            global_export_dir=global_export_dir
+            global_export_dir=global_export_dir,
         ).run(actions=actions)
 
-def post_process_shared_files(dir_study: str, areas: list[str]) -> None:
+def post_process_shared_files(dir_study: str, areas: list[str], area_target:str) -> None:
     # ✅ Modifier hydro.ini
     hydro_ini_path = os.path.join(dir_study, "input", "hydro", "hydro.ini")
     config = ConfigParser()
@@ -121,7 +124,7 @@ def post_process_shared_files(dir_study: str, areas: list[str]) -> None:
     # ✅ Modifier scenariobuilder.dat
     sb_lines = []
     for area in areas:
-        file_path = os.path.join(dir_study, "tmp", "scenariobuilder_lines", f"{area}.txt")
+        file_path = os.path.join(dir_study, "tmp", "scenariobuilder_lines", f"{area_target}.txt")
         if os.path.exists(file_path):
             with open(file_path, "r") as f:
                 sb_lines.extend(f.readlines())
@@ -139,6 +142,7 @@ def main() -> None:
     parser.add_argument("--coeff_cost", type=int, required=False,default=1, help="Facteur d'échelle pour la fonction de coût, par défaut vaut 1e9.")
     parser.add_argument("--enable_logging", type=bool, default=False, help="Activer les logs.")
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="Liste des actions à effectuer (ex: export_bellman_values, plot_trajectories, modify_antares_data, undo_modifications, etc.)")
+    parser.add_argument("--area_target", type=str, default=None,help="Zone cible pour les modifications, si None utilise la zone actuelle.")
 
     args = parser.parse_args()
 
@@ -147,6 +151,7 @@ def main() -> None:
         for area in args.area:
             run_for_area(
                 area,
+                args.area_target,
                 args.dir_study,
                 args.MC_years,
                 args.alpha,
@@ -165,13 +170,14 @@ def main() -> None:
     if len(args.area) == 1:
         run_for_area(
             args.area[0],
+            args.area_target,
             args.dir_study,
             args.MC_years,
             args.alpha,
             args.coeff_cost,
             args.enable_logging,
             args.actions,
-            global_export_dir
+            global_export_dir,
         )
     else:
         with ProcessPoolExecutor() as executor:
@@ -179,6 +185,7 @@ def main() -> None:
                 executor.submit(
                     run_for_area,
                     area,
+                    args.area_target,
                     args.dir_study,
                     args.MC_years,
                     args.alpha,
@@ -198,7 +205,7 @@ def main() -> None:
                     traceback.print_exc()
 
             # Post-traitement des fichiers partagés
-            post_process_shared_files(args.dir_study, args.area)
+            post_process_shared_files(args.dir_study, args.area, args.area_target)
 
 if __name__ == "__main__":
     main()

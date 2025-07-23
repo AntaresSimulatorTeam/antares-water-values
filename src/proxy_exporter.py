@@ -85,13 +85,14 @@ class Exporter:
     
 
 class ModifyAntaresStudy:
-    def __init__(self, bv:BellmanValuesProxy, trajectories:OptimalTrajectories):
+    def __init__(self, bv:BellmanValuesProxy, trajectories:OptimalTrajectories, area_target:str):
         self.bv = bv
         self.trajectories = trajectories
         self.nb_weeks = bv.nb_weeks
         self.scenarios = bv.scenarios
         self.dir_study= bv.proxy.dir_study
         self.name_area = bv.proxy.name_area
+        self.area_target = area_target
 
 
     def overwrite_inflows(self) -> None:
@@ -109,13 +110,13 @@ class ModifyAntaresStudy:
     def overwrite_hydro_ini_file(self) -> None:
         flag_dir = os.path.join(self.dir_study, "tmp", "hydro_flags")
         os.makedirs(flag_dir, exist_ok=True)
-        flag_path = os.path.join(flag_dir, f"{self.bv.proxy.name_area}.flag")
+        flag_path = os.path.join(flag_dir, f"{self.name_area}.flag")
         with open(flag_path, "w") as f:
             f.write("false\n")  # indique que la zone doit être désactivée
 
     def create_st_cluster(self) -> None:
-        contenu = f"""[lt_stock_proxy_{self.bv.proxy.name_area}]
-name = lt_stock_proxy_{self.bv.proxy.name_area}
+        contenu = f"""[lt_stock_proxy_{self.area_target}]
+name = lt_stock_proxy_{self.area_target}
 group = PSP_open
 reservoircapacity = {self.bv.proxy.reservoir.capacity}
 initiallevel = 0.500000
@@ -126,7 +127,7 @@ efficiencywithdrawal = {self.bv.proxy.turb_efficiency}
 initialleveloptim = false
 enabled = true
 """
-        list_ini_path = os.path.join(self.dir_study, "input", "st-storage", "clusters", self.name_area, "list.ini")
+        list_ini_path = os.path.join(self.dir_study, "input", "st-storage", "clusters", self.area_target, "list.ini")
         os.makedirs(os.path.dirname(list_ini_path), exist_ok=True)
         with open(list_ini_path, "a") as f:
             f.write(contenu)
@@ -148,15 +149,15 @@ enabled = true
         modulation_withdrawal = np.concatenate([modulation_withdrawal, np.full(24, modulation_withdrawal[-1])])
 
         folder_path = os.path.join(
-            self.dir_study, "input", "st-storage", "series", self.name_area, f"lt_stock_proxy_{self.name_area}"
+            self.dir_study, "input", "st-storage", "series", self.area_target, f"lt_stock_proxy_{self.area_target}"
         )
         os.makedirs(folder_path, exist_ok=True)
-        np.savetxt(os.path.join(folder_path, "PMAX-injection.txt"), modulation_injection, fmt="%.6f")
-        np.savetxt(os.path.join(folder_path, "PMAX-withdrawal.txt"), modulation_withdrawal, fmt="%.6f")
+        np.savetxt(os.path.join(folder_path, "PMAX-injection.txt"), modulation_injection, fmt="%.20f")
+        np.savetxt(os.path.join(folder_path, "PMAX-withdrawal.txt"), modulation_withdrawal, fmt="%.20f")
 
     def create_rule_curve_file(self) -> None:
         folder_path = os.path.join(
-            self.dir_study, "input", "st-storage", "series", self.name_area, f"lt_stock_proxy_{self.name_area}"
+            self.dir_study, "input", "st-storage", "series", self.area_target, f"lt_stock_proxy_{self.area_target}"
         )
         os.makedirs(folder_path, exist_ok=True)
         if hasattr(self.trajectories, "final_lower_rule_curve") and hasattr(self.trajectories, "final_upper_rule_curve"):
@@ -180,11 +181,11 @@ enabled = true
         lines = []
         for mc in range(nbyears):
             trajectory = (mc % self.bv.proxy.weighted_net_load.shape[1]) + 1
-            lines.append(f"sts,{self.name_area},{mc},lt_stock_proxy_{self.name_area}={trajectory}")
+            lines.append(f"sts,{self.area_target},{mc},lt_stock_proxy_{self.area_target}={trajectory}")
 
         sb_dir = os.path.join(self.dir_study, "tmp", "scenariobuilder_lines")
         os.makedirs(sb_dir, exist_ok=True)
-        with open(os.path.join(sb_dir, f"{self.name_area}.txt"), "w") as f:
+        with open(os.path.join(sb_dir, f"{self.area_target}.txt"), "w") as f:
             f.write("\n".join(lines) + "\n")
 
     def adjust_inflow_pmax_withdrawal_constraint(self,balance: np.ndarray,week : int) -> np.ndarray:
@@ -218,17 +219,17 @@ enabled = true
                 balance[hour_start:hour_start + 168, s] -= self.trajectories.inflow_adjust_overflow[w, s, :]
                 balance[hour_start:hour_start + 168, s] = self.adjust_inflow_pmax_withdrawal_constraint(balance[hour_start:hour_start + 168, s], w)
                 balance[hour_start:hour_start + 168, s] = self.adjust_inflows_pmax_injection_constraint(balance[hour_start:hour_start + 168, s], w)
-                # if np.sum(balance[hour_start:hour_start + 168, s])>self.bv.proxy.reservoir.max_weekly_turb[w]*self.bv.proxy.turb_efficiency \
-                #     or np.sum(balance[hour_start:hour_start + 168, s])<-self.bv.proxy.reservoir.max_weekly_pump[w]*self.bv.proxy.reservoir.efficiency:
-                #     raise ValueError(
-                #         f"Erreur pour la zone {self.name_area} dans la semaine {w} pour le scénario {s}: controle : {np.sum(balance[hour_start:hour_start + 168, s])}, \
-                #         turb_max : {self.bv.proxy.reservoir.max_weekly_turb[w]*self.bv.proxy.turb_efficiency},\
-                #         pump_max : {-self.bv.proxy.reservoir.max_weekly_pump[w]*self.bv.proxy.reservoir.efficiency}"
-                #     )
+                if np.sum(balance[hour_start:hour_start + 168, s])>self.bv.proxy.reservoir.max_weekly_turb[w]*self.bv.proxy.turb_efficiency \
+                    or np.sum(balance[hour_start:hour_start + 168, s])<-self.bv.proxy.reservoir.max_weekly_pump[w]*self.bv.proxy.reservoir.efficiency:
+                    raise ValueError(
+                        f"Erreur pour la zone {self.name_area} dans la semaine {w} pour le scénario {s}: controle : {np.sum(balance[hour_start:hour_start + 168, s])}, \
+                        turb_max : {self.bv.proxy.reservoir.max_weekly_turb[w]*self.bv.proxy.turb_efficiency},\
+                        pump_max : {-self.bv.proxy.reservoir.max_weekly_pump[w]*self.bv.proxy.reservoir.efficiency}"
+                    )
         balance = np.vstack([balance, np.zeros((24, len(self.scenarios)))])
         path = os.path.join(
-            self.dir_study, "input", "st-storage", "series", self.name_area,
-            f"lt_stock_proxy_{self.name_area}", "inflows.txt"
+            self.dir_study, "input", "st-storage", "series", self.area_target,
+            f"lt_stock_proxy_{self.area_target}", "inflows.txt"
         )
         np.savetxt(path, balance, fmt="%.20f", delimiter="\t")
 
@@ -240,13 +241,14 @@ enabled = true
         self.create_rule_curve_file()
         self.modify_scenario_builder()
         self.create_inflows_sts()
-        print(f"✅ Antares study modified for area '{self.name_area}'")
+        print(f"✅ Antares study modified for area '{self.area_target if self.area_target else self.name_area}'\n")
 
 
 class UndoAntaresModifications:
-    def __init__(self, dir_study: str, area: str):
+    def __init__(self, dir_study: str, area: str, area_target:str):
         self.dir_study = dir_study
         self.area = area
+        self.area_target = area_target
 
     def restore_inflows(self) -> None:
         inflow_path = os.path.join(
@@ -275,7 +277,7 @@ class UndoAntaresModifications:
 
     def remove_st_cluster_section(self) -> None:
         list_ini_path = os.path.join(
-            self.dir_study, "input", "st-storage", "clusters", self.area, "list.ini"
+            self.dir_study, "input", "st-storage", "clusters", self.area_target, "list.ini"
         )
         if not os.path.exists(list_ini_path):
             print("⚠ list.ini not found.")
@@ -287,7 +289,7 @@ class UndoAntaresModifications:
         new_lines = []
         skip = False
         for line in lines:
-            if line.strip().startswith(f"[lt_stock_proxy_{self.area}]"):
+            if line.strip().startswith(f"[lt_stock_proxy_{self.area_target}]"):
                 skip = True
                 continue
             elif skip and line.strip().startswith("["):
@@ -302,8 +304,8 @@ class UndoAntaresModifications:
 
     def remove_st_series_folder(self) -> None:
         folder = os.path.join(
-            self.dir_study, "input", "st-storage", "series", self.area,
-            f"lt_stock_proxy_{self.area}"
+            self.dir_study, "input", "st-storage", "series", self.area_target,
+            f"lt_stock_proxy_{self.area_target}"
         )
         if os.path.exists(folder):
             shutil.rmtree(folder)
@@ -320,7 +322,7 @@ class UndoAntaresModifications:
         with open(path, "r") as f:
             lines = f.readlines()
 
-        filtered = [line for line in lines if f"lt_stock_proxy_{self.area}" not in line]
+        filtered = [line for line in lines if f"lt_stock_proxy_{self.area_target}" not in line]
 
         with open(path, "w") as f:
             f.writelines(filtered)

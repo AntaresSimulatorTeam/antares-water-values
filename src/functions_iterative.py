@@ -2,29 +2,14 @@ from time import time
 
 import numpy as np
 
-from calculate_reward_and_bellman_values import (
-    ReservoirManagement,
-    calculate_VU,
-    solve_weekly_problem_with_approximation,
-)
-from estimation import (
-    Estimator,
-    LinearCostEstimator,
-    PieceWiseLinearInterpolator,
-    UniVariateEstimator,
-)
-from optimization import AntaresProblem, Basis
-from reservoir_management import MultiStockManagement
-from type_definition import (
-    AreaIndex,
-    Array1D,
-    Dict,
-    List,
-    Optional,
-    TimeScenarioIndex,
-    TimeScenarioParameter,
-    WeekIndex,
-)
+from calculate_reward_and_bellman_values import calculate_VU
+from estimation import (Estimator, LinearCostEstimator,
+                        PieceWiseLinearInterpolator, UniVariateEstimator)
+from optimization import AntaresProblem, Basis, WeeklyBellmanProblem
+from reservoir_management import MultiStockManagement, ReservoirManagement
+from type_definition import (AreaIndex, Array1D, Dict, List, Optional,
+                             ScenarioIndex, TimeScenarioIndex,
+                             TimeScenarioParameter, WeekIndex)
 
 
 def compute_x_multi_scenario(
@@ -55,30 +40,53 @@ def compute_x_multi_scenario(
     """
     initial_x: Dict[TimeScenarioIndex, float] = {}
     for s in range(param.len_scenario):
-        initial_x[TimeScenarioIndex(0, s)] = (
-            reservoir_management.reservoir.initial_level
-        )
+        for w in range(param.len_week+1):
+            initial_x[TimeScenarioIndex(w, s)] = (
+                reservoir_management.reservoir.initial_level
+            )
     np.random.seed(19 * itr)
     controls: Dict[TimeScenarioIndex, float] = {}
 
-    for week in range(param.len_week):
+    if itr == 0:
+        controls = {
+            TimeScenarioIndex(w, s): reservoir_management.reservoir.inflow[w, s]
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        }
+    else:
 
-        for trajectory, scenario in enumerate(
-            np.random.permutation(range(param.len_scenario))
-        ):
+        for week in range(param.len_week):
 
-            _, xf, u, _ = solve_weekly_problem_with_approximation(
-                week=week,
-                scenario=scenario,
-                level_i=initial_x[TimeScenarioIndex(week, trajectory)],
-                V_fut=V[WeekIndex(week + 1)],
-                reservoir_management=reservoir_management,
-                param=param,
-                reward=reward[TimeScenarioIndex(week, scenario)],
-            )
+            for trajectory, scenario in enumerate(
+                np.random.permutation(range(param.len_scenario))
+            ):
 
-            initial_x[TimeScenarioIndex(week + 1, trajectory)] = xf
-            controls[TimeScenarioIndex(week, scenario)] = u
+                problem = WeeklyBellmanProblem(
+                    param=param,
+                    multi_stock_management=MultiStockManagement([reservoir_management]),
+                    week_costs_estimation={
+                        ScenarioIndex(scenario): reward[
+                            TimeScenarioIndex(week, scenario)
+                        ]
+                    },
+                    week=week,
+                )
+
+                u, _, _, xf = problem.solve(
+                    level_init={
+                        reservoir_management.reservoir.area: initial_x[
+                            TimeScenarioIndex(week, trajectory)
+                        ]
+                    },
+                    future_costs_estimation=V[WeekIndex(week + 1)],
+                )
+
+                initial_x[TimeScenarioIndex(week + 1, trajectory)] = xf[
+                    reservoir_management.reservoir.area
+                ][ScenarioIndex(scenario)]
+                controls[TimeScenarioIndex(week, scenario)] = u[
+                    reservoir_management.reservoir.area
+                ][ScenarioIndex(scenario)]
 
     return (initial_x, controls)
 
@@ -334,10 +342,13 @@ def itr_control(
         itr_tot.append(current_itr)
 
         V = calculate_VU(
-            stock_discretization=X,
-            time_scenario_param=param,
-            reservoir_management=reservoir_management,
-            reward=G,
+            levels={
+                WeekIndex(w): [{reservoir_management.reservoir.area: x} for x in X]
+                for w in range(param.len_week + 1)
+            },
+            param=param,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
+            costs_approx=G,
         )
 
         V0 = V[WeekIndex(0)](reservoir_management.reservoir.initial_level)

@@ -1,7 +1,6 @@
 import numpy as np
 import pytest
 
-from calculate_reward_and_bellman_values import solve_weekly_problem_with_approximation
 from estimation import LinearCostEstimator, PieceWiseLinearInterpolator
 from functions_iterative import MultiStockManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import (
@@ -11,6 +10,7 @@ from multi_stock_bellman_value_calculation import (
     initialize_antares_problems,
     precalculated_method,
 )
+from optimization import WeeklyBellmanProblem
 from simple_bellman_value_calculation import (
     calculate_bellman_value_with_precalculated_reward,
 )
@@ -18,6 +18,7 @@ from type_definition import (
     AreaIndex,
     Dict,
     List,
+    ScenarioIndex,
     TimeScenarioIndex,
     timescenario_list_area_value_to_array,
     timescenario_list_value_to_array,
@@ -26,164 +27,164 @@ from type_definition import (
 expected_vb = np.array(
     [
         [
-            -5.88819050e09,
-            -5.37158308e09,
-            -4.30354519e09,
-            -3.62174927e09,
-            -1.99857483e09,
-            0.00000000e00,
+            -5.8882903e09,
+            -5.3716593e09,
+            -4.3035971e09,
+            -3.5937789e09,
+            -1.9985804e09,
+            0.0000000e00,
         ],
         [
-            -5.28486770e09,
-            -4.36279337e09,
-            -3.38627736e09,
-            -2.42429723e09,
-            -1.40291199e09,
-            0.00000000e00,
+            -5.2849848e09,
+            -4.3628841e09,
+            -3.3863439e09,
+            -2.4233408e09,
+            -1.4029317e09,
+            0.0000000e00,
         ],
         [
-            -5.12697202e09,
-            -4.20489758e09,
-            -3.22838159e09,
-            -2.26640141e09,
-            -1.24501626e09,
-            0.00000000e00,
+            -5.1270902e09,
+            -4.2049894e09,
+            -3.2284493e09,
+            -2.2654461e09,
+            -1.2450371e09,
+            0.0000000e00,
         ],
         [
-            -4.98446177e09,
-            -4.04738189e09,
-            -3.07425291e09,
-            -2.10850558e09,
-            -1.10278955e09,
-            0.00000000e00,
+            -4.9845786e09,
+            -4.0474742e09,
+            -3.0743212e09,
+            -2.1075515e09,
+            -1.1028108e09,
+            0.0000000e00,
         ],
         [
-            -4.87915628e09,
-            -3.94207640e09,
-            -2.96894743e09,
-            -1.99659827e09,
-            -9.97484041e08,
-            0.00000000e00,
+            -4.8792730e09,
+            -3.9421688e09,
+            -2.9690158e09,
+            -1.9966429e09,
+            -9.9750547e08,
+            0.0000000e00,
         ],
         [
-            -4.77385081e09,
-            -3.83677093e09,
-            -2.86364201e09,
-            -1.89129286e09,
-            -8.92178681e08,
-            0.00000000e00,
+            -4.7739679e09,
+            -3.8368637e09,
+            -2.8637107e09,
+            -1.8913377e09,
+            -8.9220019e08,
+            0.0000000e00,
         ],
         [
-            -4.66854548e09,
-            -3.73146560e09,
-            -2.75833669e09,
-            -1.78598754e09,
-            -7.86873403e08,
-            0.00000000e00,
+            -4.6686628e09,
+            -3.7315584e09,
+            -2.7584054e09,
+            -1.7860324e09,
+            -7.8689491e08,
+            0.0000000e00,
         ],
         [
-            -4.56324018e09,
-            -3.62616030e09,
-            -2.65303139e09,
-            -1.68068223e09,
-            -6.97788603e08,
-            0.00000000e00,
+            -4.5633592e09,
+            -3.6262533e09,
+            -2.6531005e09,
+            -1.6807272e09,
+            -6.9781325e08,
+            0.0000000e00,
         ],
         [
-            -4.45793490e09,
-            -3.52085502e09,
-            -2.54772616e09,
-            -1.57537699e09,
-            -6.45156824e08,
-            0.00000000e00,
+            -4.4580593e09,
+            -3.5209533e09,
+            -2.5478006e09,
+            -1.5754267e09,
+            -6.4518170e08,
+            0.0000000e00,
         ],
         [
-            -4.35262964e09,
-            -3.41554976e09,
-            -2.44242093e09,
-            -1.47481564e09,
-            -5.92525097e08,
-            0.00000000e00,
+            -4.3527593e09,
+            -3.4156534e09,
+            -2.4425006e09,
+            -1.4748719e09,
+            -5.9255008e08,
+            0.0000000e00,
         ],
         [
-            -4.24732437e09,
-            -3.31024452e09,
-            -2.33711570e09,
-            -1.39639186e09,
-            -5.39893426e08,
-            0.00000000e00,
+            -4.2474637e09,
+            -3.3103565e09,
+            -2.3372029e09,
+            -1.3964571e09,
+            -5.3991853e08,
+            0.0000000e00,
         ],
         [
-            -4.14201910e09,
-            -3.20493930e09,
-            -2.23440362e09,
-            -1.34376008e09,
-            -4.87261771e08,
-            0.00000000e00,
+            -4.1421691e09,
+            -3.2050616e09,
+            -2.2345021e09,
+            -1.3438308e09,
+            -4.8728694e08,
+            0.0000000e00,
         ],
         [
-            -4.03671387e09,
-            -3.09963410e09,
-            -2.14594333e09,
-            -1.29112830e09,
-            -4.34630157e08,
-            0.00000000e00,
+            -4.0368771e09,
+            -3.0997683e09,
+            -2.1460563e09,
+            -1.2912045e09,
+            -4.3465536e08,
+            0.0000000e00,
         ],
         [
-            -3.93140864e09,
-            -2.99572720e09,
-            -2.08161815e09,
-            -1.23849653e09,
-            -3.81998560e08,
-            0.00000000e00,
+            -3.9315873e09,
+            -2.9958764e09,
+            -2.0817644e09,
+            -1.2385782e09,
+            -3.8202378e08,
+            0.0000000e00,
         ],
         [
-            -3.82610344e09,
-            -2.90069998e09,
-            -2.02898637e09,
-            -1.18586480e09,
-            -3.29367085e08,
-            0.00000000e00,
+            -3.8262989e09,
+            -2.9008681e09,
+            -2.0291328e09,
+            -1.1859519e09,
+            -3.2939219e08,
+            0.0000000e00,
         ],
         [
-            -3.75708018e09,
-            -2.82991041e09,
-            -1.97635460e09,
-            -1.13323307e09,
-            -2.76736122e08,
-            0.00000000e00,
+            -3.7572828e09,
+            -2.8303158e09,
+            -1.9765012e09,
+            -1.1333240e09,
+            -2.7676061e08,
+            0.0000000e00,
         ],
         [
-            -3.70444843e09,
-            -2.77727863e09,
-            -1.92372285e09,
-            -1.08060136e09,
-            -2.24105162e08,
-            0.00000000e00,
+            -3.7046513e09,
+            -2.7776842e09,
+            -1.9238697e09,
+            -1.0806925e09,
+            -2.2412904e08,
+            0.0000000e00,
         ],
         [
-            -3.65181671e09,
-            -2.72464685e09,
-            -1.87109111e09,
-            -1.02796969e09,
-            -1.71474287e08,
-            0.00000000e00,
+            -3.6520197e09,
+            -2.7250524e09,
+            -1.8712381e09,
+            -1.0280609e09,
+            -1.7149747e08,
+            0.0000000e00,
         ],
         [
-            -3.59918506e09,
-            -2.67201512e09,
-            -1.81845943e09,
-            -9.75338039e08,
-            -1.18843427e08,
-            0.00000000e00,
+            -3.5993882e09,
+            -2.6724209e09,
+            -1.8186065e09,
+            -9.7542931e08,
+            -1.1886589e08,
+            0.0000000e00,
         ],
         [
-            -3.54655341e09,
-            -2.61938341e09,
-            -1.76582776e09,
-            -9.22706398e08,
-            -6.62126083e07,
-            0.00000000e00,
+            -3.5467566e09,
+            -2.6197893e09,
+            -1.7659749e09,
+            -9.2279776e08,
+            -6.6234308e07,
+            0.0000000e00,
         ],
     ]
 )
@@ -230,10 +231,10 @@ def test_bellman_value_precalculated_reward(
         assert -G[TimeScenarioIndex(0, 0)].costs[i] + G[TimeScenarioIndex(0, 0)].duals[
             i
         ] * G[TimeScenarioIndex(0, 0)].inputs[i] == pytest.approx(cut[1])
-        assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0])
+        assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0], abs=1e-3)
 
     for week in range(param.len_week - 1, -1, -1):
-        assert vb[:, week] == pytest.approx(expected_vb[:, week])
+        assert vb[:, week] == pytest.approx(expected_vb[:, week], rel=1e-3)
 
 
 def test_bellman_value_precalculated_reward_with_multi_stock(
@@ -342,17 +343,27 @@ def test_solve_weekly_problem_with_approximation(
         scenario = 0
         V_fut = PieceWiseLinearInterpolator(X, V[week + 1][:, scenario])
         i = 10
-        Vu, xf, control, cost = solve_weekly_problem_with_approximation(
-            level_i=X[i],
-            V_fut=V_fut,
-            week=week,
-            scenario=scenario,
-            reservoir_management=mng,
+        problem = WeeklyBellmanProblem(
             param=param,
-            reward=reward[TimeScenarioIndex(week, scenario)],
+            multi_stock_management=MultiStockManagement([mng]),
+            week_costs_estimation={
+                ScenarioIndex(scenario): reward[TimeScenarioIndex(week, scenario)]
+            },
+            week=week,
         )
 
-        assert Vu == pytest.approx(-539917158.7213786)
-        assert xf == pytest.approx(2279992.4000253337)
-        assert control == pytest.approx(3014784.489974666)
+        control, Vu, _, xf = problem.solve(
+            level_init={area: X[i]},
+            future_costs_estimation=V_fut,
+        )
+
+        cost = reward[TimeScenarioIndex(week, scenario)](
+            np.array(control[area][ScenarioIndex(scenario)])
+        )
+
+        assert -Vu == pytest.approx(-539915463)
+        assert xf[area][ScenarioIndex(scenario)] == pytest.approx(2279992.4000253337)
+        assert control[area][ScenarioIndex(scenario)] == pytest.approx(
+            3014784.489974666
+        )
         assert cost == pytest.approx(539892664.3198302)

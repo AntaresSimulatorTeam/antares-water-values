@@ -8,7 +8,6 @@ from typing import Optional
 import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 from ortools.linear_solver.python import model_builder
-from scipy.optimize import minimize
 from tqdm import tqdm
 
 from estimation import (
@@ -19,10 +18,9 @@ from estimation import (
     PieceWiseLinearInterpolator,
     UniVariateEstimator,
 )
-from reservoir_management import MultiStockManagement, ReservoirManagement
+from reservoir_management import MultiStockManagement
 from type_definition import (
     AreaIndex,
-    Array1D,
     Dict,
     List,
     ScenarioIndex,
@@ -470,9 +468,7 @@ class AntaresProblem:
         for area in self.range_reservoir:
             self._set_constraints_predefined_control(control[area], area)
         try:
-            beta, lamb, _, _, _, itr, computing_time = self._solve_problem(
-                direct_bellman_mode=False
-            )
+            beta, lamb, _, _, _, itr, computing_time = self._solve_problem()
             # print(f"✔ for controls {control}")
         except ValueError:
             print(f"✘ for controls {control}")
@@ -607,7 +603,7 @@ class AntaresProblem:
                 0,
             )
 
-    def _solve_problem(self, direct_bellman_mode: bool = True) -> tuple[
+    def _solve_problem(self) -> tuple[
         float,
         Dict[AreaIndex, float],
         Dict[AreaIndex, float],
@@ -633,12 +629,8 @@ class AntaresProblem:
             beta = float(self.solver.Objective().Value())
             xf = self._get_solution_value("final_level")
             lamb = self._get_dual_value("energy_constraint")
-            if direct_bellman_mode:
-                z = self._get_solution_value("final_bellman_value")
-                y = self._get_solution_value("penalties")
-            else:
-                z = {}
-                y = {}
+            z = self._get_solution_value("final_bellman_value")
+            y = self._get_solution_value("penalties")
             return (beta, lamb, xf, y, z, itr, end - start)
 
         else:
@@ -694,29 +686,30 @@ class AntaresProblem:
 
         if find_optimal_basis and type(V) is UniVariateEstimator:
             if len(self.control_basis) >= 1:
-                dict_likely_control = {}
                 if len(self.control_basis) >= 2:
                     assert reward is not None
                     assert param is not None
-                    for area in self.range_reservoir:
+                    problem = WeeklyBellmanProblem(
+                        param=param,
+                        multi_stock_management=multi_stock_management,
+                        week_costs_estimation={
+                            ScenarioIndex(self.scenario): reward[
+                                TimeScenarioIndex(self.week, self.scenario)
+                            ]
+                        },
+                        week=self.week,
+                    )
 
-                        _, _, likely_control, _ = (
-                            solve_weekly_problem_with_approximation(
-                                level_i=level_i[area],
-                                V_fut=V[area.area],
-                                week=self.week,
-                                scenario=self.scenario,
-                                reservoir_management=multi_stock_management.dict_reservoirs[
-                                    area
-                                ],
-                                param=param,
-                                reward=reward[
-                                    TimeScenarioIndex(self.week, self.scenario)
-                                ],
-                            )
-                        )
-                        dict_likely_control[area] = likely_control
-                    basis = self._find_closest_basis(dict_likely_control)
+                    likely_control, _, _, _ = problem.solve(
+                        level_init=level_i,
+                        future_costs_estimation=[v for v in V.estimators.values()][0],
+                    )
+                    basis = self._find_closest_basis(
+                        {
+                            a: u[ScenarioIndex(self.scenario)]
+                            for a, u in likely_control.items()
+                        }
+                    )
                 else:
                     basis = self.basis[0]
                 self._load_basis(basis)
@@ -873,9 +866,8 @@ class WeeklyBellmanProblem:
         multi_stock_management: MultiStockManagement,
         week: int,
         week_costs_estimation: Dict[ScenarioIndex, LinearInterpolator],
-        name_solver: str,
+        name_solver: str = "CLP",
         divisor: dict[str, float] = {"euro": 1.0, "energy": 1.0},
-        noise: float = 0,
     ) -> None:
         """
         Instanciates a Weekly Bellman Problem
@@ -903,7 +895,6 @@ class WeeklyBellmanProblem:
         self.div_price = divisor["euro"] / divisor["energy"]
         self.param = param
         self.week = week
-        self.noise = noise
 
         # Base variables and constraints
         self._get_control_dynamic()
@@ -939,17 +930,6 @@ class WeeklyBellmanProblem:
             for area, mng in self.managements.items()
         }
 
-        # Overflow 0 <= ovrflw
-        overflows = {
-            area: {
-                s: self.solver.NumVar(
-                    0, self.solver.infinity(), name=f"overflow_{area}_{s}"
-                )
-                for s in self.scenarios
-            }
-            for area in self.managements
-        }
-
         # Initial levels 0 <= lvl <= capacity
         initial_levels = {
             area: self.solver.NumVar(
@@ -975,28 +955,36 @@ class WeeklyBellmanProblem:
 
         # ========= Constraints =========
         # Next level constraints next_level <= initial_level - X + inflow
-        next_level_constraints = {
-            area: {
-                s: self.solver.Add(
-                    next_levels[area][s] + overflows[area][s]
-                    == np.round(
-                        (mng.reservoir.inflow[self.week, s.scenario]) / self.div_energy,
-                        self.precision,
+        for area, mng in self.managements.items():
+            for s in self.scenarios:
+                if mng.overflow:
+                    self.solver.Add(
+                        next_levels[area][s]
+                        <= np.round(
+                            (mng.reservoir.inflow[self.week, s.scenario])
+                            / self.div_energy,
+                            self.precision,
+                        )
+                        + initial_levels[area]
+                        - controls[area][s],
+                        name=f"dynamic_cst_{area}_{s}",
                     )
-                    + initial_levels[area]
-                    - controls[area][s],
-                    name=f"dynamic_cst_{area}_{s}",
-                )
-                for s in self.scenarios
-            }
-            for area, mng in self.managements.items()
-        }
+                else:
+                    self.solver.Add(
+                        next_levels[area][s]
+                        == np.round(
+                            (mng.reservoir.inflow[self.week, s.scenario])
+                            / self.div_energy,
+                            self.precision,
+                        )
+                        + initial_levels[area]
+                        - controls[area][s],
+                        name=f"dynamic_cst_{area}_{s}",
+                    )
 
         self.controls = controls
         self.initial_levels = initial_levels
         self.next_levels = next_levels
-        self.overflows = overflows
-        self.next_level_csts = next_level_constraints
 
     def _get_future_cost(self) -> None:
 
@@ -1138,17 +1126,8 @@ class WeeklyBellmanProblem:
             for area in self.managements.keys()
         }
 
-        # Overflow penalties (>= 0)
-        overflow_penalties = {
-            area: {
-                s: self.solver.NumVar(0, inf, name=f"overflow_penalty_{area}_{s}")
-                for s in self.scenarios
-            }
-            for area in self.managements.keys()
-        }
-
-        # Penalty cost (>= 0)
-        penalty_cost = self.solver.NumVar(0, inf, f"penalty_cost")
+        # Penalty cost (free)
+        penalty_cost = self.solver.NumVar(-inf, inf, f"penalty_cost")
 
         # ========= Constraints =========
         # curve_penalties >= (lvl_low - lvl)*penalty_low
@@ -1198,22 +1177,6 @@ class WeeklyBellmanProblem:
                         name=f"late_sup_curve_cst_{area}_{s}",
                     )
 
-        # Overflow constraints
-        # overflow_penalties >= ((lvl_init - X + inflow) - next_level) * penalty_overflow
-        overflow_constraints = {
-            area: {
-                s: self.solver.Add(
-                    overflow_penalties[area][s]
-                    >= self.overflows[area][s]
-                    * (2 * mng.penalty_upper_rule_curve)
-                    / self.div_price,
-                    name=f"overflow_cst_{area}_{s}",
-                )
-                for s in self.scenarios
-            }
-            for area, mng in self.managements.items()
-        }
-
         # Total penalty per scenario
         # total_penalty >= Σ Σ curve_pen + overflow_pen
         total_penalty_cost_constraint = self.solver.Add(
@@ -1221,8 +1184,6 @@ class WeeklyBellmanProblem:
             >= sum(
                 [
                     late_curve_penalties[area][s]
-                    + overflow_penalties[area][s]
-                    + self.noise / self.div_price * self.next_levels[area][s]
                     for s in self.scenarios
                     for area in self.managements
                 ]
@@ -1232,8 +1193,6 @@ class WeeklyBellmanProblem:
 
         self.penalty_cost = penalty_cost
         self.late_curve_penalties = late_curve_penalties
-        self.overflow_penalties = overflow_penalties
-        self.overflow_csts = overflow_constraints
         self.total_penalty_cost_cst = total_penalty_cost_constraint
         return penalty_cost
 
@@ -1315,14 +1274,8 @@ class WeeklyBellmanProblem:
         # Removing unwanted parts of the cost
         cost -= self.future_cost.solution_value() * remove_future_costs
         cost -= self.penalty_cost.solution_value() * remove_penalties
-        cost += min(self.future_costs_estimation.costs) / self.div_euros
-        cost -= sum(
-            [
-                self.noise / self.div_price * self.next_levels[area][s].solution_value()
-                for area in self.managements
-                for s in self.scenarios
-            ]
-        ) / len(self.scenarios)
+        if type(future_costs_estimation) is LinearInterpolator:
+            cost += min(self.future_costs_estimation.costs) / self.div_euros
         duals = {
             area: initial_level_constraints[area].dual_value() * self.div_price
             for area in self.managements
@@ -1408,61 +1361,3 @@ def solve_for_optimal_trajectory(
             costs[WeekIndex(week)] = cost_w
 
     return trajectory, controls, costs
-
-
-def solve_weekly_problem_with_approximation(
-    week: int,
-    scenario: int,
-    level_i: float,
-    V_fut: PieceWiseLinearInterpolator,
-    reservoir_management: ReservoirManagement,
-    param: TimeScenarioParameter,
-    reward: LinearInterpolator,
-) -> tuple[float, float, float, float]:
-    """
-    Optimize control of reservoir during a week based on reward approximation and current Bellman values.
-
-    Parameters
-    ----------
-    level_i:float :
-        Initial level of reservoir at the beginning of the week
-    V_fut:callable :
-        Bellman values at the end of the week
-
-    Returns
-    -------
-    Vu:float :
-        Optimal objective value
-    xf:float :
-        Final level of sotck
-    control:float :
-        Optimal control
-    """
-
-    problem = WeeklyBellmanProblem(
-        param=param,
-        multi_stock_management=MultiStockManagement([reservoir_management]),
-        week_costs_estimation={ScenarioIndex(scenario): reward},
-        name_solver="CLP",
-        divisor={"euro": 1e8, "energy": 1e4},
-        week=week,
-        noise=-0.01,
-    )
-
-    control, Vu, _, xf = problem.solve(
-        level_init={reservoir_management.reservoir.area: level_i},
-        future_costs_estimation=V_fut,
-    )
-
-    cost = reward(
-        np.array(
-            [control[reservoir_management.reservoir.area][ScenarioIndex(scenario)]]
-        )
-    )
-
-    return (
-        -Vu,
-        xf[reservoir_management.reservoir.area][ScenarioIndex(scenario)],
-        control[reservoir_management.reservoir.area][ScenarioIndex(scenario)],
-        cost,
-    )

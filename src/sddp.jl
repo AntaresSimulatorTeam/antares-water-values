@@ -16,7 +16,7 @@ struct Reservoir
     lower_level::Vector{Float64}
     upper_curve_penalty::Float64
     lower_curve_penalty::Float64
-    spillage_penalty::Float64
+    overflow::Bool
     level_init::Float64
     inflows::Matrix{Float64}
     final_level::Union{Float64,Bool}
@@ -52,7 +52,7 @@ function formater(n_weeks, n_scenarios, reservoirs_data, costs_approx_data, savi
                     round.(pyconvert(Vector, r["lower_level"])          /norm_enrgy, digits=round_energy), #Mwh 
                     round(pyconvert(Float64, r["upper_curve_penalty"])  /norm_price, digits=round_price), # €/MWh
                     round(pyconvert(Float64, r["lower_curve_penalty"])  /norm_price, digits=round_price), # €/MWh
-                    round(pyconvert(Float64, r["spillage_penalty"])     /norm_price, digits=round_price), # €/MWh
+                    pyconvert(Bool, r["overflow"]) ,
                     round(pyconvert(Float64, r["level_init"])           /norm_enrgy, digits=round_energy), # MWh
                     round.(pyconvert(Matrix, r["inflows"])              /norm_enrgy, digits=round_energy), # MWh
                     if isa(pyconvert(Union{Bool,Float64}, r["final_level"]),Bool) pyconvert(Bool, r["final_level"]) else round(pyconvert(Float64, r["final_level"]) /norm_enrgy, digits=round_energy) end
@@ -93,7 +93,6 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
             Ξ[s=1:n_scenarios]  # Current scenario as noise
             over_upper[r=1:n_reservoirs] >= 0
             below_lower[r=1:n_reservoirs] >= 0
-            spillage[r=1:n_reservoirs] >= 0
             cost >= 0
         end)
         
@@ -104,9 +103,13 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
             @constraint(subproblem, control[r] <= reservoirs[r].max_generating[modulo_stage])
         end
         
-        @constraints(subproblem, begin
-            demand_constraint[r=1:n_reservoirs],  level[r].out == level[r].in - control[r] + ξ[r] - spillage[r] 
-        end)
+        for r in 1:n_reservoirs
+            if reservoirs[r].overflow
+                @constraint(subproblem,  level[r].out <= level[r].in - control[r] + ξ[r])
+            else
+                @constraint(subproblem,  level[r].out == level[r].in - control[r] + ξ[r])
+            end
+        end
 
         for r=1:n_reservoirs
             if modulo_stage == n_weeks && reservoirs[r].final_level != false
@@ -138,7 +141,7 @@ function generate_model(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
             end
         end
         
-        @stageobjective(subproblem, cost + sum(over_upper[r] * reservoirs[r].upper_curve_penalty + below_lower[r] * reservoirs[r].lower_curve_penalty + spillage[r] * reservoirs[r].spillage_penalty 
+        @stageobjective(subproblem, cost + sum(over_upper[r] * reservoirs[r].upper_curve_penalty + below_lower[r] * reservoirs[r].lower_curve_penalty
         for r in 1:n_reservoirs))
             
         COST_UB = 1e10/norms.euro #Beware as too high a value WILL create numerical stability and generate problems labelled as INFEASIBLE
@@ -193,8 +196,7 @@ function get_trajectory(n_weeks::Int, n_scenarios::Int, reservoirs::Vector{Main.
             :control => (sp::JuMP.Model) -> [JuMP.value(sp[:control][r]) * norms.energy for r in 1:n_reservoirs],
             :level_in => (sp::JuMP.Model) -> [JuMP.value(sp[:level][r].in) * norms.energy for r in 1:n_reservoirs],
             :level_out => (sp::JuMP.Model) -> [JuMP.value(sp[:level][r].out) * norms.energy for r in 1:n_reservoirs],
-            :cost => (sp::JuMP.Model) -> JuMP.value(sp[:cost]) * norms.euro,
-            :spillage => (sp::JuMP.Model) -> [JuMP.value(sp[:spillage][r]) * norms.energy for r in 1:n_reservoirs]
+            :cost => (sp::JuMP.Model) -> JuMP.value(sp[:cost]) * norms.euro
         ))
         append!(simulations, simulation_result)
     end

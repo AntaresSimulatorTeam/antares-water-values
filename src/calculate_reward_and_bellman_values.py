@@ -1,11 +1,14 @@
 import numpy as np
 
 from estimation import LinearCostEstimator, PieceWiseLinearInterpolator
-from optimization import solve_weekly_problem_with_approximation
-from reservoir_management import ReservoirManagement
+from optimization import WeeklyBellmanProblem
+from reservoir_management import MultiStockManagement
 from type_definition import (
-    Array1D,
+    AreaIndex,
     Dict,
+    List,
+    Optional,
+    ScenarioIndex,
     TimeScenarioIndex,
     TimeScenarioParameter,
     WeekIndex,
@@ -13,11 +16,15 @@ from type_definition import (
 
 
 def calculate_VU(
-    stock_discretization: Array1D,
-    time_scenario_param: TimeScenarioParameter,
-    reservoir_management: ReservoirManagement,
-    reward: LinearCostEstimator,
-    final_values: Array1D = np.zeros(1, dtype=np.float32),
+    param: TimeScenarioParameter,
+    multi_stock_management: MultiStockManagement,
+    costs_approx: LinearCostEstimator,
+    levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    final_bellman_values: Optional[PieceWiseLinearInterpolator] = None,
+    name_solver: str = "CLP",
+    divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
+    verbose: bool = False,
+    n_cycle: int = 1,
 ) -> Dict[WeekIndex, PieceWiseLinearInterpolator]:
     """
     Calculate Bellman values for every week based on reward approximation
@@ -29,39 +36,47 @@ def calculate_VU(
     -------
 
     """
-    X = stock_discretization
-    V = {
-        week: np.zeros((len(X), time_scenario_param.len_scenario), dtype=np.float32)
-        for week in range(time_scenario_param.len_week + 1)
-    }
-    if len(final_values) == len(X):
-        for scenario in range(time_scenario_param.len_scenario):
-            V[time_scenario_param.len_week][:, scenario] = final_values
+    area = multi_stock_management.areas[0]
 
-    for week in range(time_scenario_param.len_week - 1, -1, -1):
-
-        for scenario in range(time_scenario_param.len_scenario):
-            V_fut = PieceWiseLinearInterpolator(X, V[week + 1][:, scenario])
-            for i in range(len(X)):
-
-                Vu, _, _, _ = solve_weekly_problem_with_approximation(
-                    level_i=X[i],
-                    V_fut=V_fut,
-                    week=week,
-                    scenario=scenario,
-                    reservoir_management=reservoir_management,
-                    param=time_scenario_param,
-                    reward=reward[TimeScenarioIndex(week, scenario)],
-                )
-
-                V[week][i, scenario] = Vu + V[week][i, scenario]
-
-        V[week] = np.repeat(
-            np.mean(V[week], axis=1, keepdims=True),
-            time_scenario_param.len_scenario,
-            axis=1,
+    if final_bellman_values is None:
+        X = np.array([x[area] for x in levels[WeekIndex(param.len_week)]])
+        final_bellman_values = PieceWiseLinearInterpolator(
+            X, np.zeros(len(X), dtype=np.float32)
         )
-    return {
-        WeekIndex(week): PieceWiseLinearInterpolator(X, np.mean(v, axis=1))
-        for (week, v) in V.items()
-    }
+    for i in range(n_cycle):
+        bellman_values = {WeekIndex(param.len_week): final_bellman_values}
+
+        for week in range(param.len_week - 1, -1, -1):
+            week_vb = np.zeros(
+                (len(levels[WeekIndex(week)]), param.len_scenario),
+                dtype=np.float32,
+            )
+            for scenario in range(param.len_scenario):
+                for i, lvl_init in enumerate(levels[WeekIndex(week)]):
+
+                    problem = WeeklyBellmanProblem(
+                        param=param,
+                        multi_stock_management=multi_stock_management,
+                        week_costs_estimation={
+                            ScenarioIndex(scenario): costs_approx[
+                                TimeScenarioIndex(week, scenario)
+                            ]
+                        },
+                        name_solver=name_solver,
+                        divisor=divisor,
+                        week=week,
+                    )
+
+                    _, Vu, _, _ = problem.solve(
+                        level_init=lvl_init,
+                        future_costs_estimation=bellman_values[WeekIndex(week + 1)],
+                    )
+
+                    week_vb[i, scenario] = -Vu
+
+            bellman_values[WeekIndex(week)] = PieceWiseLinearInterpolator(
+                np.array([x[area] for x in levels[WeekIndex(week)]]),
+                np.mean(week_vb, axis=1),
+            )
+        final_bellman_values = bellman_values[WeekIndex(0)]
+    return bellman_values

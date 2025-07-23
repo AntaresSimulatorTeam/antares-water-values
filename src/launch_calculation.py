@@ -1,8 +1,7 @@
 import numpy as np
 
-from calculate_reward_and_bellman_values import ReservoirManagement
 from functions_iterative import itr_control
-from multi_stock_bellman_value_calculation import MultiStockManagement
+from reservoir_management import MultiStockManagement, ReservoirManagement
 from simple_bellman_value_calculation import (
     calculate_bellman_value_directly,
     calculate_bellman_value_with_precalculated_reward,

@@ -4,27 +4,31 @@ import pytest
 
 from calculate_reward_and_bellman_values import calculate_VU
 from estimation import LinearCostEstimator, LinearInterpolator
-from functions_iterative import (
-    MultiStockManagement,
-    TimeScenarioParameter,
-    solve_weekly_problem_with_approximation,
+from functions_iterative import MultiStockManagement, TimeScenarioParameter
+from optimization import WeeklyBellmanProblem
+from type_definition import (
+    AreaIndex,
+    Dict,
+    List,
+    ScenarioIndex,
+    TimeScenarioIndex,
+    WeekIndex,
 )
-from type_definition import AreaIndex, Dict, List, TimeScenarioIndex, WeekIndex
 
 opt_cost = 4410020520.96
 opt_controls = [
-    -1833778.47368421,
-    1084397.57894737,
-    1084194.57894737,
-    1084187.57894737,
-    909513.73684211,
+    271484.68472947,
+    1084397.57862566,
+    -777181.95792601,
+    1366616.74758681,
+    383197.946984,
 ]
 opt_trajectory = [
     4450000.0,
-    6315789.47368421,
-    5263157.89473684,
-    4210526.31578947,
-    3157894.73684211,
+    4210526.31527053,
+    3157894.73664534,
+    3966639.69457101,
+    2631578.94698419,
     2280000.0,
 ]
 
@@ -55,7 +59,7 @@ def test_call_sddp(
                 lower_level=mng.reservoir.bottom_rule_curve,
                 upper_curve_penalty=mng.penalty_upper_rule_curve,
                 lower_curve_penalty=mng.penalty_bottom_rule_curve,
-                spillage_penalty=2 * mng.penalty_upper_rule_curve + 10,
+                overflow=mng.overflow,
                 level_init=mng.reservoir.initial_level,
                 inflows=mng.reservoir.inflow,
                 final_level=mng.final_level,
@@ -155,10 +159,12 @@ def test_compare_sddp_to_precalculated(
         X = np.linspace(0, mng.reservoir.capacity, num=20)
 
         V = calculate_VU(
-            stock_discretization=X,
-            time_scenario_param=param,
-            reservoir_management=mng,
-            reward=reward,
+            levels={
+                WeekIndex(w): [{area: x} for x in X] for w in range(param.len_week + 1)
+            },
+            param=param,
+            multi_stock_management=MultiStockManagement([mng]),
+            costs_approx=reward,
         )
 
         lb = V[WeekIndex(0)](mng.reservoir.initial_level)
@@ -174,19 +180,33 @@ def test_compare_sddp_to_precalculated(
                 np.random.permutation(range(param.len_scenario))
             ):
 
-                _, xf, u, cost = solve_weekly_problem_with_approximation(
-                    week=week,
-                    scenario=scenario,
-                    level_i=initial_x[TimeScenarioIndex(week, trajectory)],
-                    V_fut=V[WeekIndex(week + 1)],
-                    reservoir_management=mng,
+                problem = WeeklyBellmanProblem(
                     param=param,
-                    reward=reward[TimeScenarioIndex(week, scenario)],
+                    multi_stock_management=MultiStockManagement([mng]),
+                    week_costs_estimation={
+                        ScenarioIndex(scenario): reward[
+                            TimeScenarioIndex(week, scenario)
+                        ]
+                    },
+                    week=week,
                 )
+
+                u, _, _, xf = problem.solve(
+                    level_init={area: initial_x[TimeScenarioIndex(week, trajectory)]},
+                    future_costs_estimation=V[WeekIndex(week + 1)],
+                )
+                cost = reward[TimeScenarioIndex(week, scenario)](
+                    np.array(u[area][ScenarioIndex(scenario)])
+                )
+
                 ub += cost
 
-                initial_x[TimeScenarioIndex(week + 1, trajectory)] = xf
-                controls[TimeScenarioIndex(week, scenario)] = u
+                initial_x[TimeScenarioIndex(week + 1, trajectory)] = xf[area][
+                    ScenarioIndex(scenario)
+                ]
+                controls[TimeScenarioIndex(week, scenario)] = u[area][
+                    ScenarioIndex(scenario)
+                ]
 
         assert -lb == pytest.approx(opt_cost)
         assert ub == pytest.approx(opt_cost)

@@ -2,7 +2,11 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
-from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
+from estimation import (
+    LinearCostEstimator,
+    PieceWiseLinearInterpolator,
+    UniVariateEstimator,
+)
 from functions_iterative import (
     TimeScenarioIndex,
     TimeScenarioParameter,
@@ -10,7 +14,7 @@ from functions_iterative import (
 )
 from optimization import AntaresProblem, Basis
 from reservoir_management import MultiStockManagement
-from type_definition import AreaIndex, Array1D, Dict, WeekIndex
+from type_definition import AreaIndex, Array1D, Dict, List, WeekIndex
 
 
 def test_basis_with_xpress(
@@ -49,10 +53,26 @@ def test_basis_with_upper_bound(
     multi_stock_management_one_node: MultiStockManagement,
     discretization_one_node: Dict[AreaIndex, Array1D],
     antares_problem_one_node_xpress: AntaresProblem,
+    param: TimeScenarioParameter,
+    controls_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
+    costs_precalculated_one_node_10: Dict[TimeScenarioIndex, List[float]],
+    slopes_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
 ) -> None:
     solver = pywraplp.Solver.CreateSolver("XPRESS_LP")
     if solver:
         list_models = {TimeScenarioIndex(0, 0): antares_problem_one_node_xpress}
+
+        reward = LinearCostEstimator(
+            controls=controls_precalculated_one_node_10,
+            param=param,
+            costs=costs_precalculated_one_node_10,
+            duals=slopes_precalculated_one_node_10,
+            type_estimator="LinearInterpolator",
+        )
 
         V = {
             area.area: PieceWiseLinearInterpolator(
@@ -87,6 +107,7 @@ def test_basis_with_upper_bound(
                 WeekIndex(week): UniVariateEstimator(V)
                 for week in range(param_one_week.len_week + 1)
             },
+            reward_approximation=reward,
         )
         assert upper_bound_2 == pytest.approx(upper_bound_1)
         assert itr_with_basis[TimeScenarioIndex(0, 0)] == 0

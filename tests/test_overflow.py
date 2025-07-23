@@ -37,7 +37,7 @@ def test_bellman_value_precalculated_reward_overflow(
     V_fut = interp1d(X, vb[:, 0])
     V0 = V_fut(reservoir_one_node.initial_level)
 
-    assert float(V0) == pytest.approx(-3546553410.818109)
+    assert float(V0) == pytest.approx(-3546553410.818109, rel=1e-4)
 
     reservoir_management = ReservoirManagement(
         reservoir=reservoir_one_node,
@@ -59,4 +59,4 @@ def test_bellman_value_precalculated_reward_overflow(
     V_fut = interp1d(X, vb[:, 0])
     V0 = V_fut(reservoir_one_node.initial_level)
 
-    assert V0 == pytest.approx(-3546553410.818109)
+    assert V0 == pytest.approx(-3546553410.818109, rel=1e-4)

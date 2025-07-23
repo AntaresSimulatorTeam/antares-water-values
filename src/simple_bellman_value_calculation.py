@@ -91,10 +91,13 @@ def calculate_bellman_value_with_precalculated_reward(
         X = np.linspace(0, reservoir_management.reservoir.capacity, num=len_bellman)
 
         V = calculate_VU(
-            stock_discretization=X,
-            time_scenario_param=param,
-            reservoir_management=reservoir_management,
-            reward=reward,
+            levels={
+                WeekIndex(w): [{reservoir_management.reservoir.area: x} for x in X]
+                for w in range(param.len_week + 1)
+            },
+            param=param,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
+            costs_approx=reward,
         )
 
     V0 = V[WeekIndex(0)](reservoir_management.reservoir.initial_level)

@@ -76,14 +76,12 @@ def get_bellman_values_from_costs(
             multi_stock_management=multi_stock_management
         )
 
-    n_weeks = param.len_week
-
     for i in range(n_cycle):
         # Keeping in memory all future costs approximations
         bellman_values = {WeekIndex(param.len_week): final_bellman_values}
 
         # Starting from last week dynamically solving the optimal control problem (from every starting level)
-        week_range = range(n_weeks - 1, -1, -1)
+        week_range = range(param.len_week - 1, -1, -1)
         if verbose:
             week_range = tqdm(week_range, colour="Green", desc="Dynamic Solving")
         for week in week_range:
@@ -1274,7 +1272,7 @@ def sddp_cutting_planes(
                 lower_level=mng.reservoir.bottom_rule_curve,
                 upper_curve_penalty=mng.penalty_upper_rule_curve,
                 lower_curve_penalty=mng.penalty_bottom_rule_curve,
-                spillage_penalty=2 * mng.penalty_upper_rule_curve + 10,
+                overflow=mng.overflow,
                 level_init=level_init[area],
                 inflows=mng.reservoir.inflow,
                 final_level=mng.final_level,

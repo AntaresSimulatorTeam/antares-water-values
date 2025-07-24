@@ -123,7 +123,13 @@ def post_process_shared_files(dir_study: str, areas: list[str], area_target:str)
 
     # ✅ Modifier scenariobuilder.dat
     sb_lines = []
-    for area in areas:
+    if area_target is None:
+        for area in areas:
+            file_path = os.path.join(dir_study, "tmp", "scenariobuilder_lines", f"{area}.txt")
+            if os.path.exists(file_path):
+                with open(file_path, "r") as f:
+                    sb_lines.extend(f.readlines())
+    else:
         file_path = os.path.join(dir_study, "tmp", "scenariobuilder_lines", f"{area_target}.txt")
         if os.path.exists(file_path):
             with open(file_path, "r") as f:
@@ -142,7 +148,7 @@ def main() -> None:
     parser.add_argument("--coeff_cost", type=int, required=False,default=1, help="Facteur d'échelle pour la fonction de coût, par défaut vaut 1e9.")
     parser.add_argument("--enable_logging", type=bool, default=False, help="Activer les logs.")
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="Liste des actions à effectuer (ex: export_bellman_values, plot_trajectories, modify_antares_data, undo_modifications, etc.)")
-    parser.add_argument("--area_target", type=str, default=None,help="Zone cible pour les modifications, si None utilise la zone actuelle.")
+    parser.add_argument("--area_target", type=str, required=False,default=None,help="Zone cible pour les modifications, si None utilise la zone actuelle.")
 
     args = parser.parse_args()
 
@@ -204,8 +210,8 @@ def main() -> None:
                     print(f"❌ Erreur pour la zone {area} : {e}")
                     traceback.print_exc()
 
-            # Post-traitement des fichiers partagés
-            post_process_shared_files(args.dir_study, args.area, args.area_target)
+    # Post-traitement des fichiers partagés
+    post_process_shared_files(args.dir_study, args.area, args.area_target)
 
 if __name__ == "__main__":
     main()

@@ -1,3 +1,4 @@
+from calendar import week
 from typing import final
 from proxy_stage_cost_function import Proxy
 import numpy as np
@@ -6,6 +7,8 @@ import os
 from type_definition import Callable
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
+import pandas as pd
+
 
 
 
@@ -35,7 +38,7 @@ class BellmanValuesProxy:
         self.compute_usage_values()
     
     def penalty_final_stock(self)->Callable:
-        penalty = lambda x: abs(x-self.proxy.reservoir.initial_level)/1e3
+        penalty = lambda x: abs(x-self.proxy.reservoir.initial_level)/self.proxy.reservoir.initial_level *100* self.proxy.ub_cost
         return penalty
     
     def penalty_rule_curves(self,week_idx:int)->Callable:
@@ -232,7 +235,7 @@ class OptimalTrajectories:
         self.compute_trajectories()
         # self.new_lower_rule_curve()
         # self.new_upper_rule_curve()
-        self.adjust_hourly_inflow_overflow()
+        # self.adjust_hourly_inflow_overflow()
 
     def init_log_trajectories(self)-> None:
         self.logger.debug("\n" + "=" * 70)
@@ -279,6 +282,7 @@ class OptimalTrajectories:
             for w in range(self.nb_weeks):
                 self.logger.debug(f"\n[Semaine {w+1} | Scénario {s+1} | Stock préceédent : {current_stock:.2f} MWh]")
                 weekly_inflow = self.bellman_values.proxy.reservoir.weekly_inflow[w, s]
+                hourly_inflow = self.bellman_values.proxy.reservoir.hourly_inflow[w * 168:(w + 1) * 168, s]
                 self.logger.debug(f"Inflow : {weekly_inflow:.2f} MWh")
                 cost_function = self.bellman_values.cost_functions[w, s]
                 penalty_function = self.bellman_values.penalty_rule_curves(w)
@@ -292,6 +296,9 @@ class OptimalTrajectories:
                 best_value=np.inf
                 best_stock=None
                 best_control=None
+
+                self.adjust_hourly_inflow_overflow(scenario=s, week=w, stock_init=current_stock, inflow=hourly_inflow)
+                weekly_inflow -= np.sum(self.inflow_adjust_overflow[w, s])
 
                 best_value, best_stock, best_control = self.bellman_values.iterate_over_controls(best_value=best_value,
                                                             best_stock=best_stock,
@@ -317,58 +324,85 @@ class OptimalTrajectories:
 
                 self.logger.debug(f"==> Stock retenu pour la semaine {w+1} : {final_best_stock:.2f} MWh")
 
-                final_best_stock= self.adjust_trajectories_overflow(scenario=s,
-                                                                  week=w,
-                                                                  final_best_stock=final_best_stock,
-                                                                  final_best_control=final_best_control)
+                # final_best_stock= self.adjust_trajectories_overflow(scenario=s,
+                #                                                   week=w,
+                #                                                   final_best_stock=final_best_stock,
+                #                                                   final_best_control=final_best_control)
                 self.trajectories[s, w] = final_best_stock
                 self.optimal_controls[s, w] = final_best_control
                 self.optimal_turb[s, w] = self.bellman_values.turb_functions[w, s](final_best_control)
                 self.optimal_pump[s, w] = self.bellman_values.pump_functions[w, s](final_best_control)
                 current_stock = final_best_stock
                 
-        self.write_warnings()                
+        self.write_warnings()
 
-    def adjust_trajectories_overflow(self,
-                                     scenario: int,
-                                        week: int,
-                                        final_best_stock: float,
-                                        final_best_control: float) -> float:
-        if final_best_stock is not None:
-            upper_bound = self.bellman_values.proxy.reservoir.capacity
-            if final_best_stock > upper_bound:
-                assert np.abs(final_best_control - self.bellman_values.proxy.reservoir.max_weekly_turb[week])<1e-6,\
-                f"Problème probable sur les pénalités"
-                delta = final_best_stock - upper_bound
-                self.inflow_adjust_overflow[week, scenario, -1] += delta
-                final_best_stock = upper_bound
-                self.logger.debug(f"==> Stock retenu supérieur à la capacité : {upper_bound}, déversement de {delta} MWh\n")
-        return final_best_stock
+    # def adjust_trajectories_overflow(self,
+    #                                  scenario: int,
+    #                                     week: int,
+    #                                     final_best_stock: float,
+    #                                     final_best_control: float) -> float:
+    #     if final_best_stock is not None:
+    #         upper_bound = self.bellman_values.proxy.reservoir.capacity
+    #         if final_best_stock > upper_bound:
+    #             assert np.abs(final_best_control - self.bellman_values.proxy.reservoir.max_weekly_turb[week])<1e-6,\
+    #             f"Problème probable sur les pénalités"
+    #             delta = final_best_stock - upper_bound
+    #             self.inflow_adjust_overflow[week, scenario, -1] += delta
+    #             final_best_stock = upper_bound
+    #             self.logger.debug(f"==> Stock retenu supérieur à la capacité : {upper_bound}, déversement de {delta} MWh\n")
+    #     return final_best_stock
 
-    def adjust_hourly_inflow_overflow(self) -> None:
-        for s in self.scenarios:
-            for w in range(self.nb_weeks):
-                stock_init = (
-                    self.trajectories[s, w - 1]
-                    if w > 0
-                    else self.bellman_values.proxy.reservoir.initial_level
+    def adjust_hourly_inflow_overflow(self,
+                                      scenario : int,
+                                      week : int,
+                                      stock_init : float,
+                                      inflow : np.ndarray) -> None:
+        
+        turb = self.bellman_values.proxy.reservoir.max_hourly_turb[week * 168 : (week + 1) * 168]
+        net_hourly = inflow - turb
+        for h in range(168):
+            stock = stock_init + np.cumsum(net_hourly[:h+1])
+            if stock[h] > self.bellman_values.proxy.reservoir.capacity:
+                self.logger.debug(
+                    f"⚠️ Déversement détecté pour scénario {scenario+1}, semaine {week+1}, heure {h+1} : "
+                    f"{stock[h]:.2f} MWh > capacité {self.bellman_values.proxy.reservoir.capacity:.2f} MWh"
                 )
-                inflow = self.bellman_values.proxy.reservoir.hourly_inflow[w * 168 : (w + 1) * 168, s]
-                turb = self.bellman_values.proxy.reservoir.max_hourly_turb[w * 168 : (w + 1) * 168]
-                inflow_adj = self.inflow_adjust_overflow[w, s]
-                net_hourly = inflow - inflow_adj - turb
-                for h in range(168):
-                    stock = stock_init + np.cumsum(net_hourly[:h+1])
+                self.inflow_adjust_overflow[week, scenario, h] += stock[h] - self.bellman_values.proxy.reservoir.capacity
+                net_hourly[h] -= self.inflow_adjust_overflow[week, scenario, h]
 
-                    if stock[h] >self.bellman_values.proxy.reservoir.capacity:
-                        self.logger.debug(
-                            f"⚠️ Déversement détecté pour scénario {s+1}, semaine {w+1}, heure {h+1} : "
-                            f"{stock[h]:.2f} MWh > capacité {self.bellman_values.proxy.reservoir.capacity:.2f} MWh"
-                        )
-                        # stock_init = self.bellman_values.proxy.reservoir.capacity
-                        self.inflow_adjust_overflow[w, s, h] += stock[h] - self.bellman_values.proxy.reservoir.capacity
-                        net_hourly[h] -= self.inflow_adjust_overflow[w, s, h]
-                
+
+
+    # def adjust_hourly_inflow_overflow(self) -> None:
+    #     for s in self.scenarios:
+    #         for w in range(self.nb_weeks):
+    #             stock_init = (
+    #                 self.trajectories[s, w - 1]
+    #                 if w > 0
+    #                 else self.bellman_values.proxy.reservoir.initial_level
+    #             )
+    #             # if w==43 and s==1:
+    #             #     np.savetxt("test_adjust_hourly_inflow.txt", self.bellman_values.proxy.reservoir.hourly_inflow[w * 168 : (w + 1) * 168, s])
+    #             #     np.savetxt("test_adjust_hourly_inflow_overflow.txt", self.inflow_adjust_overflow[w, s])
+    #             #     np.savetxt("test_adjust_hourly_inflow_trajectories.txt", self.trajectories[s])
+    #             #     np.savetxt("test_adjust_hourly_inflow_max_hour_turb.txt", self.bellman_values.proxy.reservoir.max_hourly_turb[w * 168 : (w + 1) * 168])
+    #             #     np.savetxt("test_adjust_hourly_inflow_max_hour_pump.txt", self.bellman_values.proxy.reservoir.max_hourly_pump[w * 168 : (w + 1) * 168])
+    #             inflow = self.bellman_values.proxy.reservoir.hourly_inflow[w * 168 : (w + 1) * 168, s]
+    #             turb = self.bellman_values.proxy.reservoir.max_hourly_turb[w * 168 : (w + 1) * 168]
+    #             inflow_adj = self.inflow_adjust_overflow[w, s]
+    #             net_hourly = inflow - inflow_adj - turb
+    #             for h in range(167):
+    #                 stock = stock_init + np.cumsum(net_hourly[:h+1])
+
+    #                 if stock[h] >self.bellman_values.proxy.reservoir.capacity:
+    #                     self.logger.debug(
+    #                         f"⚠️ Déversement détecté pour scénario {s+1}, semaine {w+1}, heure {h+1} : "
+    #                         f"{stock[h]:.2f} MWh > capacité {self.bellman_values.proxy.reservoir.capacity:.2f} MWh"
+    #                     )
+    #                     # stock_init = self.bellman_values.proxy.reservoir.capacity
+    #                     self.inflow_adjust_overflow[w, s, h] += stock[h] - self.bellman_values.proxy.reservoir.capacity
+    #                     net_hourly[h] -= self.inflow_adjust_overflow[w, s, h]
+    #             # if w==43 and s==1:
+    #             #     np.savetxt("test_adjust_hourly_inflow_adjusted_after.txt", self.inflow_adjust_overflow[w, s])
 
     def adjust_trajectories_to_rule_curves(self,
                                            scenario : int,

@@ -321,8 +321,10 @@ class UndoAntaresModifications:
 
         with open(path, "r") as f:
             lines = f.readlines()
-
-        filtered = [line for line in lines if f"lt_stock_proxy_{self.area_target}" not in line]
+        if self.area_target is not None:
+            filtered = [line for line in lines if not line.startswith(f"sts,{self.area_target},")]
+        else:
+            filtered = [line for line in lines if f"lt_stock_proxy_{self.area}" not in line]
 
         with open(path, "w") as f:
             f.writelines(filtered)

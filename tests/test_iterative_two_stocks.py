@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
+from estimation import PieceWiseLinearInterpolator
 from functions_iterative import TimeScenarioParameter, compute_upper_bound
 from multi_stock_bellman_value_calculation import *
 from optimization import initialize_antares_problems
@@ -51,7 +51,7 @@ def test_bellman_value_iterative_method(
     )
 
     assert np.array(
-        [bellman_values[WeekIndex(w)].true_costs for w in range(param.len_week)]
+        [bellman_values[WeekIndex(w)].get_true_costs() for w in range(param.len_week)]
     ) == pytest.approx(
         np.array(
             [
@@ -188,9 +188,7 @@ def test_bellman_value_iterative_method(
         )
     )
 
-    assert timescenario_area_value_to_array(
-        opt_trajectory, param, multi_stock_management_two_nodes.areas
-    ) == pytest.approx(
+    assert timescenario_area_value_to_array(opt_trajectory, param) == pytest.approx(
         np.array(
             [
                 [[291825.07, 477447.36739028]],
@@ -350,15 +348,11 @@ def test_bellman_value_iterative_method_with_sddp(
         param=param,
         list_models=list_models,
         V={
-            WeekIndex(week): UniVariateEstimator(
-                {
-                    a.area: PieceWiseLinearInterpolator(
-                        np.array(levels_uv)[week - 1, 10 * i : 10 * (i + 1), i],
-                        np.array(bellman_costs)[week - 1, 10 * i : 10 * (i + 1)],
-                    )
-                    for i, a in enumerate(multi_stock_management_two_nodes.areas)
-                }
+            WeekIndex(week): PieceWiseLinearInterpolator(
+                np.array(levels_uv)[week - 1, 10 * i : 10 * (i + 1), i],
+                np.array(bellman_costs)[week - 1, 10 * i : 10 * (i + 1)],
             )
+            for i, a in enumerate(multi_stock_management_two_nodes.areas)
             for week in range(1, param.len_week + 1)
         },
     )

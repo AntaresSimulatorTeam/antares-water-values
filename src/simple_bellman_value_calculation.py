@@ -1,15 +1,17 @@
 import numpy as np
 
-from calculate_reward_and_bellman_values import calculate_VU
+from calculate_reward_and_bellman_values import (
+    get_all_costs,
+    get_bellman_values_from_approximate_costs,
+)
 from estimation import (
     BellmanValueEstimation,
     Estimator,
     LinearCostEstimator,
     PieceWiseLinearInterpolator,
-    UniVariateEstimator,
 )
 from functions_iterative import compute_upper_bound
-from multi_stock_bellman_value_calculation import generate_controls, get_all_costs
+from multi_stock_bellman_value_calculation import generate_controls
 from optimization import initialize_antares_problems
 from reservoir_management import MultiStockManagement
 from stock_discretization import StockDiscretization
@@ -90,7 +92,7 @@ def calculate_bellman_value_with_precalculated_reward(
     for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
         X = np.linspace(0, reservoir_management.reservoir.capacity, num=len_bellman)
 
-        V = calculate_VU(
+        V = get_bellman_values_from_approximate_costs(
             levels={
                 WeekIndex(w): [{reservoir_management.reservoir.area: x} for x in X]
                 for w in range(param.len_week + 1)
@@ -98,27 +100,29 @@ def calculate_bellman_value_with_precalculated_reward(
             param=param,
             multi_stock_management=MultiStockManagement([reservoir_management]),
             costs_approx=reward,
+            piecewiselinear=True,
         )
 
-    V0 = V[WeekIndex(0)](reservoir_management.reservoir.initial_level)
+    V0 = V[WeekIndex(0)](
+        {
+            reservoir_management.reservoir.area: reservoir_management.reservoir.initial_level
+        }
+    )
 
     upper_bound, control_ub, current_itr, times = compute_upper_bound(
         multi_stock_management=multi_stock_management,
         param=param,
         list_models=list_models,
-        V={
-            WeekIndex(week): UniVariateEstimator(
-                {reservoir_management.reservoir.area.area: V[WeekIndex(week)]}
-            )
-            for week in range(param.len_week + 1)
-        },
+        V=V,
     )
 
     gap = upper_bound + V0
     print(gap, upper_bound, -V0)
 
     return (
-        np.transpose([V[WeekIndex(week)].costs for week in range(param.len_week + 1)]),
+        np.transpose(
+            [V[WeekIndex(week)].get_costs() for week in range(param.len_week + 1)]
+        ),
         reward,
     )
 
@@ -169,15 +173,11 @@ def calculate_bellman_value_directly(
     V: Dict[int, Estimator] = {}
     if univariate:
         assert len(X) == 1
+        area = multi_stock_management.areas[0]
         dim_bellman_value = tuple(len(x) for x in X.values())
         V = {
-            week: UniVariateEstimator(
-                {
-                    area.area: PieceWiseLinearInterpolator(
-                        X[area], np.zeros(len(X[area]), dtype=np.float32)
-                    )
-                    for area in multi_stock_management.areas
-                }
+            week: PieceWiseLinearInterpolator(
+                X[area], np.zeros(len(X[area]), dtype=np.float32)
             )
             for week in range(param.len_week + 1)
         }
@@ -222,14 +222,7 @@ def calculate_bellman_value_directly(
                     list([a.area for a in multi_stock_management.areas]),
                 )
 
-    V0 = V[0].get_value(
-        {
-            area.area: multi_stock_management.dict_reservoirs[
-                area
-            ].reservoir.initial_level
-            for area in multi_stock_management.areas
-        }
-    )
+    V0 = V[0](multi_stock_management.get_initial_level())
 
     upper_bound, controls, current_itr, times = compute_upper_bound(
         multi_stock_management=multi_stock_management,

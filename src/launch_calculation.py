@@ -53,9 +53,7 @@ def calculate_bellman_values(
         vb = np.transpose(
             [
                 [
-                    intermediate_vb[week].get_value(
-                        {reservoir_management.reservoir.area.area: x}
-                    )
+                    intermediate_vb[week]({reservoir_management.reservoir.area: x})
                     for x in X
                 ]
                 for week in range(param.len_week + 1)

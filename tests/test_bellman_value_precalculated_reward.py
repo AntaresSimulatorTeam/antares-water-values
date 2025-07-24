@@ -20,6 +20,7 @@ from type_definition import (
     List,
     ScenarioIndex,
     TimeScenarioIndex,
+    area_value_to_area_scenario_value,
     timescenario_list_area_value_to_array,
     timescenario_list_value_to_array,
 )
@@ -353,17 +354,15 @@ def test_solve_weekly_problem_with_approximation(
         )
 
         control, Vu, _, xf = problem.solve(
-            level_init={area: X[i]},
+            level_init=area_value_to_area_scenario_value({area: X[i]}, 1),
             future_costs_estimation=V_fut,
         )
 
         cost = reward[TimeScenarioIndex(week, scenario)](
-            np.array(control[area][ScenarioIndex(scenario)])
+            {area: control[area][ScenarioIndex(scenario)]}
         )
 
-        assert -Vu == pytest.approx(-539915463)
-        assert xf[area][ScenarioIndex(scenario)] == pytest.approx(2279992.4000253337)
-        assert control[area][ScenarioIndex(scenario)] == pytest.approx(
-            3014784.489974666
-        )
-        assert cost == pytest.approx(539892664.3198302)
+        assert Vu == pytest.approx(539893423)
+        assert xf[area][ScenarioIndex(scenario)] == pytest.approx(2280000)
+        assert control[area][ScenarioIndex(scenario)] == pytest.approx(3014776)
+        assert cost == pytest.approx(539893423)

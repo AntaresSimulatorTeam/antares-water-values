@@ -1,6 +1,11 @@
 import numpy as np
 import pytest
 
+from calculate_reward_and_bellman_values import (
+    get_bellman_values_from_approximate_costs,
+    get_default_linear_interpolator,
+    get_optimal_trajectory_from_approximate_costs,
+)
 from functions_iterative import TimeScenarioParameter
 from multi_stock_bellman_value_calculation import *
 from reservoir_management import MultiStockManagement
@@ -441,7 +446,7 @@ def test_initialize_future_costs(
 ) -> None:
 
     # Initialize our approximation on future costs
-    future_costs_approx = initialize_future_costs(
+    future_costs_approx = get_default_linear_interpolator(
         multi_stock_management=multi_stock_management_two_nodes,
     )
 
@@ -486,7 +491,7 @@ def test_get_bellman_values_from_costs(
         method=method,
     )
 
-    bellman_values = get_bellman_values_from_costs(
+    bellman_values = get_bellman_values_from_approximate_costs(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         costs_approx=costs_approx,
@@ -495,6 +500,7 @@ def test_get_bellman_values_from_costs(
         divisor=divisor,
         verbose=False,
         levels=levels,
+        piecewiselinear=False,
     )
 
     assert time_list_area_value_to_array(
@@ -502,14 +508,14 @@ def test_get_bellman_values_from_costs(
     )[::-1] == pytest.approx(expected_levels)
 
     for i in range(5, -1, -1):
-        assert bellman_values[WeekIndex(i)].true_inputs == pytest.approx(
+        assert bellman_values[WeekIndex(i)].get_true_inputs() == pytest.approx(
             expected_future_costs_approx_l[i].inputs
         )
-        assert bellman_values[WeekIndex(i)].true_costs == pytest.approx(
+        assert bellman_values[WeekIndex(i)].get_true_costs() == pytest.approx(
             expected_future_costs_approx_l[i].costs
         )
 
-        assert bellman_values[WeekIndex(i)].true_duals == pytest.approx(
+        assert bellman_values[WeekIndex(i)].get_true_duals() == pytest.approx(
             expected_future_costs_approx_l[i].duals
         )
 
@@ -520,21 +526,19 @@ def test_solve_for_optimal_trajectory(
     multi_stock_management_two_nodes: MultiStockManagement,
     starting_pt: Dict[AreaIndex, float],
 ) -> None:
-    trajectory, pseudo_opt_controls, _ = solve_for_optimal_trajectory(
+    trajectory, pseudo_opt_controls, _ = get_optimal_trajectory_from_approximate_costs(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         costs_approx=costs_approx,
-        future_costs_approx_l=list_to_week_value(
+        bellman_values=list_to_week_value(
             expected_future_costs_approx_l, param.len_week + 1
         ),
-        starting_pt=starting_pt,
+        level_init=starting_pt,
         name_solver=name_solver,
         divisor=divisor,
     )
 
-    assert timescenario_area_value_to_array(
-        trajectory, param, multi_stock_management_two_nodes.areas
-    ) == pytest.approx(
+    assert timescenario_area_value_to_array(trajectory, param) == pytest.approx(
         np.array(
             [
                 [[246753.048082, 419150.333]],
@@ -546,7 +550,7 @@ def test_solve_for_optimal_trajectory(
         )
     )
     assert timescenario_area_value_to_array(
-        pseudo_opt_controls, param, multi_stock_management_two_nodes.areas
+        pseudo_opt_controls, param
     ) == pytest.approx(expected_pseudo_opt_controls)
 
 

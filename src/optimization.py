@@ -16,7 +16,6 @@ from estimation import (
     LinearCostEstimator,
     LinearInterpolator,
     PieceWiseLinearInterpolator,
-    UniVariateEstimator,
 )
 from reservoir_management import MultiStockManagement
 from type_definition import (
@@ -27,8 +26,6 @@ from type_definition import (
     TimeScenarioIndex,
     TimeScenarioParameter,
     Union,
-    WeekIndex,
-    timescenario_area_value_to_weekly_mean_area_values,
 )
 
 
@@ -507,7 +504,7 @@ class AntaresProblem:
                 self.stored_variables_and_constraints[area]["final_bellman_value"],
                 1,
             )
-        if type(V) is UniVariateEstimator:
+        if type(V) is PieceWiseLinearInterpolator:
             additional_constraint = self._build_univariate_bellman_constraints(V)
         elif type(V) is BellmanValueEstimation:
             additional_constraint = self._build_multivariate_bellman_constraints(V)
@@ -528,11 +525,11 @@ class AntaresProblem:
         return additional_constraint
 
     def _build_univariate_bellman_constraints(
-        self, V: UniVariateEstimator
+        self, V: PieceWiseLinearInterpolator
     ) -> List[pywraplp.Constraint]:
         additional_constraint = []
         for area in self.range_reservoir:
-            bellman_value = V[area.area]
+            bellman_value = V
 
             X = bellman_value.inputs
             cost = bellman_value.costs
@@ -684,7 +681,7 @@ class AntaresProblem:
             V, level_i
         )
 
-        if find_optimal_basis and type(V) is UniVariateEstimator:
+        if find_optimal_basis:
             if len(self.control_basis) >= 1:
                 if len(self.control_basis) >= 2:
                     assert reward is not None
@@ -701,8 +698,14 @@ class AntaresProblem:
                     )
 
                     likely_control, _, _, _ = problem.solve(
-                        level_init=level_i,
-                        future_costs_estimation=[v for v in V.estimators.values()][0],
+                        level_init={
+                            a: {
+                                ScenarioIndex(s): level_i[a]
+                                for s in range(param.len_scenario)
+                            }
+                            for a in multi_stock_management.areas
+                        },
+                        future_costs_estimation=V,
                     )
                     basis = self._find_closest_basis(
                         {
@@ -932,11 +935,14 @@ class WeeklyBellmanProblem:
 
         # Initial levels 0 <= lvl <= capacity
         initial_levels = {
-            area: self.solver.NumVar(
-                0,
-                np.round(mng.reservoir.capacity / self.div_energy, self.precision),
-                name=f"lvl_init_{area}",
-            )
+            area: {
+                s: self.solver.NumVar(
+                    0,
+                    np.round(mng.reservoir.capacity / self.div_energy, self.precision),
+                    name=f"lvl_init_{area}_{s}",
+                )
+                for s in self.scenarios
+            }
             for area, mng in self.managements.items()
         }
 
@@ -965,7 +971,7 @@ class WeeklyBellmanProblem:
                             / self.div_energy,
                             self.precision,
                         )
-                        + initial_levels[area]
+                        + initial_levels[area][s]
                         - controls[area][s],
                         name=f"dynamic_cst_{area}_{s}",
                     )
@@ -977,7 +983,7 @@ class WeeklyBellmanProblem:
                             / self.div_energy,
                             self.precision,
                         )
-                        + initial_levels[area]
+                        + initial_levels[area][s]
                         - controls[area][s],
                         name=f"dynamic_cst_{area}_{s}",
                     )
@@ -1198,14 +1204,14 @@ class WeeklyBellmanProblem:
 
     def solve(
         self,
-        level_init: Dict[AreaIndex, float],
-        future_costs_estimation: Union[LinearInterpolator, PieceWiseLinearInterpolator],
+        level_init: Dict[AreaIndex, Dict[ScenarioIndex, float]],
+        future_costs_estimation: Estimator,
         remove_future_costs: bool = False,
         remove_penalties: bool = False,
     ) -> tuple[
         Dict[AreaIndex, Dict[ScenarioIndex, float]],
         float,
-        Dict[AreaIndex, float],
+        Dict[AreaIndex, Dict[ScenarioIndex, float]],
         Dict[AreaIndex, Dict[ScenarioIndex, float]],
     ]:
         """
@@ -1234,11 +1240,14 @@ class WeeklyBellmanProblem:
 
         # Initial level constraint  initial_levels == level_init
         initial_level_constraints = {
-            area: self.solver.Add(
-                self.initial_levels[area]
-                == np.round(level_init[area] / self.div_energy, self.precision),
-                name=f"init_lvl_cst_{area}",
-            )
+            area: {
+                s: self.solver.Add(
+                    self.initial_levels[area][s]
+                    == np.round(level_init[area][s] / self.div_energy, self.precision),
+                    name=f"init_lvl_cst_{area}_{s}",
+                )
+                for s in self.scenarios
+            }
             for area in self.managements
         }
 
@@ -1275,9 +1284,12 @@ class WeeklyBellmanProblem:
         cost -= self.future_cost.solution_value() * remove_future_costs
         cost -= self.penalty_cost.solution_value() * remove_penalties
         if type(future_costs_estimation) is LinearInterpolator:
-            cost += min(self.future_costs_estimation.costs) / self.div_euros
+            cost += min(future_costs_estimation.costs) / self.div_euros
         duals = {
-            area: initial_level_constraints[area].dual_value() * self.div_price
+            area: {
+                s: initial_level_constraints[area][s].dual_value() * self.div_price
+                for s in self.scenarios
+            }
             for area in self.managements
         }
         return (
@@ -1286,78 +1298,3 @@ class WeeklyBellmanProblem:
             duals,
             levels,
         )
-
-
-def solve_for_optimal_trajectory(
-    param: TimeScenarioParameter,
-    multi_stock_management: MultiStockManagement,
-    costs_approx: LinearCostEstimator,
-    future_costs_approx_l: Dict[WeekIndex, LinearInterpolator],
-    starting_pt: Dict[AreaIndex, float],
-    name_solver: str,
-    divisor: dict[str, float],
-) -> tuple[
-    Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
-    Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
-    Dict[WeekIndex, float],
-]:
-    """Finds the optimal trajectory starting from starting_pts
-
-    Args:
-        param (TimeScenarioParameter): Number of weeks and scenarios
-        multi_stock_management (MultiStockManagement): _description_
-        costs_approx (Estimator): _description_
-        future_estimators_l (Dict[WeekIndex,LinearInterpolator]): _description_
-        starting_pt (Dict[AreaIndex, float]): _description_
-        name_solver (str): _description_
-        verbose (bool): _derscription_
-
-    Returns:
-        tuple[Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
-              Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
-              Dict[WeekIndex, float],]:
-        Optimal trajectory, optimal controls, corresponding costs
-    """
-    trajectory = {}
-    for scenario in range(param.len_scenario):
-        trajectory[TimeScenarioIndex(-1, scenario)] = starting_pt
-    controls = {}
-    costs = {}
-    for week in range(param.len_week):
-        if week >= 0:
-            # Write problem
-            problem = WeeklyBellmanProblem(
-                param=param,
-                multi_stock_management=multi_stock_management,
-                week_costs_estimation=costs_approx.get_week_estimators(week),
-                divisor=divisor,
-                name_solver=name_solver,
-                week=week,
-            )
-
-            # Solve, might be cool to reuse bases
-            controls_w, cost_w, _, levels_w = problem.solve(
-                level_init=timescenario_area_value_to_weekly_mean_area_values(
-                    trajectory, week - 1, param, multi_stock_management.areas
-                ),
-                future_costs_estimation=future_costs_approx_l[WeekIndex(week + 1)],
-            )
-            for scenario in range(param.len_scenario):
-                trajectory[TimeScenarioIndex(week, scenario)] = {
-                    a: max(
-                        min(
-                            l[ScenarioIndex(scenario)],
-                            multi_stock_management.dict_reservoirs[
-                                a
-                            ].reservoir.capacity,
-                        ),
-                        0,
-                    )
-                    for a, l in levels_w.items()
-                }
-                controls[TimeScenarioIndex(week, scenario)] = {
-                    a: c[ScenarioIndex(scenario)] for a, c in controls_w.items()
-                }
-            costs[WeekIndex(week)] = cost_w
-
-    return trajectory, controls, costs

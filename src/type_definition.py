@@ -84,12 +84,24 @@ def area_value_to_array(x: Dict[AreaIndex, float]) -> Array1D:
     return np.array([y for y in x.values()])
 
 
+def area_value_to_area_scenario_value(
+    x: Dict[AreaIndex, float], len_scenario: int
+) -> Dict[AreaIndex, Dict[ScenarioIndex, float]]:
+    return {a: {ScenarioIndex(s): y for s in range(len_scenario)} for a, y in x.items()}
+
+
 def list_area_value_to_array(x: List[Dict[AreaIndex, float]]) -> Array2D:
     return np.array([[z for z in y.values()] for y in x])
 
 
 def area_list_value_to_array(x: Dict[AreaIndex, List[float]]) -> Array2D:
     return np.array([[z for z in y] for y in x.values()])
+
+
+def area_scenario_value_to_array(
+    x: Dict[AreaIndex, Dict[ScenarioIndex, float]]
+) -> Array2D:
+    return np.array([[z for z in y.values()] for y in x.values()])
 
 
 def array_to_area_value(
@@ -115,12 +127,11 @@ def mean_scenario_value(x: Dict[ScenarioIndex, float]) -> float:
 def timescenario_area_value_to_array(
     x: Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
     param: TimeScenarioParameter,
-    list_areas: List[AreaIndex],
 ) -> Array3D:
     return np.array(
         [
             [
-                [x[TimeScenarioIndex(w, s)][a] for a in list_areas]
+                [y for y in x[TimeScenarioIndex(w, s)].values()]
                 for s in range(param.len_scenario)
             ]
             for w in range(param.len_week)

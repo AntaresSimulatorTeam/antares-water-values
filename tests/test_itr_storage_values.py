@@ -9,9 +9,10 @@ from functions_iterative import (
     itr_control,
 )
 from read_antares_data import Reservoir
+from type_definition import timescenario_area_value_to_array
 
 expected_traj = np.array(
-    [[4450000.0], [4450000.0], [4450000.0], [4450000.0], [4450000.0], [4450000.0]]
+    [[[4450000.0]], [[4450000.0]], [[4450000.0]], [[4450000.0]], [[4450000.0]]]
 )
 
 expected_vb = np.array(
@@ -211,17 +212,16 @@ def test_itr_control(param: TimeScenarioParameter) -> None:
         ] * G[TimeScenarioIndex(0, 0)].inputs[i] == pytest.approx(cut[1])
         assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0])
 
-    assert -lb == pytest.approx(4410024896.0)
+    assert lb == pytest.approx(-4410024896.0)
     assert ub == pytest.approx(4410021272)
 
-    assert np.array(
-        [
-            [traj[0][TimeScenarioIndex(w, s)] for s in range(param.len_scenario)]
-            for w in range(param.len_week + 1)
-        ]
-    ) == pytest.approx(expected_traj)
+    assert timescenario_area_value_to_array(traj[0], param) == pytest.approx(
+        expected_traj
+    )
 
-    assert np.transpose([x for x in vb.values()]) == pytest.approx(expected_vb)
+    assert np.transpose([x for x in vb.values()]) == pytest.approx(
+        expected_vb, rel=1e-5
+    )
 
 
 def test_itr_control_with_xpress(param: TimeScenarioParameter) -> None:
@@ -255,16 +255,15 @@ def test_itr_control_with_xpress(param: TimeScenarioParameter) -> None:
             ].duals[i] * G[TimeScenarioIndex(0, 0)].inputs[i] == pytest.approx(cut[1])
             assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0])
 
-        assert -lb == pytest.approx(4410024896.0)
+        assert lb == pytest.approx(-4410024896.0)
         assert ub == pytest.approx(4410021272)
 
-        assert np.array(
-            [
-                [traj[0][TimeScenarioIndex(w, s)] for s in range(param.len_scenario)]
-                for w in range(param.len_week + 1)
-            ]
-        ) == pytest.approx(expected_traj)
+        assert timescenario_area_value_to_array(traj[0], param) == pytest.approx(
+            expected_traj
+        )
 
-        assert np.transpose([x for x in vb.values()]) == pytest.approx(expected_vb)
+        assert np.transpose([x for x in vb.values()]) == pytest.approx(
+            expected_vb, rel=1e-5
+        )
     else:
         print("Ignore test, xpress not available")

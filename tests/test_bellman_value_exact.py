@@ -6,7 +6,7 @@ from multi_stock_bellman_value_calculation import MultiStockManagement
 from simple_bellman_value_calculation import calculate_bellman_value_directly
 from type_definition import AreaIndex, Array1D, Dict
 
-expected_vb = -np.array(
+expected_vb = np.array(
     [
         [
             -5.88819098e09,
@@ -350,14 +350,14 @@ def test_bellman_value_exact(
         univariate=True,
     )
 
-    assert lb == pytest.approx(4410021312)
+    assert lb == pytest.approx(-4410021312)
 
     assert ub == pytest.approx(4410021125.56477)
 
     assert np.transpose(
         [
             [
-                vb[week].get_value({area.area: x})
+                vb[week]({area: x})
                 for area in multi_stock_management_one_node.areas
                 for x in discretization_one_node[area]
             ]
@@ -387,7 +387,7 @@ def test_bellman_value_exact_with_multi_stock(
     computed_vb = np.transpose(
         [
             [
-                vb[week].get_value({area.area: x})
+                vb[week]({area: x})
                 for area in multi_stock_management_one_node.areas
                 for x in discretization_one_node[area]
             ]

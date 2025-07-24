@@ -2,7 +2,7 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
-from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
+from estimation import PieceWiseLinearInterpolator
 from functions_iterative import (
     TimeScenarioIndex,
     TimeScenarioParameter,
@@ -192,12 +192,10 @@ def test_upper_bound(
     ].penalty_upper_rule_curve = 0
 
     list_models = {TimeScenarioIndex(0, 0): antares_problem_one_node}
-    V = {
-        area.area: PieceWiseLinearInterpolator(
-            discretization_one_node[area], np.zeros(20, dtype=np.float32)
-        )
-        for area in multi_stock_management_one_node.areas
-    }
+    V = PieceWiseLinearInterpolator(
+        discretization_one_node[AreaIndex("area")], np.zeros(20, dtype=np.float32)
+    )
+
     assert len(antares_problem_one_node.solver.constraints()) == 3535
     assert len(antares_problem_one_node.solver.variables()) == 3533
 
@@ -205,10 +203,7 @@ def test_upper_bound(
         param=param_one_week,
         multi_stock_management=multi_stock_management_one_node,
         list_models=list_models,
-        V={
-            WeekIndex(week): UniVariateEstimator(V)
-            for week in range(param_one_week.len_week + 1)
-        },
+        V={WeekIndex(week): V for week in range(param_one_week.len_week + 1)},
     )
 
     assert upper_bound == pytest.approx(621493147.4664392)
@@ -218,15 +213,12 @@ def test_upper_bound(
     assert len(antares_problem_one_node.solver.constraints()) == 3555
     assert len(antares_problem_one_node.solver.variables()) == 3533
 
-    V["area"].costs = np.linspace(-5e9, -3e9, num=20)
+    V.costs = np.linspace(-5e9, -3e9, num=20)
     upper_bound, controls, _, _ = compute_upper_bound(
         param=param_one_week,
         multi_stock_management=multi_stock_management_one_node,
         list_models=list_models,
-        V={
-            WeekIndex(week): UniVariateEstimator(V)
-            for week in range(param_one_week.len_week + 1)
-        },
+        V={WeekIndex(week): V for week in range(param_one_week.len_week + 1)},
     )
 
     assert upper_bound == pytest.approx(5046990806)
@@ -245,30 +237,23 @@ def test_upper_bound_with_bellman_values(
 ) -> None:
 
     list_models = {TimeScenarioIndex(0, 0): antares_problem_one_node}
-    V = {
-        area.area: PieceWiseLinearInterpolator(
-            discretization_one_node[area], np.zeros(20, dtype=np.float32)
-        )
-        for area in multi_stock_management_one_node.areas
-    }
-
-    V["area"].costs = bellman_values[:, 1]
+    V = PieceWiseLinearInterpolator(
+        discretization_one_node[AreaIndex("area")], np.zeros(20, dtype=np.float32)
+    )
+    V.costs = bellman_values[:, 1]
     upper_bound, controls, _, _ = compute_upper_bound(
         param=param_one_week,
         multi_stock_management=multi_stock_management_one_node,
         list_models=list_models,
-        V={
-            WeekIndex(week): UniVariateEstimator(V)
-            for week in range(param_one_week.len_week + 1)
-        },
+        V={WeekIndex(week): V for week in range(param_one_week.len_week + 1)},
     )
 
     assert controls[TimeScenarioIndex(0, 0)][AreaIndex("area")] == pytest.approx(133776)
 
     control = 123864.0
-    for mng in multi_stock_management_one_node.dict_reservoirs.values():
-        vb = V["area"](
-            mng.reservoir.initial_level + mng.reservoir.inflow[0, 0] - control
+    for area, mng in multi_stock_management_one_node.dict_reservoirs.items():
+        vb = V(
+            {area: mng.reservoir.initial_level + mng.reservoir.inflow[0, 0] - control}
         )
         cost, _, _, _ = antares_problem_one_node.solve_with_predefined_controls(
             {AreaIndex("area"): control}
@@ -292,12 +277,9 @@ def test_upper_bound_with_xpress(
         ].penalty_upper_rule_curve = 0
 
         list_models = {TimeScenarioIndex(0, 0): antares_problem_one_node_xpress}
-        V = {
-            area.area: PieceWiseLinearInterpolator(
-                discretization_one_node[area], np.zeros(20, dtype=np.float32)
-            )
-            for area in multi_stock_management_one_node.areas
-        }
+        V = PieceWiseLinearInterpolator(
+            discretization_one_node[AreaIndex("area")], np.zeros(20, dtype=np.float32)
+        )
         assert len(antares_problem_one_node_xpress.solver.constraints()) == 3535
         assert len(antares_problem_one_node_xpress.solver.variables()) == 3533
 
@@ -305,10 +287,7 @@ def test_upper_bound_with_xpress(
             param=param_one_week,
             multi_stock_management=multi_stock_management_one_node,
             list_models=list_models,
-            V={
-                WeekIndex(week): UniVariateEstimator(V)
-                for week in range(param_one_week.len_week + 1)
-            },
+            V={WeekIndex(week): V for week in range(param_one_week.len_week + 1)},
         )
 
         assert upper_bound == pytest.approx(621493147.4664392)
@@ -318,15 +297,12 @@ def test_upper_bound_with_xpress(
         assert len(antares_problem_one_node_xpress.solver.constraints()) == 3555
         assert len(antares_problem_one_node_xpress.solver.variables()) == 3533
 
-        V["area"].costs = np.linspace(-5e9, -3e9, num=20)
+        V.costs = np.linspace(-5e9, -3e9, num=20)
         upper_bound, controls, _, _ = compute_upper_bound(
             param=param_one_week,
             multi_stock_management=multi_stock_management_one_node,
             list_models=list_models,
-            V={
-                WeekIndex(week): UniVariateEstimator(V)
-                for week in range(param_one_week.len_week + 1)
-            },
+            V={WeekIndex(week): V for week in range(param_one_week.len_week + 1)},
         )
 
         assert upper_bound == pytest.approx(5046990806)

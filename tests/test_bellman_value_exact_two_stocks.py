@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 
 from estimation import BellmanValueEstimation
-from functions_iterative import ReservoirManagement, TimeScenarioParameter
-from multi_stock_bellman_value_calculation import AntaresProblem
+from functions_iterative import TimeScenarioParameter
+from optimization import AntaresProblem
 from read_antares_data import Reservoir
 from reservoir_management import MultiStockManagement
 from simple_bellman_value_calculation import calculate_bellman_value_directly

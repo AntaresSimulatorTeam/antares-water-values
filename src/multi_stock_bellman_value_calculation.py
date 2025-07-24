@@ -1,22 +1,21 @@
 import os as os
-import pickle as pkl
 from itertools import product
-from pathlib import Path
 
 import numpy as np
 from juliacall import Main as jl
 from scipy.stats import random_correlation
 from tqdm import tqdm
 
-from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
-from estimation import LinearCostEstimator, LinearInterpolator
-from functions_iterative import compute_upper_bound
-from optimization import (
-    AntaresProblem,
-    WeeklyBellmanProblem,
-    initialize_antares_problems,
-    solve_for_optimal_trajectory,
+from calculate_reward_and_bellman_values import (
+    Lget_costs,
+    get_all_costs,
+    get_bellman_values_from_approximate_costs,
+    get_default_linear_interpolator,
+    get_optimal_trajectory_from_approximate_costs,
 )
+from display import ConvergenceProgressBar, draw_usage_values, draw_uvs_sddp
+from estimation import Estimator, LinearCostEstimator, LinearInterpolator
+from optimization import WeeklyBellmanProblem, initialize_antares_problems
 from reservoir_management import MultiStockManagement
 from type_definition import (
     AreaIndex,
@@ -26,9 +25,9 @@ from type_definition import (
     TimeScenarioIndex,
     TimeScenarioParameter,
     WeekIndex,
+    area_value_to_area_scenario_value,
     area_value_to_array,
     array_to_area_value,
-    list_area_value_to_array,
     mean_scenario_value,
     time_list_area_value_to_array,
     time_list_to_array,
@@ -36,304 +35,6 @@ from type_definition import (
     timescenario_list_area_value_to_array,
     timescenario_list_value_to_array,
 )
-
-
-def get_bellman_values_from_costs(
-    param: TimeScenarioParameter,
-    multi_stock_management: MultiStockManagement,
-    costs_approx: LinearCostEstimator,
-    final_bellman_values: Optional[LinearInterpolator],
-    name_solver: str,
-    levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
-    divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
-    verbose: bool = False,
-    n_cycle: int = 1,
-) -> Dict[WeekIndex, LinearInterpolator]:
-    """
-    Dynamically solves the problem of minimizing the optimal control problem for every discretized level,
-    balancing between saving costs this week or saving stock to avoid future costs
-
-    Parameters
-    ----------
-        param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
-        multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
-        costs_approx:LinearInterpolator: All precalculated lower bounding hyperplains of weekly cost estimation,
-        final_bellman_values:LinearInterpolator: All previously obtained lower bounding hyperplains of future cost estimation,
-        nSteps_bellman:int: Discretization level used
-        name_solver:str: Solver chosen for the optimization problem, default -> CLP
-        method:str: Method used to select levels to check
-        verbose:bool: Controls the displays at running time
-
-    Returns
-    -------
-        levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]]: Level discretization used,
-        costs:Dict[WeekIndex, List[float]]: Objective value at every week (and for every level combination),
-        duals:Dict[WeekIndex, List[Dict[AreaIndex, float]]]: Dual values of the initial level constraint at every week (and for every level combination),
-        final_bellman_values:LinearInterpolator: Final estimation of total system prices
-    """
-    if final_bellman_values is None:
-        final_bellman_values = initialize_future_costs(
-            multi_stock_management=multi_stock_management
-        )
-
-    for i in range(n_cycle):
-        # Keeping in memory all future costs approximations
-        bellman_values = {WeekIndex(param.len_week): final_bellman_values}
-
-        # Starting from last week dynamically solving the optimal control problem (from every starting level)
-        week_range = range(param.len_week - 1, -1, -1)
-        if verbose:
-            week_range = tqdm(week_range, colour="Green", desc="Dynamic Solving")
-        for week in week_range:
-            costs_w: List[float] = []
-            duals_w: List[Dict[AreaIndex, float]] = []
-
-            for lvl_init in levels[WeekIndex(week)]:
-
-                problem = WeeklyBellmanProblem(
-                    param=param,
-                    multi_stock_management=multi_stock_management,
-                    week_costs_estimation=costs_approx.get_week_estimators(week),
-                    name_solver=name_solver,
-                    divisor=divisor,
-                    week=week,
-                )
-
-                _, cost_wl, duals_wl, _ = problem.solve(
-                    level_init=lvl_init,
-                    future_costs_estimation=bellman_values[WeekIndex(week + 1)],
-                )
-
-                # Writing down results
-                costs_w.append(cost_wl)
-                duals_w.append(duals_wl)
-
-            bellman_values[WeekIndex(week)] = LinearInterpolator(
-                controls=list_area_value_to_array(levels[WeekIndex(week)]),
-                costs=np.array(costs_w),
-                duals=list_area_value_to_array(duals_w),
-            )
-        final_bellman_values = bellman_values[WeekIndex(0)]
-    return bellman_values
-
-
-def initialize_future_costs(
-    multi_stock_management: MultiStockManagement,
-) -> LinearInterpolator:
-    """
-    Proposes an estimation of yearly costs based on the precalculated weekly costs, to prevent the model from
-    emptying the stock on the last week as if it was the last
-
-    Parameters
-    ----------
-        param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
-        multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
-        costs_approx:Estimator: Precalculated weekly costs based on control
-
-    Returns
-    -------
-        LinearInterpolator: for any level associates a corresponding price
-    """
-    inputs = np.array(
-        [
-            area_value_to_array(
-                {
-                    a: res.reservoir.capacity
-                    for a, res in multi_stock_management.dict_reservoirs.items()
-                }
-            )
-        ]
-    )
-    duals = np.array(
-        [area_value_to_array({a: 0 for a in multi_stock_management.areas})]
-    )
-    return LinearInterpolator(
-        controls=inputs,
-        costs=np.array([0]),
-        duals=duals,
-    )
-
-
-def get_week_scenario_costs(
-    m: AntaresProblem,
-    controls_list: List[Dict[AreaIndex, float]],
-) -> tuple[List[float], List[Dict[AreaIndex, float]], int, List[float]]:
-    """
-    Takes a control and an initialized Antares problem setup and returns the objective and duals
-    for every week and every Scenario
-
-    Parameters
-    ----------
-        m:AntaresProblem: Instance of Antares problem describing the problem currently solved
-            (at specified week and scenario),
-        multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
-        controls_list:List[Dict[AreaIndex, float]], list of all controls to be checked
-
-    Returns
-    -------
-        costs:List[float]: cost of each control,
-        slopes:List[Dict[AreaIndex, float]]: dual values for each control,
-        tot_iter:int: number of simplex pivots,
-        times:List[float]: list of solving times
-    """
-
-    tot_iter = 0
-    times = []
-
-    # Initialize costs
-    costs: List[float] = []
-    slopes: List[Dict[AreaIndex, float]] = []
-    for u in controls_list:
-
-        # Solving the problem
-        control_cost, control_slopes, itr, time_taken = (
-            m.solve_with_predefined_controls(control=u)
-        )
-        tot_iter += itr
-        times.append(time_taken)
-
-        # Save results
-        # print(f"Imposing control {control} costs {costs}, with duals {control_slopes}")
-        costs.append(control_cost)
-        slopes.append(control_slopes)
-    return costs, slopes, tot_iter, times
-
-
-def get_all_costs(
-    param: TimeScenarioParameter,
-    list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    controls_list: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-    saving_dir: Optional[str] = None,
-    verbose: bool = False,
-    already_init: bool = False,
-    keep_intermed_res: bool = False,
-) -> tuple[
-    Dict[TimeScenarioIndex, List[float]],
-    Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-    Dict[TimeScenarioIndex, List[float]],
-]:
-    """
-    Takes a problem and a discretization level and solves the Antares pb for every combination of stock for every week
-
-        Parameters
-        ----------
-            param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
-            list_models:Dict[TimeScenarioIndex, AntaresProblem]: List of models
-            multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
-            controls_list:Dict[WeekIndex, List[Dict[AreaIndex, float]]]: Controls to be evaluated, per week, per scenario
-            verbose:bool:Control the level of outputs show by the function
-
-        Returns
-        -------
-            Bellman Values:Dict[TimeScenarioIndex, List[float]]: Bellman values
-    """
-    tot_iter = 0
-    times: Dict[TimeScenarioIndex, List[float]] = {}
-    if keep_intermed_res or already_init:
-        assert saving_dir is not None
-        filename = saving_dir + "/get_all_costs_run.pkl"
-
-    # Initializing the n_weeks*n_scenarios*n_controls*n_stocks values to fill
-    costs: Dict[TimeScenarioIndex, List[float]] = {}
-    slopes: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]] = {}
-    week_start = 0
-    if already_init:
-        with open(filename, "rb") as file:
-            pre_costs, pre_slopes = pkl.load(file)
-        week_start = len(pre_costs) // param.len_scenario
-        costs = pre_costs
-        slopes = pre_slopes
-    week_range = range(week_start, param.len_week)
-    if verbose:
-        week_range = tqdm(
-            range(week_start, param.len_week), colour="blue", desc="Simulation"
-        )
-    for week in week_range:
-        for scenario in range(param.len_scenario):
-            ts_id = TimeScenarioIndex(week=week, scenario=scenario)
-            # Antares problem
-            m = list_models[ts_id]
-            try:
-                costs_ws, slopes_ws, iters, times_ws = get_week_scenario_costs(
-                    m=m,
-                    controls_list=controls_list[TimeScenarioIndex(week, scenario)],
-                )
-            except ValueError:
-                print(
-                    f"Failed at week {week}, the conditions on control were: {controls_list[TimeScenarioIndex(week,scenario)]}"
-                )
-                raise ValueError
-            tot_iter += iters
-            times[TimeScenarioIndex(week, scenario)] = times_ws
-            costs[TimeScenarioIndex(week, scenario)] = costs_ws
-            slopes[TimeScenarioIndex(week, scenario)] = slopes_ws
-        if keep_intermed_res and saving_dir is not None:
-            if not (os.path.exists(saving_dir)):
-                os.makedirs(saving_dir)
-            with open(filename, "wb") as file:
-                pkl.dump((costs, slopes), file)
-    # print(f"Number of simplex pivot {tot_iter}")
-    return costs, slopes, times
-
-
-def Lget_costs(
-    param: TimeScenarioParameter,
-    multi_stock_management: MultiStockManagement,
-    output_path: str,
-    name_solver: str,
-    controls_list: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-    saving_directory: str,
-    verbose: bool = False,
-    save_protos: bool = False,
-    prefix: str = "",
-) -> tuple[
-    Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-    Dict[TimeScenarioIndex, List[float]],
-    Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-]:
-    filename = f"{saving_directory}/{prefix}get_all_costs_run_{output_path.replace('/','_')[-27:]}.pkl"
-
-    costs: Dict[TimeScenarioIndex, List[float]] = {}
-    slopes: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]] = {}
-    week_start = 0
-    if Path(filename).is_file():
-        with open(filename, "rb") as file:
-            week_start, pre_controls, pre_costs, pre_slopes = pkl.load(file)
-        controls_list = pre_controls
-        costs = pre_costs
-        slopes = pre_slopes
-    week_range = range(param.len_week)
-    if verbose:
-        if week_start > 0:
-            print(f"Starting again at week {week_start}")
-        week_range = tqdm(range(param.len_week), colour="blue", desc="Simulation")
-    for week in week_range:
-        if week >= week_start:
-            for scenario in range(param.len_scenario):
-                m = AntaresProblem(
-                    scenario=scenario,
-                    week=week,
-                    path=output_path,
-                    saving_directory=saving_directory,
-                    name_solver=name_solver,
-                    save_protos=save_protos,
-                    param=param,
-                    multi_stock_management=multi_stock_management,
-                )
-                costs_ws, slopes_ws, _, _ = get_week_scenario_costs(
-                    m=m,
-                    controls_list=controls_list[TimeScenarioIndex(week, scenario)],
-                )
-                costs[TimeScenarioIndex(week, scenario)] = costs_ws
-                slopes[TimeScenarioIndex(week, scenario)] = slopes_ws
-            if not (os.path.exists(saving_directory)):
-                os.makedirs(saving_directory)
-            with open(filename, "wb") as file:
-                pkl.dump(
-                    (week, controls_list, costs, slopes),
-                    file,
-                )
-    return controls_list, costs, slopes
 
 
 def generate_controls(
@@ -458,7 +159,7 @@ def precalculated_method(
 ) -> tuple[
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     LinearCostEstimator,
-    Dict[WeekIndex, LinearInterpolator],
+    Dict[WeekIndex, Estimator],
     Dict[TimeScenarioIndex, List[float]],
 ]:
     """
@@ -530,7 +231,7 @@ def precalculated_method(
         method="lines",
     )
 
-    bellman_values = get_bellman_values_from_costs(
+    bellman_values = get_bellman_values_from_approximate_costs(
         param=param,
         multi_stock_management=multi_stock_management,
         costs_approx=costs_approx,
@@ -539,6 +240,7 @@ def precalculated_method(
         verbose=verbose,
         levels=levels,
         n_cycle=2,
+        piecewiselinear=False,
     )
 
     return (
@@ -646,7 +348,7 @@ def select_controls_to_explore(
         Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]]: Controls for a week / scenario / control_id / reservoir given
     """
     array_pseudo_opt_controls = timescenario_area_value_to_array(
-        pseudo_opt_controls, param, multi_stock_management.areas
+        pseudo_opt_controls, param
     )
     if not rng:
         rng = np.random.default_rng(seed=12345)
@@ -732,7 +434,7 @@ def compute_usage_values_from_costs(
     multi_stock_management: MultiStockManagement,
     name_solver: str,
     costs_approx: LinearCostEstimator,
-    future_costs_approx_l: Dict[WeekIndex, LinearInterpolator],
+    future_costs_approx_l: Dict[WeekIndex, Estimator],
     optimal_trajectory: Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
     nSteps_bellman: int,
     correlations: np.ndarray,
@@ -770,9 +472,7 @@ def compute_usage_values_from_costs(
         for a in multi_stock_management.areas
     }
     base_levels = np.mean(
-        timescenario_area_value_to_array(
-            optimal_trajectory, param, multi_stock_management.areas
-        ),
+        timescenario_area_value_to_array(optimal_trajectory, param),
         axis=1,
     )[:n_weeks]
 
@@ -847,8 +547,9 @@ def compute_usage_values_from_costs(
                 try:
                     # Solve
                     _, _, dual_vals, level = problem.solve(
-                        level_init=array_to_area_value(
-                            levels, multi_stock_management.areas
+                        level_init=area_value_to_area_scenario_value(
+                            array_to_area_value(levels, multi_stock_management.areas),
+                            param.len_scenario,
                         ),
                         future_costs_estimation=future_costs_approx_l[
                             WeekIndex(week + 1)
@@ -859,10 +560,6 @@ def compute_usage_values_from_costs(
                         area: levels[i]
                         for i, area in enumerate(multi_stock_management.areas)
                     }
-                    future_costs_approx = future_costs_approx_l[WeekIndex(week)]
-                    print(
-                        f"We were using the following future costs estimation: {[f'Cost(lvl) >= {cost} +  (lvl_0 - {input[0]})*{duals[0]} + (lvl_1 - {input[1]})*{duals[1]}' for input, cost, duals in zip(future_costs_approx.inputs, future_costs_approx.costs, future_costs_approx.duals)]}"
-                    )
                     print(
                         f"""Failed to solve at week {week} with initial levels {levels_dict} \n
                         (when imposing level of {area} to {levels_imposed[j, i]}) \n
@@ -871,7 +568,9 @@ def compute_usage_values_from_costs(
                     )
                     raise ValueError
                 destination_levels[week, j, i] = mean_scenario_value(level[area])
-                usage_values[area][WeekIndex(week)].append(-dual_vals[area])
+                usage_values[area][WeekIndex(week)].append(
+                    -mean_scenario_value(dual_vals[area])
+                )
     dict_levels_imposed = {
         WeekIndex(w): [
             {area: x[i] for i, area in enumerate(multi_stock_management.areas)}
@@ -895,9 +594,7 @@ def get_opt_gap(
         [
             [
                 costs_approx[TimeScenarioIndex(week, scenario)](
-                    list_area_value_to_array(
-                        controls_list[TimeScenarioIndex(week, scenario)]
-                    )
+                    controls_list[TimeScenarioIndex(week, scenario)][0]
                 )
                 for scenario in range(param.len_scenario)
             ]
@@ -924,7 +621,7 @@ def cutting_plane_method(
     starting_pt: Dict[AreaIndex, float],
     costs_approx: LinearCostEstimator,
     costs: Dict[TimeScenarioIndex, List[float]],
-    final_bellman_values: LinearInterpolator,
+    final_bellman_values: Estimator,
     nSteps_bellman: int,
     method: str,
     correlations: np.ndarray,
@@ -936,7 +633,7 @@ def cutting_plane_method(
     verbose: bool = False,
 ) -> tuple[
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
-    Dict[WeekIndex, LinearInterpolator],
+    Dict[WeekIndex, Estimator],
     LinearCostEstimator,
     Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
 ]:
@@ -994,7 +691,7 @@ def cutting_plane_method(
             method=method,
         )
 
-        bellman_values = get_bellman_values_from_costs(
+        bellman_values = get_bellman_values_from_approximate_costs(
             param=param,
             multi_stock_management=multi_stock_management,
             costs_approx=costs_approx,
@@ -1003,18 +700,21 @@ def cutting_plane_method(
             levels=levels,
             divisor=divisor,
             verbose=verbose,
+            piecewiselinear=False,
         )
         final_bellman_values = bellman_values[WeekIndex(0)]
 
         # Evaluate optimal
-        trajectory, pseudo_opt_controls, _ = solve_for_optimal_trajectory(
-            param=param,
-            multi_stock_management=multi_stock_management,
-            costs_approx=costs_approx,
-            future_costs_approx_l=bellman_values,
-            starting_pt=starting_pt,
-            name_solver=name_solver,
-            divisor=divisor,
+        trajectory, pseudo_opt_controls, _ = (
+            get_optimal_trajectory_from_approximate_costs(
+                param=param,
+                multi_stock_management=multi_stock_management,
+                costs_approx=costs_approx,
+                bellman_values=bellman_values,
+                level_init=starting_pt,
+                name_solver=name_solver,
+                divisor=divisor,
+            )
         )
         # Beware, some trajectories seem to be overstep the bounds with values such as -2e-12
 
@@ -1085,9 +785,7 @@ def cutting_plane_method(
                 n_weeks=param.len_week,
                 nSteps_bellman=nSteps_bellman,
                 multi_stock_management=multi_stock_management,
-                trajectory=timescenario_area_value_to_array(
-                    trajectory, param, multi_stock_management.areas
-                ),
+                trajectory=timescenario_area_value_to_array(trajectory, param),
                 ub=500,
             )
             pbar.update(precision=opt_gap)
@@ -1114,7 +812,7 @@ def iter_bell_vals(
     verbose: bool = False,
 ) -> tuple[
     LinearCostEstimator,
-    Dict[WeekIndex, LinearInterpolator],
+    Dict[WeekIndex, Estimator],
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
     Dict[AreaIndex, Dict[WeekIndex, List[float]]],
@@ -1186,7 +884,7 @@ def iter_bell_vals(
     )
 
     # Initialize our approximation on future costs
-    future_costs_approx = initialize_future_costs(
+    future_costs_approx = get_default_linear_interpolator(
         multi_stock_management=multi_stock_management,
     )
 

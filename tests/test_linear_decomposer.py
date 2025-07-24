@@ -2,6 +2,7 @@ import numpy as np
 from pytest import approx
 
 from estimation import LinearDecomposer, LinearInterpolator, decompose_hyperplanes
+from type_definition import AreaIndex, array_to_area_value
 
 
 def test_init() -> None:
@@ -48,7 +49,7 @@ def test_init() -> None:
         )
     )
 
-    assert linear_decomposer(np.array([1, 0])) == 6
+    assert linear_decomposer({AreaIndex("0"): 1, AreaIndex("1"): 0}) == 6
 
 
 def test_remove_inconsistence() -> None:
@@ -86,7 +87,19 @@ def test_remove_inconsistence() -> None:
     expected_first_pb_inp = [np.array([0, 0]), np.array([0, 0])]
 
     assert all(costs + tolerance > 0)
-    guesses = np.array([layer(controls) for layer in layers])  # N_res * N_inp
+    guesses = np.array(
+        [
+            [
+                layer(
+                    array_to_area_value(
+                        x, [AreaIndex(f"{i}") for i in range(len(controls[0]))]
+                    )
+                )
+                for x in controls
+            ]
+            for layer in layers
+        ]
+    )  # N_res * N_inp
     assert guesses == approx(
         np.array([[2.15384615, 5.0, 2.15384615], [1.84615385, 5.0, 5.0]])
     )
@@ -99,9 +112,31 @@ def test_remove_inconsistence() -> None:
         # Removing first potential source of pb
         first_pb_inp = controls[bad_guesses][0]
         assert first_pb_inp == approx(expected_first_pb_inp[i])
-        bad_lay = [layer for layer in layers if layer(first_pb_inp) > 0][-1]
+        bad_lay = [
+            layer
+            for layer in layers
+            if layer(
+                array_to_area_value(
+                    first_pb_inp,
+                    [AreaIndex(f"{i}") for i in range(len(first_pb_inp))],
+                )
+            )
+            > 0
+        ][-1]
         bad_lay.remove(bad_lay.get_owner(first_pb_inp))
-        guesses = np.array([layer(controls) for layer in layers])  # N_res * N_inp
+        guesses = np.array(
+            [
+                [
+                    layer(
+                        array_to_area_value(
+                            x, [AreaIndex(f"{i}") for i in range(len(controls[0]))]
+                        )
+                    )
+                    for x in controls
+                ]
+                for layer in layers
+            ]
+        )  # N_res * N_inp
 
     assert len(layers) == 2
     assert layers[0].inputs == approx(
@@ -130,5 +165,5 @@ def test_lower_bound() -> None:
 
     lower_bound = LinearInterpolator(controls=controls, costs=costs, duals=duals)
 
-    assert lower_bound(np.array([0, 0])) == 4
-    assert lower_bound(np.array([1, 0])) == 6
+    assert lower_bound({AreaIndex("0"): 0, AreaIndex("1"): 0}) == 4
+    assert lower_bound({AreaIndex("0"): 1, AreaIndex("1"): 0}) == 6

@@ -2,11 +2,7 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
-from estimation import (
-    LinearCostEstimator,
-    PieceWiseLinearInterpolator,
-    UniVariateEstimator,
-)
+from estimation import LinearCostEstimator, PieceWiseLinearInterpolator
 from functions_iterative import (
     TimeScenarioIndex,
     TimeScenarioParameter,
@@ -74,12 +70,9 @@ def test_basis_with_upper_bound(
             type_estimator="LinearInterpolator",
         )
 
-        V = {
-            area.area: PieceWiseLinearInterpolator(
-                discretization_one_node[area], np.zeros(20, dtype=np.float32)
-            )
-            for area in multi_stock_management_one_node.areas
-        }
+        V = PieceWiseLinearInterpolator(
+            discretization_one_node[AreaIndex("area")], np.zeros(20, dtype=np.float32)
+        )
 
         _, _, _, _ = antares_problem_one_node_xpress.solve_with_predefined_controls(
             control={AreaIndex("area"): 0}, prev_basis=Basis([], [])
@@ -89,10 +82,7 @@ def test_basis_with_upper_bound(
             param=param_one_week,
             multi_stock_management=multi_stock_management_one_node,
             list_models=list_models,
-            V={
-                WeekIndex(week): UniVariateEstimator(V)
-                for week in range(param_one_week.len_week + 1)
-            },
+            V={WeekIndex(week): V for week in range(param_one_week.len_week + 1)},
         )
 
         _, _, _, _ = antares_problem_one_node_xpress.solve_with_predefined_controls(
@@ -103,10 +93,7 @@ def test_basis_with_upper_bound(
             param=param_one_week,
             multi_stock_management=multi_stock_management_one_node,
             list_models=list_models,
-            V={
-                WeekIndex(week): UniVariateEstimator(V)
-                for week in range(param_one_week.len_week + 1)
-            },
+            V={WeekIndex(week): V for week in range(param_one_week.len_week + 1)},
             reward_approximation=reward,
         )
         assert upper_bound_2 == pytest.approx(upper_bound_1)

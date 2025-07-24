@@ -2,8 +2,7 @@ import numpy as np
 import ortools.linear_solver.pywraplp as pywraplp
 import pytest
 
-from estimation import PieceWiseLinearInterpolator, UniVariateEstimator
-from functions_iterative import TimeScenarioParameter
+from estimation import PieceWiseLinearInterpolator
 from optimization import AntaresProblem, Basis
 from reservoir_management import MultiStockManagement
 from type_definition import AreaIndex, Array1D, Dict
@@ -87,7 +86,7 @@ def test_create_and_modify_weekly_problem_with_bellman_values(
     }
 
     antares_problem_one_node._set_constraints_initial_level_and_bellman_values(
-        UniVariateEstimator({"area": V[1]}),
+        V[1],
         multi_stock_management_one_node.get_initial_level(),
     )
 
@@ -99,7 +98,7 @@ def test_create_and_modify_weekly_problem_with_bellman_values(
     _, _, cout, _, optimal_controls, _, _ = (
         antares_problem_one_node.solve_problem_with_bellman_values(
             multi_stock_management_one_node,
-            UniVariateEstimator({"area": V[1]}),
+            V[1],
             multi_stock_management_one_node.get_initial_level(),
             True,
             False,

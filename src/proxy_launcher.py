@@ -9,7 +9,16 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
 class Launch:
-    def __init__(self, dir_study: str, area: str,area_target:str|None, MC_years: int, alpha: float, coeff_cost: int, enable_logging: bool, global_export_dir: str | None = None):
+    def __init__(self, 
+                 dir_study: str, 
+                 area: str,
+                 area_target:str|None, 
+                 MC_years: int, 
+                 alpha: float, 
+                 coeff_cost: int, 
+                 enable_logging: bool, 
+                 global_export_dir: str | None = None):
+        
         self.dir_study = dir_study
         self.name_area = area
         self.nb_scenarios = MC_years

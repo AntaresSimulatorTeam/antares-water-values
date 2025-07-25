@@ -226,12 +226,85 @@ enabled = true
                         turb_max : {self.bv.proxy.reservoir.max_weekly_turb[w]*self.bv.proxy.turb_efficiency},\
                         pump_max : {-self.bv.proxy.reservoir.max_weekly_pump[w]*self.bv.proxy.reservoir.efficiency}"
                     )
+                # assert np.sum(balance[hour_start:hour_start + 168, s])==self.trajectories.optimal_controls[s,w],\
+                #     f"Erreur pour la zone {self.name_area} dans la semaine {w} pour le scénario {s}: la modélisation stock CT ne correspond pas au contrôle opimal."\
+                #     f" controle : {np.sum(balance[hour_start:hour_start + 168, s])}, controle optimal : {self.trajectories.optimal_controls[s,w]}"
         balance = np.vstack([balance, np.zeros((24, len(self.scenarios)))])
         path = os.path.join(
             self.dir_study, "input", "st-storage", "series", self.area_target,
             f"lt_stock_proxy_{self.area_target}", "inflows.txt"
         )
         np.savetxt(path, balance, fmt="%.20f", delimiter="\t")
+
+    def adjust_to_spillage_constraint(self) -> None:
+        """
+        Adjust misc-gen and load files to include spillage constraints.
+        Specifically, adds max(hourly_turbine, hourly_pump) to column 6 of misc-gen
+        and adds the same to load.txt at each hour.
+        """
+        # Chemins vers les fichiers
+        miscgen_path = os.path.join(
+            self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt"
+        )
+        load_path = os.path.join(
+            self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt"
+        )
+
+        miscgen_backup_path = miscgen_path.replace(".txt", "_old.txt")
+        load_backup_path = load_path.replace(".txt", "_old.txt")
+
+        # Sauvegarde : renommage des fichiers d’origine s’ils existent
+        if os.path.exists(miscgen_path):
+            if not os.path.exists(miscgen_backup_path):
+                os.rename(miscgen_path, miscgen_backup_path)
+            else:
+                os.remove(miscgen_path)  # évite conflit si backup existe déjà
+        else:
+            raise FileNotFoundError(f"Fichier miscgen non trouvé : {miscgen_path}")
+
+        if os.path.exists(load_path):
+            if not os.path.exists(load_backup_path):
+                os.rename(load_path, load_backup_path)
+            else:
+                os.remove(load_path)
+        else:
+            raise FileNotFoundError(f"Fichier load non trouvé : {load_path}")
+
+        # Chargement des données
+        try:
+            miscgen_data = np.loadtxt(miscgen_backup_path)
+            if miscgen_data.size == 0:
+                miscgen_data = np.zeros((8760, 8))
+        except Exception:
+            miscgen_data = np.zeros((8760, 8))
+
+        try:
+            load_data = np.loadtxt(load_backup_path)
+            if load_data.size == 0:
+                load_data = np.zeros((8760, 200))
+            if load_data.ndim==1:
+                load_data = np.repeat(load_data[:, np.newaxis], 200, axis=1)
+        except Exception:
+            load_data = np.zeros((8760, 200))
+
+        # Vérification dimensions
+        if miscgen_data.shape[0] != 8760 or load_data.shape[0] != 8760:
+            raise ValueError("Les fichiers doivent contenir exactement 8760 lignes (données horaires).")
+
+        # Calcul de la contrainte de déversement : max(turb, pump)
+        hourly_turb = self.bv.proxy.reservoir.max_hourly_turb
+        hourly_pump = self.bv.proxy.reservoir.max_hourly_pump
+        spill_constraint = np.maximum(hourly_turb, hourly_pump)
+        spill_constraint = np.concatenate([spill_constraint, spill_constraint[-24:]])  # Ajout de 24 heures pour compléter
+
+        # Modification des données
+        miscgen_data[:, 5] += spill_constraint
+        load_data += spill_constraint[:, np.newaxis]
+
+        # Sauvegarde
+        np.savetxt(miscgen_path, miscgen_data, fmt="%.20f", delimiter="\t")
+        np.savetxt(load_path, load_data, fmt="%.20f", delimiter="\t")
+
 
     def apply_all(self) -> None:
         self.overwrite_inflows()
@@ -241,6 +314,7 @@ enabled = true
         self.create_rule_curve_file()
         self.modify_scenario_builder()
         self.create_inflows_sts()
+        self.adjust_to_spillage_constraint()
         print(f"✅ Antares study modified for area '{self.area_target if self.area_target else self.name_area}'\n")
 
 
@@ -331,6 +405,36 @@ class UndoAntaresModifications:
 
         print("✔ scenariobuilder cleaned.")
 
+    def restore_miscgen_and_load(self) -> None:
+        # Restoration miscgen
+        miscgen_path = os.path.join(
+            self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt"
+        )
+        miscgen_backup_path = miscgen_path.replace(".txt", "_old.txt")
+
+        if os.path.exists(miscgen_backup_path):
+            if os.path.exists(miscgen_path):
+                os.remove(miscgen_path)
+            os.rename(miscgen_backup_path, miscgen_path)
+            print("✔ miscgen restored.")
+        else:
+            print("⚠ miscgen backup not found. Nothing restored.")
+
+        # Restoration load
+        load_path = os.path.join(
+            self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt"
+        )
+        load_backup_path = load_path.replace(".txt", "_old.txt")
+
+        if os.path.exists(load_backup_path):
+            if os.path.exists(load_path):
+                os.remove(load_path)
+            os.rename(load_backup_path, load_path)
+            print("✔ load restored.")
+        else:
+            print("⚠ load backup not found. Nothing restored.")
+
+
     def undo_all(self) -> None:
         print(f"\n🔁 Restoring Antares study for area: {self.area}")
         self.restore_inflows()
@@ -338,5 +442,6 @@ class UndoAntaresModifications:
         self.remove_st_cluster_section()
         self.remove_st_series_folder()
         self.clean_scenariobuilder()
+        self.restore_miscgen_and_load()
         print(f"✅ Restoration complete for area '{self.area}'\n")
 

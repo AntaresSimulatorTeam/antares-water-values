@@ -16,7 +16,6 @@ class Proxy:
         self.scenarios=range(MC_years)
         
         self.weighted_net_load = self.compute_weighted_net_load()
-        self.ub_cost = self.global_upper_bound_cost()
 
     
     def compute_weighted_net_load(self)-> np.ndarray:
@@ -98,17 +97,10 @@ class Proxy:
         cost_functions=np.array([[self.stage_cost_function(w,s) for s in self.scenarios] for w in range(self.nb_weeks)])
         return cost_functions
 
-    def upper_bound_cost(self,scenario:int,week:int)->float:
-        return 168*(
-            np.max(
-                np.abs(self.weighted_net_load[week * 168:(week + 1) * 168, scenario])
-            )**self.alpha
+    def upper_bound_cost(self, week: int) -> float:
+        return 168 * (
+            max(
+                np.abs(self.weighted_net_load[week * 168:(week + 1) * 168, scenario]).max()
+                for scenario in self.scenarios
+            ) ** self.alpha
         )
-
-    def global_upper_bound_cost(self) -> float:
-        return max(
-            sum(self.upper_bound_cost(s, w) for w in range(self.nb_weeks))
-            for s in self.scenarios
-        )
-    
-    

@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import os
 
 import numpy as np
+from scipy import misc
 
 
 @dataclass
@@ -183,11 +184,14 @@ class NetLoad:
         path_load = f"{self.dir_study}/input/load/series/load_{self.area}.txt"
         if os.path.exists(path_load) and os.path.getsize(path_load) != 0:
             load = np.loadtxt(path_load)
-        else:
-            load = np.zeros((8760, self.nb_scenarios))
-        if len(load.shape) == 1:
+            if load.size==0:
+                load = np.zeros((8760, self.nb_scenarios))
+
+        if load.ndim == 1:
             load = np.repeat(load[:, np.newaxis], self.nb_scenarios, axis=1)
+
         return load
+
 
     def compute_ror(self) -> np.ndarray:
         ror_path = os.path.join(self.dir_study, "input", "hydro", "series", self.area, "ror.txt")
@@ -256,9 +260,40 @@ class NetLoad:
 
         return total_renewable
 
+    def read_misc_gen(self) -> np.ndarray:
+        """
+        Read hourly miscellaneous generation from miscgen file
+        and compute total hourly values by summing all columns.
+        If the file is missing, empty, or malformed, returns zeros.
+        """
+        file_path = os.path.join(
+            self.dir_study, "input", "misc-gen", f"miscgen-{self.area}.txt"
+        )
+
+        # Cas fichier manquant ou vide
+        if not os.path.exists(file_path) or os.path.getsize(file_path) == 0:
+            return np.zeros((8760, 1))
+
+
+        data = np.loadtxt(file_path)
+
+
+        if data.size == 0:
+            return np.zeros((8760, 1))  # fichier vide ou sans données exploitables
+
+        if data.ndim == 1:
+            data = data[:, np.newaxis]  # conversion (8760,) → (8760, 1)
+
+        if data.shape[0] != 8760:
+            return np.zeros((8760, 1))  # on ne soulève pas l'erreur ici, on renvoie zéro
+
+        misc_gen = np.sum(data, axis=1)  # shape: (8760,)
+        return misc_gen[:, np.newaxis]   # shape: (8760, 1)
+
 
     def compute_net_load(self) -> np.ndarray:
         load = self.read_load()
         renewables = self.compute_renewables()
         ror = self.compute_ror()
-        return load-renewables-ror
+        misc_gen = self.read_misc_gen()
+        return load-renewables-ror-misc_gen

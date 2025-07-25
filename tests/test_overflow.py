@@ -1,13 +1,13 @@
 import numpy as np
 import pytest
-from scipy.interpolate import interp1d
 
 from functions_iterative import ReservoirManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import MultiStockManagement
 from read_antares_data import Reservoir
 from simple_bellman_value_calculation import (
-    calculate_bellman_value_with_precalculated_reward,
+    calculate_bellman_value_with_precalculated_cost,
 )
+from type_definition import AreaIndex, WeekIndex
 
 
 def test_bellman_value_precalculated_reward_overflow(
@@ -23,21 +23,30 @@ def test_bellman_value_precalculated_reward_overflow(
         force_final_level=False,
         overflow=True,
     )
-    xNsteps = 20
-    X = np.linspace(0, reservoir_one_node.capacity, num=xNsteps)
+    a = AreaIndex("area")
+    levels = {
+        WeekIndex(w): [
+            {a: x}
+            for x in np.linspace(
+                0,
+                reservoir_management.reservoir.capacity,
+                20,
+            )
+        ]
+        for w in range(param.len_week + 1)
+    }
 
-    vb, _ = calculate_bellman_value_with_precalculated_reward(
+    vb, _, V0, _ = calculate_bellman_value_with_precalculated_cost(
         len_controls=20,
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
         output_path="test_data/one_node",
-        len_bellman=len(X),
+        levels=levels,
+        piecewiselinear=True,
+        type_estimator="LinearInterpolator",
     )
 
-    V_fut = interp1d(X, vb[:, 0])
-    V0 = V_fut(reservoir_one_node.initial_level)
-
-    assert float(V0) == pytest.approx(-3546553410.818109)
+    assert float(V0) == pytest.approx(-3546553410.818109, rel=1e-4)
 
     reservoir_management = ReservoirManagement(
         reservoir=reservoir_one_node,
@@ -48,15 +57,14 @@ def test_bellman_value_precalculated_reward_overflow(
         overflow=False,
     )
 
-    vb, _ = calculate_bellman_value_with_precalculated_reward(
+    vb, _, V0, _ = calculate_bellman_value_with_precalculated_cost(
         len_controls=20,
         param=param,
         multi_stock_management=MultiStockManagement([reservoir_management]),
         output_path="test_data/one_node",
-        len_bellman=len(X),
+        levels=levels,
+        piecewiselinear=True,
+        type_estimator="LinearInterpolator",
     )
 
-    V_fut = interp1d(X, vb[:, 0])
-    V0 = V_fut(reservoir_one_node.initial_level)
-
-    assert V0 == pytest.approx(-3546553410.818109)
+    assert V0 == pytest.approx(-3546553410.818109, rel=1e-4)

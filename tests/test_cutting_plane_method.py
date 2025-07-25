@@ -1,6 +1,11 @@
 import numpy as np
 import pytest
 
+from calculate_reward_and_bellman_values import (
+    get_bellman_values_from_approximate_costs,
+    get_default_linear_interpolator,
+    get_optimal_trajectory_from_approximate_costs,
+)
 from functions_iterative import TimeScenarioParameter
 from multi_stock_bellman_value_calculation import *
 from reservoir_management import MultiStockManagement
@@ -59,16 +64,9 @@ expected_duals = np.array(
     ]
 )
 expected_future_costs_approx = LinearInterpolator(
-    np.array(
-        [
-            [277853.0681, 628377.6569],
-            [277853.0681, 628377.6569],
-            [277853.0681, 628377.6569],
-            [277853.0681, 628377.6569],
-        ]
-    ),
-    np.array([0.0, 0.0, 0.0, 0.0]),
-    np.array([[0.0, 0.0], [-0.0, 0.0], [0.0, -0.0], [0.0, 0.0]]),
+    np.array([[769037.000000, 1739213.000000]]),
+    np.array([0.0]),
+    np.array([[0.0, 0.0]]),
 )
 
 expected_levels = np.array(
@@ -78,18 +76,18 @@ expected_levels = np.array(
             [277853.0681, 0.0],
             [175340.436, 628377.6569],
             [277853.0681, 396540.564],
-            [409896.721, 628377.6569],
-            [277853.0681, 927000.529],
-            [589466.8605, 628377.6569],
-            [277853.0681, 1333106.7645],
+            [396823.092, 628377.6569],
+            [277853.0681, 897433.908],
+            [582930.046, 628377.6569],
+            [277853.0681, 1318323.454],
             [769037.0, 628377.6569],
             [277853.0681, 1739213.0],
         ],
         [
             [0.0, 628377.6569],
             [277853.0681, 0.0],
-            [178416.584, 628377.6569],
-            [277853.0681, 403497.416],
+            [177647.547, 628377.6569],
+            [277853.0681, 401758.203],
             [486031.384, 628377.6569],
             [277853.0681, 1099182.616],
             [627534.192, 628377.6569],
@@ -114,10 +112,10 @@ expected_levels = np.array(
             [277853.0681, 0.0],
             [183030.806, 628377.6569],
             [277853.0681, 413932.694],
-            [491414.643, 628377.6569],
-            [277853.0681, 1111357.107],
-            [630225.8215, 628377.6569],
-            [277853.0681, 1425285.0535],
+            [490645.606, 628377.6569],
+            [277853.0681, 1109617.894],
+            [629841.303, 628377.6569],
+            [277853.0681, 1424415.447],
             [769037.0, 628377.6569],
             [277853.0681, 1739213.0],
         ],
@@ -154,16 +152,16 @@ expected_future_costs_approx_l = [
         ),
         np.array(
             [
-                8.17125120e09,
-                4.32746725e09,
-                4.89092244e09,
-                3.96577094e09,
-                1.80708414e09,
-                3.96577094e09,
-                7.57101983e08,
-                3.96577094e09,
-                0.00000000e00,
-                4.68637962e09,
+                1.03939988e10,
+                6.54510369e09,
+                7.09290596e09,
+                6.16775446e09,
+                4.00906766e09,
+                6.16775446e09,
+                2.95216417e09,
+                6.16775446e09,
+                2.00114224e09,
+                6.16775446e09,
             ]
         ),
         np.array(
@@ -176,8 +174,8 @@ expected_future_costs_approx_l = [
                 [-10000.0, 0.0],
                 [-7000.0, 0.0],
                 [-10000.0, 0.0],
-                [-4000.0, 0.0],
-                [-10000.0, 3000.0],
+                [0.0, 0.0],
+                [-10000.0, 0.0],
             ]
         ),
     ),
@@ -188,40 +186,40 @@ expected_future_costs_approx_l = [
                 [277853.0681, 0.0],
                 [183030.806, 628377.6569],
                 [277853.0681, 413932.694],
-                [491414.643, 628377.6569],
-                [277853.0681, 1111357.107],
-                [630225.8215, 628377.6569],
-                [277853.0681, 1425285.0535],
+                [490645.606, 628377.6569],
+                [277853.0681, 1109617.894],
+                [629841.303, 628377.6569],
+                [277853.0681, 1424415.447],
                 [769037.0, 628377.6569],
                 [277853.0681, 1739213.0],
             ]
         ),
         np.array(
             [
-                8.43608972e09,
-                7.22886200e09,
-                5.56026045e09,
-                4.61203785e09,
-                2.47642215e09,
-                4.61203785e09,
-                1.08831035e09,
-                4.61203785e09,
-                0.00000000e00,
-                5.35278208e09,
+                9.68917584e09,
+                8.99575024e09,
+                6.79950385e09,
+                5.85128125e09,
+                3.72335585e09,
+                5.85128125e09,
+                2.33139895e09,
+                5.85128125e09,
+                1.26841564e09,
+                5.85128125e09,
             ]
         ),
         np.array(
             [
                 [-19000.0, 0.0],
-                [-10000.0, -9000.0],
+                [-10000.0, -12000.0],
                 [-10000.0, 0.0],
                 [-10000.0, 0.0],
                 [-10000.0, 0.0],
                 [-10000.0, 0.0],
                 [-10000.0, 0.0],
                 [-10000.0, 0.0],
-                [-7000.0, 0.0],
-                [-10000.0, 3000.0],
+                [0.0, 0.0],
+                [-10000.0, 0.0],
             ]
         ),
     ),
@@ -236,33 +234,36 @@ expected_future_costs_approx_l = [
                 [277853.0681, 1104400.255],
                 [628687.7475, 628377.6569],
                 [277853.0681, 1421806.6275],
+                [769037.0, 628377.6569],
                 [277853.0681, 1739213.0],
             ]
         ),
         np.array(
             [
-                6.80374086e09,
-                5.60917357e09,
-                4.36835083e09,
-                3.39705703e09,
-                1.29220273e09,
-                3.39705703e09,
-                0.00000000e00,
-                3.39705703e09,
-                4.26085554e09,
+                7.43347719e09,
+                7.11261520e09,
+                4.99116577e09,
+                4.01987197e09,
+                1.91501767e09,
+                4.01987197e09,
+                8.30526866e08,
+                4.01987197e09,
+                5.56082686e08,
+                4.01987197e09,
             ]
         ),
         np.array(
             [
                 [-16000.0, 0.0],
-                [-10000.0, -6000.0],
+                [-9000.0, -9000.0],
                 [-10000.0, 0.0],
                 [-10000.0, 0.0],
                 [-10000.0, 0.0],
+                [-10000.0, 0.0],
+                [-3000.0, 0.0],
                 [-10000.0, 0.0],
                 [0.0, 0.0],
                 [-10000.0, 0.0],
-                [-10000.0, 6000.0],
             ]
         ),
     ),
@@ -271,10 +272,11 @@ expected_future_costs_approx_l = [
             [
                 [0.0, 628377.6569],
                 [277853.0681, 0.0],
-                [178416.584, 628377.6569],
-                [277853.0681, 403497.416],
+                [177647.547, 628377.6569],
+                [277853.0681, 401758.203],
                 [486031.384, 628377.6569],
                 [277853.0681, 1099182.616],
+                [627534.192, 628377.6569],
                 [277853.0681, 1419197.808],
                 [769037.0, 628377.6569],
                 [277853.0681, 1739213.0],
@@ -282,28 +284,30 @@ expected_future_costs_approx_l = [
         ),
         np.array(
             [
-                4.03284063e09,
-                2.21347210e09,
-                2.07311540e09,
-                1.07875050e09,
-                0.00000000e00,
-                1.07875050e09,
-                1.39101834e09,
-                1.97940837e08,
-                2.35106391e09,
+                4.62500557e09,
+                4.26037813e09,
+                2.67297065e09,
+                1.90472902e09,
+                5.32353961e08,
+                1.67091545e09,
+                1.07845531e08,
+                1.67091545e09,
+                4.53796304e07,
+                1.67091545e09,
             ]
         ),
         np.array(
             [
                 [-13000.0, 0.0],
-                [-10000.0, -3000.0],
+                [-6000.0, -6000.0],
                 [-10000.0, 0.0],
+                [-6000.0, -3000.0],
+                [-3000.0, 0.0],
+                [-10000.0, 0.0],
+                [-3000.0, 0.0],
                 [-10000.0, 0.0],
                 [0.0, 0.0],
                 [-10000.0, 0.0],
-                [-10000.0, 3000.0],
-                [3000.0, 0.0],
-                [-10000.0, 3000.0],
             ]
         ),
     ),
@@ -314,36 +318,45 @@ expected_future_costs_approx_l = [
                 [277853.0681, 0.0],
                 [175340.436, 628377.6569],
                 [277853.0681, 396540.564],
-                [277853.0681, 1333106.7645],
+                [396823.092, 628377.6569],
+                [277853.0681, 897433.908],
+                [582930.046, 628377.6569],
+                [277853.0681, 1318323.454],
                 [769037.0, 628377.6569],
                 [277853.0681, 1739213.0],
             ]
         ),
         np.array(
             [
-                1.20975849e09,
-                3.84895134e08,
-                1.77666522e08,
-                0.00000000e00,
-                2.31583419e08,
-                2.76445611e08,
-                1.44990214e09,
+                1.75536556e09,
+                2.02285044e09,
+                7.23273591e08,
+                8.33228760e08,
+                5.88256414e07,
+                4.15735701e08,
+                5.74309515e06,
+                4.15735701e08,
+                5.74309515e06,
+                4.15735701e08,
             ]
         ),
         np.array(
             [
                 [-10000.0, 0.0],
-                [0.0, -3000.0],
+                [-3000.0, -3000.0],
+                [-3000.0, 0.0],
+                [-3000.0, -3000.0],
+                [-3000.0, 0.0],
                 [-3000.0, 0.0],
                 [0.0, 0.0],
-                [0.0, 3000.0],
-                [3000.0, 0.0],
-                [0.0, 3000.0],
+                [-3000.0, 0.0],
+                [0.0, 0.0],
+                [-3000.0, 0.0],
             ]
         ),
     ),
     LinearInterpolator(
-        np.array([[277853.0681, 628377.6569]]),
+        np.array([[769037.000000, 1739213.000000]]),
         np.array([0.0]),
         np.array([[0.0, 0.0]]),
     ),
@@ -351,11 +364,11 @@ expected_future_costs_approx_l = [
 expected_correlations = np.array([[1.0, 0.0], [0.0, 1.0]])
 expected_pseudo_opt_controls = np.array(
     [
-        [[45072.021918, 246455.966]],
-        [[79896.355, 36983.635]],
-        [[16083.106, 36780.644]],
-        [[119896.77142857, 38512.856]],
-        [[86092.807085, -206625.87197806]],
+        [[45072.021918, -261356.25714487]],
+        [[77589.244, -59504.83195583]],
+        [[0.0, 9380.12683169]],
+        [[184868.35609133, 13255.96877977]],
+        [[39511.45, -206625.87197806]],
     ]
 )
 expected_controls_to_explore = np.array(
@@ -405,20 +418,24 @@ def test_Lget_costs(
     param: TimeScenarioParameter,
     multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
-    controls, costs, duals = Lget_costs(
+    costs, duals, _, _ = get_antares_costs(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         output_path=output_path,
-        saving_directory=saving_dir,
+        saving_dir=saving_dir,
         name_solver=name_solver,
-        controls_list=array_to_timescenario_list_area_value(
+        controls=array_to_timescenario_list_area_value(
             expected_controls_list, param, multi_stock_management_two_nodes.areas
         ),
-        load_from_protos=True,
+        save_protos=True,
         verbose=False,
     )
     assert timescenario_list_area_value_to_array(
-        controls, param, multi_stock_management_two_nodes.areas
+        array_to_timescenario_list_area_value(
+            expected_controls_list, param, multi_stock_management_two_nodes.areas
+        ),
+        param,
+        multi_stock_management_two_nodes.areas,
     ) == pytest.approx(expected_controls)
     assert timescenario_list_value_to_array(costs, param) == pytest.approx(
         expected_costs
@@ -430,12 +447,10 @@ def test_Lget_costs(
 
 def test_initialize_future_costs(
     multi_stock_management_two_nodes: MultiStockManagement,
-    starting_pt: Dict[AreaIndex, float],
 ) -> None:
 
     # Initialize our approximation on future costs
-    future_costs_approx = initialize_future_costs(
-        starting_pt=starting_pt,
+    future_costs_approx = get_default_linear_interpolator(
         multi_stock_management=multi_stock_management_two_nodes,
     )
 
@@ -472,106 +487,39 @@ def test_get_bellman_values_from_costs(
         for s in range(param.len_scenario)
     }
 
-    (
-        levels,
-        bellman_costs,
-        _,
-        _,
-        future_costs_approx_l,
-    ) = get_bellman_values_from_costs(
+    levels = multi_stock_management_two_nodes.get_disc(
+        param=param,
+        xNsteps=nSteps_bellman,
+        trajectory=trajectory,
+        correlation_matrix=expected_correlations,
+        method=method,
+    )
+
+    bellman_values = get_bellman_values_from_approximate_costs(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         costs_approx=costs_approx,
-        future_costs_approx=expected_future_costs_approx,
-        nSteps_bellman=nSteps_bellman,
+        final_bellman_values=expected_future_costs_approx,
         name_solver=name_solver,
-        method=method,
-        trajectory=trajectory,
-        correlations=expected_correlations,
         divisor=divisor,
         verbose=False,
+        levels=levels,
+        piecewiselinear=False,
     )
 
     assert time_list_area_value_to_array(
         levels, param, multi_stock_management_two_nodes.areas
     )[::-1] == pytest.approx(expected_levels)
-    assert np.array(
-        [[c for c in bellman_costs[WeekIndex(w)]] for w in range(param.len_week)]
-    )[::-1] == pytest.approx(
-        np.array(
-            [
-                [
-                    1.21550159e09,
-                    3.90638229e08,
-                    1.83409617e08,
-                    5.74309515e06,
-                    5.74309515e06,
-                    5.74309515e06,
-                    5.74309515e06,
-                    2.37326514e08,
-                    2.82188706e08,
-                    1.45564523e09,
-                ],
-                [
-                    4.07247716e09,
-                    2.25310864e09,
-                    2.11275194e09,
-                    1.11838704e09,
-                    3.96365352e07,
-                    1.11838704e09,
-                    3.96365352e07,
-                    1.43065488e09,
-                    2.37577372e08,
-                    2.39070045e09,
-                ],
-                [
-                    6.83439092e09,
-                    5.63982363e09,
-                    4.39900088e09,
-                    3.42770708e09,
-                    1.32285278e09,
-                    3.42770708e09,
-                    3.06500583e07,
-                    3.42770708e09,
-                    3.06500583e07,
-                    4.29150560e09,
-                ],
-                [
-                    9.05251818e09,
-                    7.84529046e09,
-                    6.17668890e09,
-                    5.22846630e09,
-                    3.09285060e09,
-                    5.22846630e09,
-                    1.70473880e09,
-                    5.22846630e09,
-                    6.16428456e08,
-                    5.96921054e09,
-                ],
-                [
-                    9.13399132e09,
-                    5.29020737e09,
-                    5.85366256e09,
-                    4.92851106e09,
-                    2.76982426e09,
-                    4.92851106e09,
-                    1.71984210e09,
-                    4.92851106e09,
-                    9.62740119e08,
-                    5.64911974e09,
-                ],
-            ]
-        )
-    )
-    for i in range(6):
-        assert future_costs_approx_l[WeekIndex(i)].inputs == pytest.approx(
+
+    for i in range(5, -1, -1):
+        assert bellman_values[WeekIndex(i)].get_true_inputs() == pytest.approx(
             expected_future_costs_approx_l[i].inputs
         )
-        assert future_costs_approx_l[WeekIndex(i)].costs == pytest.approx(
+        assert bellman_values[WeekIndex(i)].get_true_costs() == pytest.approx(
             expected_future_costs_approx_l[i].costs
         )
 
-        assert future_costs_approx_l[WeekIndex(i)].duals == pytest.approx(
+        assert bellman_values[WeekIndex(i)].get_true_duals() == pytest.approx(
             expected_future_costs_approx_l[i].duals
         )
 
@@ -582,34 +530,31 @@ def test_solve_for_optimal_trajectory(
     multi_stock_management_two_nodes: MultiStockManagement,
     starting_pt: Dict[AreaIndex, float],
 ) -> None:
-    trajectory, pseudo_opt_controls, _ = solve_for_optimal_trajectory(
+    trajectory, pseudo_opt_controls, _ = get_optimal_trajectory_from_approximate_costs(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         costs_approx=costs_approx,
-        future_costs_approx_l=list_to_week_value(
+        bellman_values=list_to_week_value(
             expected_future_costs_approx_l, param.len_week + 1
         ),
-        starting_pt=starting_pt,
+        level_init=starting_pt,
         name_solver=name_solver,
         divisor=divisor,
     )
 
-    assert timescenario_area_value_to_array(
-        trajectory, param, multi_stock_management_two_nodes.areas
-    ) == pytest.approx(
+    assert timescenario_area_value_to_array(trajectory, param) == pytest.approx(
         np.array(
             [
-                # [[277853.0681, 628377.6569]],
-                [[2.46753048e05, 4.13932694e05]],
-                [[1.80723695e05, 4.08715055e05]],
-                [[1.78416584e05, 4.03497416e05]],
-                [[7.22958086e04, 3.96540564e05]],
-                [[2.91500001e-03, 6.34785432e05]],
+                [[246753.048082, 419150.333]],
+                [[183030.806, 413932.694]],
+                [[196806.81, 408715.055]],
+                [[25714.45462296, 427015.09122023]],
+                [[0.0, 665259.96197806]],
             ]
         )
     )
     assert timescenario_area_value_to_array(
-        pseudo_opt_controls, param, multi_stock_management_two_nodes.areas
+        pseudo_opt_controls, param
     ) == pytest.approx(expected_pseudo_opt_controls)
 
 
@@ -637,22 +582,27 @@ def test_get_opt_gap(
     multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
 
-    controls, costs, _ = Lget_costs(
+    costs, _, _, _ = get_antares_costs(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
-        controls_list=array_to_timescenario_list_area_value(
+        controls=array_to_timescenario_list_area_value(
             expected_controls_to_explore, param, multi_stock_management_two_nodes.areas
         ),
-        saving_directory=saving_dir,
+        saving_dir=saving_dir,
         output_path=output_path,
         name_solver=name_solver,
         verbose=False,
-        load_from_protos=True,
+        save_protos=True,
+        keep_intermed_res=True,
         prefix=f"test_get_opt_gap",
     )
 
     assert timescenario_list_area_value_to_array(
-        controls, param, multi_stock_management_two_nodes.areas
+        array_to_timescenario_list_area_value(
+            expected_controls_to_explore, param, multi_stock_management_two_nodes.areas
+        ),
+        param,
+        multi_stock_management_two_nodes.areas,
     ) == pytest.approx(
         np.array(
             [
@@ -691,7 +641,9 @@ def test_get_opt_gap(
         param=param,
         costs=costs,
         costs_approx=costs_approx,
-        controls_list=controls,
+        controls_list=array_to_timescenario_list_area_value(
+            expected_controls_to_explore, param, multi_stock_management_two_nodes.areas
+        ),
         opt_gap=1,
         max_gap={WeekIndex(w): max_gap[w] for w in range(param.len_week)},
     )

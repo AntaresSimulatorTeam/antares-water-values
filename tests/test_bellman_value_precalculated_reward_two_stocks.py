@@ -1,10 +1,77 @@
 import numpy as np
 import pytest
 
+from calculate_reward_and_bellman_values import get_default_linear_interpolator
+from estimation import LinearInterpolator
 from functions_iterative import TimeScenarioParameter
-from multi_stock_bellman_value_calculation import precalculated_method
+from multi_stock_bellman_value_calculation import get_correlation_matrix
+from optimization import WeeklyBellmanProblem
 from reservoir_management import MultiStockManagement
-from type_definition import ScenarioIndex, WeekIndex, time_list_area_value_to_array
+from simple_bellman_value_calculation import (
+    calculate_bellman_value_with_precalculated_cost,
+)
+from type_definition import (
+    ScenarioIndex,
+    TimeScenarioIndex,
+    WeekIndex,
+    area_scenario_value_to_array,
+    area_value_to_area_scenario_value,
+    time_list_area_value_to_array,
+)
+
+
+def test_weekly_bellman_problem(
+    param: TimeScenarioParameter, multi_stock_management_two_nodes: MultiStockManagement
+) -> None:
+    week = param.len_week - 1
+    # Initialize cost functions
+    costs_approx = {
+        ScenarioIndex(0): LinearInterpolator(
+            controls=np.array(
+                [
+                    [
+                        res.reservoir.max_generating[week]
+                        for res in multi_stock_management_two_nodes.dict_reservoirs.values()
+                    ]
+                ]
+            ),
+            costs=np.array([1e7]),
+            duals=np.array([[-100 for a in multi_stock_management_two_nodes.areas]]),
+        )
+    }
+
+    problem = WeeklyBellmanProblem(
+        param=param,
+        multi_stock_management=multi_stock_management_two_nodes,
+        week_costs_estimation=costs_approx,
+        name_solver="CLP",
+        divisor={"euro": 1e8, "energy": 1e4},
+        week=week,
+    )
+
+    controls, cost, duals, levels = problem.solve(
+        level_init=area_value_to_area_scenario_value(
+            {
+                a: res.reservoir.capacity / 2
+                for a, res in multi_stock_management_two_nodes.dict_reservoirs.items()
+            },
+            param.len_scenario,
+        ),
+        future_costs_estimation=get_default_linear_interpolator(
+            multi_stock_management_two_nodes
+        ),
+    )
+
+    assert area_scenario_value_to_array(controls) == pytest.approx(
+        np.array([[56094.035], [127275.715]])
+    )
+    assert cost == pytest.approx(64323025)
+    assert area_scenario_value_to_array(duals) == pytest.approx(
+        np.array([[-100], [-100]])
+    )
+    assert area_scenario_value_to_array(levels) == pytest.approx(
+        np.array([[342221.465], [773949.785]])
+    )
 
 
 def test_bellman_value_precalculated_multi_stock(
@@ -12,15 +79,37 @@ def test_bellman_value_precalculated_multi_stock(
     multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
 
-    levels, _, bellman_costs, bellman_controls, slopes, _ = precalculated_method(
+    levels = multi_stock_management_two_nodes.get_disc(
+        param=param,
+        xNsteps=5,
+        trajectory={
+            TimeScenarioIndex(w, s): {
+                a: mng.reservoir.bottom_rule_curve[0] * 0.7
+                + mng.reservoir.upper_rule_curve[0] * 0.3
+                for a, mng in multi_stock_management_two_nodes.dict_reservoirs.items()
+            }
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
+        correlation_matrix=get_correlation_matrix(
+            multi_stock_management=multi_stock_management_two_nodes,
+            corr_type="no_corrs",
+        ),
+        method="lines",
+    )
+
+    bellman_values, _, _, _ = calculate_bellman_value_with_precalculated_cost(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         output_path="test_data/two_nodes",
         len_controls=5,
-        len_bellman=5,
+        levels=levels,
         name_solver="CLP",
         controls_looked_up="line+diagonal",
         verbose=True,
+        n_cycle=2,
+        type_estimator="LinearDecomposer",
+        piecewiselinear=False,
     )
 
     assert time_list_area_value_to_array(
@@ -33,18 +122,18 @@ def test_bellman_value_precalculated_multi_stock(
                     [277853.0681, 0.0],
                     [175340.436, 628377.6569],
                     [277853.0681, 396540.564],
-                    [409896.721, 628377.6569],
-                    [277853.0681, 927000.529],
-                    [589466.8605, 628377.6569],
-                    [277853.0681, 1333106.7645],
+                    [396823.092, 628377.6569],
+                    [277853.0681, 897433.908],
+                    [582930.046, 628377.6569],
+                    [277853.0681, 1318323.454],
                     [769037.0, 628377.6569],
                     [277853.0681, 1739213.0],
                 ],
                 [
                     [0.0, 628377.6569],
                     [277853.0681, 0.0],
-                    [178416.584, 628377.6569],
-                    [277853.0681, 403497.416],
+                    [177647.547, 628377.6569],
+                    [277853.0681, 401758.203],
                     [486031.384, 628377.6569],
                     [277853.0681, 1099182.616],
                     [627534.192, 628377.6569],
@@ -69,10 +158,10 @@ def test_bellman_value_precalculated_multi_stock(
                     [277853.0681, 0.0],
                     [183030.806, 628377.6569],
                     [277853.0681, 413932.694],
-                    [491414.643, 628377.6569],
-                    [277853.0681, 1111357.107],
-                    [630225.8215, 628377.6569],
-                    [277853.0681, 1425285.0535],
+                    [490645.606, 628377.6569],
+                    [277853.0681, 1109617.894],
+                    [629841.303, 628377.6569],
+                    [277853.0681, 1424415.447],
                     [769037.0, 628377.6569],
                     [277853.0681, 1739213.0],
                 ],
@@ -94,221 +183,142 @@ def test_bellman_value_precalculated_multi_stock(
 
     assert np.array(
         [
-            [
-                [
-                    [u[a][ScenarioIndex(s)] for s in range(param.len_scenario)]
-                    for a in multi_stock_management_two_nodes.areas
-                ]
-                for u in bellman_controls[WeekIndex(w)]
-            ]
+            bellman_values[WeekIndex(w)].get_true_costs()
+            - min(bellman_values[WeekIndex(w + 1)].get_true_costs())
             for w in range(param.len_week)
         ]
     )[::-1] == pytest.approx(
         np.array(
             [
                 [
-                    [[0.0], [-90240.67344721]],
-                    [[0.0], [-159655.05088864]],
-                    [[0.0], [-34203.56041625]],
-                    [[0.0], [-34203.56041625]],
-                    [[39944.257], [-51818.4723395]],
-                    [[0.0], [90752.243]],
-                    [[219514.397], [-131006.63198273]],
-                    [[0.0], [419664.0]],
-                    [[306936.0], [-77302.19219234]],
-                    [[13797.0019], [419664.0]],
+                    2.42217781e09,
+                    5.52079961e09,
+                    1.07560621e09,
+                    1.66633557e09,
+                    1.46043373e08,
+                    4.20957434e08,
+                    1.22087702e08,
+                    4.09981835e08,
+                    1.22087702e08,
+                    4.09981835e08,
                 ],
                 [
-                    [[13776.0], [263393.096]],
-                    [[0.0], [-57989.9214361]],
-                    [[51122.05876278], [263393.096]],
-                    [[141225.27916395], [127473.89575222]],
-                    [[201267.58387865], [67431.59103752]],
-                    [[50323.95476654], [284099.7914371]],
-                    [[231413.469], [76863.85569213]],
-                    [[74764.73385189], [419664.0]],
-                    [[306936.0], [100493.89663835]],
-                    [[51958.81891699], [419664.0]],
+                    4.31543953e09,
+                    8.32363876e09,
+                    2.29582512e09,
+                    3.37372500e09,
+                    3.27972421e08,
+                    5.99791688e08,
+                    1.08317908e08,
+                    5.76426181e08,
+                    9.23825146e07,
+                    5.76426181e08,
                 ],
                 [
-                    [[0.0], [236690.76271387]],
-                    [[113212.486], [-301069.8526227]],
-                    [[16083.106], [240312.84479417]],
-                    [[210872.47872395], [41445.66260587]],
-                    [[133394.09890117], [170341.55211977]],
-                    [[101447.02090465], [202288.63011629]],
-                    [[156432.366], [177549.93334941]],
-                    [[3563.59564383], [368434.33202641]],
-                    [[296781.616], [221463.43148511]],
-                    [[107700.7029777], [419664.0]],
+                    6.83475714e09,
+                    1.06710309e10,
+                    4.19373077e09,
+                    5.41906297e09,
+                    1.58480937e09,
+                    5.28360544e08,
+                    7.47078107e08,
+                    4.91779685e08,
+                    1.89892715e08,
+                    4.90849622e08,
                 ],
                 [
-                    [[0.0], [130921.91688424]],
-                    [[110996.375], [-322182.0]],
-                    [[16174.115], [114747.78543668]],
-                    [[110996.375], [19925.42901135]],
-                    [[16943.145], [113978.75465465]],
-                    [[0.0], [130921.91688424]],
-                    [[260094.25280634], [-112681.75779224]],
-                    [[0.0], [352650.795]],
-                    [[294565.505], [-112246.5435333]],
-                    [[88178.25727388], [419664.0]],
+                    7.94747855e09,
+                    1.12890211e10,
+                    4.91455961e09,
+                    6.11078671e09,
+                    1.97371086e09,
+                    3.63021044e08,
+                    1.13853672e09,
+                    3.03182855e08,
+                    4.96058171e08,
+                    3.02235658e08,
                 ],
                 [
-                    [[0.0], [-239100.85065468]],
-                    [[68061.79186323], [-283168.84524749]],
-                    [[11669.82742663], [-123952.89129106]],
-                    [[9374.37530585], [-236001.35946376]],
-                    [[16279.107], [-127408.97334741]],
-                    [[13933.62538023], [37228.643]],
-                    [[153936.737], [-230625.98533142]],
-                    [[15398.15215653], [348547.763]],
-                    [[291594.357], [-276527.10780168]],
-                    [[15398.15215653], [419664.0]],
+                    5.28632092e09,
+                    7.71412486e09,
+                    1.91505229e09,
+                    3.06499098e09,
+                    7.17505115e07,
+                    5.77609592e07,
+                    4.54545140e07,
+                    5.16596854e07,
+                    2.89373285e07,
+                    5.16596854e07,
                 ],
             ]
-        )
+        ),
+        rel=1e-4,
     )
 
     assert np.array(
-        [[c for c in bellman_costs[WeekIndex(w)]] for w in range(param.len_week)]
+        [bellman_values[WeekIndex(w)].get_true_duals() for w in range(param.len_week)]
     )[::-1] == pytest.approx(
         np.array(
             [
                 [
-                    6.11715439e08,
-                    1.57735664e09,
-                    1.34393113e08,
-                    1.55894331e08,
-                    9.64515660e07,
-                    7.35895296e07,
-                    7.13250177e07,
-                    2.76110075e08,
-                    3.34217875e08,
-                    1.46027096e09,
+                    [-18000.0, -6000.0],
+                    [-12000.0, -12000.0],
+                    [-6000.0, -215.58],
+                    [-6000.0, -6000.01],
+                    [-161.68, -215.58],
+                    [-6000.0, -115.17],
+                    [0.0, -115.17],
+                    [-5999.989836, 0.0],
+                    [0.0, -115.17],
+                    [-5999.989836, 0.0],
                 ],
                 [
-                    1.56800823e09,
-                    4.52003439e09,
-                    3.12679140e08,
-                    5.45855217e08,
-                    1.32167660e08,
-                    9.37003126e07,
-                    1.11559456e08,
-                    3.68985817e08,
-                    2.92381147e08,
-                    1.59301272e09,
+                    [-17000.0, -10000.0],
+                    [-10333.327222, -13333.33],
+                    [-9000.0, -6000.01],
+                    [-10000.0, -10000.0],
+                    [-6000.0, -6000.01],
+                    [-6000.0, -115.17],
+                    [-161.68, -215.58],
+                    [-5999.99, 0.0],
+                    [0.0, -215.58],
+                    [-5999.99, 0.0],
                 ],
                 [
-                    2.22680499e09,
-                    6.69789110e09,
-                    8.12642356e08,
-                    1.53545493e09,
-                    1.54090769e08,
-                    1.09943429e08,
-                    1.32183194e08,
-                    6.49155773e07,
-                    1.17527064e08,
-                    8.90225581e08,
+                    [-20000.0, -10000.0],
+                    [-10033.3327, -13333.33],
+                    [-10000.0, -10000.0],
+                    [-10000.0, -10000.0],
+                    [-6000.0, -6000.01],
+                    [-6000.0, -119.16],
+                    [-5789.484211, -6000.01],
+                    [-6000.0, -115.17],
+                    [0.0, -500.0],
+                    [-6000.0, 0.0],
                 ],
                 [
-                    3.55405507e09,
-                    7.41174086e09,
-                    1.26941876e09,
-                    2.07144628e09,
-                    1.83746806e08,
-                    1.38954129e08,
-                    1.60670835e08,
-                    9.05725353e07,
-                    1.37594865e08,
-                    7.93046500e08,
+                    [-23000.0, -10000.0],
+                    [-10003.33307, -13333.34],
+                    [-10000.0, -10000.0],
+                    [-10000.0, -10000.0],
+                    [-6000.0, -6000.01],
+                    [-6000.0, -6000.004068],
+                    [-6000.0, -6000.01],
+                    [-6000.0, -119.16],
+                    [0.0, -6000.01],
+                    [-6000.0, 0.0],
                 ],
                 [
-                    1.19484257e09,
-                    3.36829717e09,
-                    1.60502373e08,
-                    1.83850617e08,
-                    1.09427096e08,
-                    6.84937699e07,
-                    9.22631036e07,
-                    5.40919797e07,
-                    7.58001102e07,
-                    7.36555789e08,
-                ],
-            ]
-        )
-    )
-
-    assert np.array(
-        [
-            [
-                [u[a] for a in multi_stock_management_two_nodes.areas]
-                for u in slopes[WeekIndex(w)]
-            ]
-            for w in range(param.len_week)
-        ]
-    )[::-1] == pytest.approx(
-        np.array(
-            [
-                [
-                    [-3251.26394136, -215.58],
-                    [-12976.86266417, -13333.33],
-                    [-166.24, -166.25],
-                    [-166.24, -166.25],
-                    [-139.92609417, -166.25],
-                    [-166.24, -119.16],
-                    [-139.92609417, -166.25],
-                    [-119.32, 2884.88],
-                    [2880.68018282, -115.17],
-                    [-115.17, 3000.0],
-                ],
-                [
-                    [-10000.0, -500.0],
-                    [-10058.07618461, -13333.33],
-                    [-6251.26, -355.51125799],
-                    [-3166.2501625, -3166.2501625],
-                    [-166.24, -166.25],
-                    [-166.24, -119.16],
-                    [-104.42613696, -166.25],
-                    [-119.16, 2914.58670837],
-                    [2860.07, -166.25],
-                    [-119.32, 5884.88],
-                ],
-                [
-                    [-13042.99429688, -10000.0],
-                    [-10000.0, -13333.34],
-                    [-3166.25, -3166.25],
-                    [-6531.20456034, -6704.64433232],
-                    [-166.24, -166.25],
-                    [-166.25032101, -166.25032101],
-                    [-104.42613696, -166.25],
-                    [-151.93390363, -108.90546172],
-                    [-104.42613696, -166.25],
-                    [-119.16, 5914.59],
-                ],
-                [
-                    [-16042.99, -10000.0],
-                    [-10000.0, -16333.34],
-                    [-6704.63664893, -6704.64],
-                    [-6704.63664893, -6704.64],
-                    [-166.24, -166.25],
-                    [-166.25, -166.25],
-                    [-166.24, -166.25],
-                    [-166.25, -138.85],
-                    [-166.24, -166.25],
-                    [-151.93, 2891.09],
-                ],
-                [
-                    [-19042.99, -10000.0],
-                    [-7485.01816544, -9980.02344475],
-                    [-166.25, -166.25],
-                    [-220.43833077, -220.43833077],
-                    [-124.68609673, -166.25],
-                    [-166.25, -114.57485738],
-                    [-124.68609673, -166.25],
-                    [-166.25, 0.0],
-                    [-82.84696497, -166.25],
-                    [-166.25, 2861.15],
+                    [-26000.0, -10000.0],
+                    [-10000.332996, -13333.33],
+                    [-6000.0, -6000.01],
+                    [-10000.0, -10000.0],
+                    [-4500.00580527, -6000.01],
+                    [-6000.0, -46.60474687],
+                    [-138.85, -185.14],
+                    [-6000.0, 0.0],
+                    [0.0, -158.88],
+                    [-6000.0, 0.0],
                 ],
             ]
         )

@@ -2,29 +2,35 @@ import juliacall
 import numpy as np
 import pytest
 
-from calculate_reward_and_bellman_values import calculate_VU
-from estimation import LinearCostEstimator, LinearInterpolator
-from functions_iterative import (
-    MultiStockManagement,
-    TimeScenarioParameter,
-    solve_weekly_problem_with_approximation,
+from calculate_reward_and_bellman_values import (
+    get_bellman_values_from_approximate_costs,
+    get_optimal_trajectory_from_approximate_costs,
 )
-from type_definition import AreaIndex, Dict, List, TimeScenarioIndex, WeekIndex
+from estimation import LinearCostEstimator, LinearInterpolator
+from functions_iterative import MultiStockManagement, TimeScenarioParameter
+from type_definition import (
+    AreaIndex,
+    Dict,
+    List,
+    TimeScenarioIndex,
+    WeekIndex,
+    timescenario_area_value_to_array,
+)
 
 opt_cost = 4410020520.96
 opt_controls = [
-    -1833778.47368421,
-    1084397.57894737,
-    1084194.57894737,
-    1084187.57894737,
-    909513.73684211,
+    -1833778,
+    1084397,
+    1322793,
+    1456569,
+    298532.6,
 ]
 opt_trajectory = [
     4450000.0,
-    6315789.47368421,
-    5263157.89473684,
-    4210526.31578947,
-    3157894.73684211,
+    6315789,
+    5263157,
+    3971926,
+    2546913,
     2280000.0,
 ]
 
@@ -55,7 +61,7 @@ def test_call_sddp(
                 lower_level=mng.reservoir.bottom_rule_curve,
                 upper_curve_penalty=mng.penalty_upper_rule_curve,
                 lower_curve_penalty=mng.penalty_bottom_rule_curve,
-                spillage_penalty=2 * mng.penalty_upper_rule_curve + 10,
+                overflow=mng.overflow,
                 level_init=mng.reservoir.initial_level,
                 inflows=mng.reservoir.inflow,
                 final_level=mng.final_level,
@@ -154,55 +160,41 @@ def test_compare_sddp_to_precalculated(
     for area, mng in multi_stock_management_one_node.dict_reservoirs.items():
         X = np.linspace(0, mng.reservoir.capacity, num=20)
 
-        V = calculate_VU(
-            stock_discretization=X,
-            time_scenario_param=param,
-            reservoir_management=mng,
-            reward=reward,
+        V = get_bellman_values_from_approximate_costs(
+            levels={
+                WeekIndex(w): [{area: x} for x in X] for w in range(param.len_week + 1)
+            },
+            param=param,
+            multi_stock_management=MultiStockManagement([mng]),
+            costs_approx=reward,
+            piecewiselinear=True,
         )
 
-        lb = V[WeekIndex(0)](mng.reservoir.initial_level)
+        lb = V[WeekIndex(0)]({area: mng.reservoir.initial_level})
 
-        ub = 0.0
-        initial_x: Dict[TimeScenarioIndex, float] = {}
-        for s in range(param.len_scenario):
-            initial_x[TimeScenarioIndex(0, s)] = mng.reservoir.initial_level
-        controls: Dict[TimeScenarioIndex, float] = {}
-        for week in range(param.len_week):
-
-            for trajectory, scenario in enumerate(
-                np.random.permutation(range(param.len_scenario))
-            ):
-
-                _, xf, u, cost = solve_weekly_problem_with_approximation(
-                    week=week,
-                    scenario=scenario,
-                    level_i=initial_x[TimeScenarioIndex(week, trajectory)],
-                    V_fut=V[WeekIndex(week + 1)],
-                    reservoir_management=mng,
-                    param=param,
-                    reward=reward[TimeScenarioIndex(week, scenario)],
-                )
-                ub += cost
-
-                initial_x[TimeScenarioIndex(week + 1, trajectory)] = xf
-                controls[TimeScenarioIndex(week, scenario)] = u
+        trajectory, controls, ub = get_optimal_trajectory_from_approximate_costs(
+            param=param,
+            multi_stock_management=MultiStockManagement([mng]),
+            costs_approx=reward,
+            level_init=multi_stock_management_one_node.get_initial_level(),
+            bellman_values=V,
+        )
 
         assert -lb == pytest.approx(opt_cost)
         assert ub == pytest.approx(opt_cost)
-        assert np.array([v for v in controls.values()]) == pytest.approx(
-            np.array(opt_controls)
-        )
-        assert np.array([v for v in initial_x.values()]) == pytest.approx(
-            np.array(opt_trajectory)
-        )
-        assert -V[WeekIndex(1)](mng.reservoir.capacity / 100 * 50) == pytest.approx(
-            3362896896.0
-        )
-        assert -V[WeekIndex(1)](mng.reservoir.capacity / 100 * 51) == pytest.approx(
-            3342888929.2799997
-        )
+        assert timescenario_area_value_to_array(controls, param)[
+            :, 0, 0
+        ] == pytest.approx(np.array(opt_controls))
+        assert timescenario_area_value_to_array(trajectory, param)[
+            :, 0, 0
+        ] == pytest.approx(np.array(opt_trajectory[1:]))
+        assert -V[WeekIndex(1)](
+            {area: mng.reservoir.capacity / 100 * 50}
+        ) == pytest.approx(3362896896.0)
+        assert -V[WeekIndex(1)](
+            {area: mng.reservoir.capacity / 100 * 51}
+        ) == pytest.approx(3342888929.2799997)
         assert (
-            V[WeekIndex(1)](mng.reservoir.capacity / 100 * 51)
-            - V[WeekIndex(1)](mng.reservoir.capacity / 100 * 50)
+            V[WeekIndex(1)]({area: mng.reservoir.capacity / 100 * 51})
+            - V[WeekIndex(1)]({area: mng.reservoir.capacity / 100 * 50})
         ) / mng.reservoir.capacity * 100 == pytest.approx(200.07966720000266, abs=1e-2)

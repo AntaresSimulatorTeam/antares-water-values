@@ -10,9 +10,12 @@ from type_definition import (
     Dict,
     List,
     Optional,
+    ScenarioIndex,
     TimeScenarioIndex,
     TimeScenarioParameter,
     Union,
+    area_value_to_array,
+    array_to_area_value,
 )
 
 
@@ -23,19 +26,35 @@ class Estimator:
 
     def update(
         self,
-        Vu: float,
-        slope: Dict[str, float],
-        n_scenario: int,
-        idx: int,
-        list_areas: List[str],
+        Vu: float = 0,
+        slope: Dict[str, float] = {},
+        n_scenario: int = 0,
+        idx: int = 0,
+        list_areas: List[str] = [],
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
+        interp_mode: Optional[bool] = False,
     ) -> None:
         raise NotImplementedError
 
-    def get_value(self, x: Dict[str, float]) -> float:
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
+        return NotImplemented
+
+    def get_costs(self) -> Array1D:
+        return NotImplemented
+
+    def get_true_inputs(self) -> Array1D:
+        return NotImplemented
+
+    def get_true_costs(self) -> Array1D:
+        return NotImplemented
+
+    def get_true_duals(self) -> Array1D:
         return NotImplemented
 
 
-class PieceWiseLinearInterpolator:
+class PieceWiseLinearInterpolator(Estimator):
 
     def __init__(
         self,
@@ -45,35 +64,26 @@ class PieceWiseLinearInterpolator:
         self.inputs = controls
         self.costs = costs
 
-    def __call__(self, x: float) -> float:
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
         fn = interp1d(self.inputs, self.costs)
-        return fn(x)
+        return fn([y for y in x.values()][0])
 
-
-class UniVariateEstimator(Estimator):
-
-    def __init__(
-        self,
-        estimators: Dict[str, PieceWiseLinearInterpolator],
-    ):
-        self.estimators = estimators
-
-    def __getitem__(self, key: str) -> PieceWiseLinearInterpolator:
-        return self.estimators[key]
+    def get_costs(self) -> Array1D:
+        return self.costs
 
     def update(
         self,
-        Vu: float,
-        slope: Dict[str, float],
-        n_scenario: int,
-        idx: int,
-        list_areas: List[str],
+        Vu: float = 0,
+        slope: Dict[str, float] = {},
+        n_scenario: int = 0,
+        idx: int = 0,
+        list_areas: List[str] = [],
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
+        interp_mode: Optional[bool] = False,
     ) -> None:
-        for area in list_areas:
-            self.estimators[area].costs[idx] += -Vu / n_scenario
-
-    def get_value(self, x: Dict[str, float]) -> float:
-        return -sum([self.estimators[area](y) for area, y in x.items()])
+        self.costs[idx] += -Vu / n_scenario
 
 
 class BellmanValueEstimation(Estimator):
@@ -89,24 +99,28 @@ class BellmanValueEstimation(Estimator):
 
     def update(
         self,
-        Vu: float,
-        slope: Dict[str, float],
-        n_scenario: int,
-        idx: int,
-        list_areas: List[str],
+        Vu: float = 0,
+        slope: Dict[str, float] = {},
+        n_scenario: int = 0,
+        idx: int = 0,
+        list_areas: List[str] = [],
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
+        interp_mode: Optional[bool] = False,
     ) -> None:
         self.V["intercept"][idx] += Vu / n_scenario
         for area in list_areas:
             self.V[f"slope_{area}"][idx] += slope[area] / n_scenario
 
-    def get_value(self, x: Dict[str, float]) -> float:
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
         return max(
             [
                 sum(
                     [
                         self.V[f"slope_{area}"][idx]
                         * (
-                            x[area.area]
+                            x[area]
                             - self.discretization.list_discretization[area][idx[i]]
                         )
                         for i, area in enumerate(
@@ -120,7 +134,7 @@ class BellmanValueEstimation(Estimator):
         )
 
 
-class LinearInterpolator:
+class LinearInterpolator(Estimator):
     """Class to enable use of n-dimensionnal linear interpolation"""
 
     def __init__(
@@ -150,11 +164,28 @@ class LinearInterpolator:
             self.add_interpolations()
             self.remove_incoherence()
 
+    def get_costs(self) -> Array1D:
+        return self.costs
+
+    def get_true_inputs(self) -> Array1D:
+        return self.true_inputs
+
+    def get_true_costs(self) -> Array1D:
+        return self.true_costs
+
+    def get_true_duals(self) -> Array1D:
+        return self.true_duals
+
     def update(
         self,
-        costs: np.ndarray,
-        duals: np.ndarray,
-        controls: np.ndarray,
+        Vu: float = 0,
+        slope: Dict[str, float] = {},
+        n_scenario: int = 0,
+        idx: int = 0,
+        list_areas: List[str] = [],
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
         interp_mode: Optional[bool] = False,
     ) -> None:
         """
@@ -196,7 +227,7 @@ class LinearInterpolator:
             self.costs = np.array([0])
             self.duals = np.zeros(inputs_shape)
 
-    def __call__(self, x: np.ndarray) -> float:
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
         """
         Interpolates between the saved points
 
@@ -211,7 +242,7 @@ class LinearInterpolator:
         """
         return np.max(
             [
-                self.costs[id] + np.dot(x - val, self.duals[id])
+                self.costs[id] + np.dot(area_value_to_array(x) - val, self.duals[id])
                 for id, val in enumerate(self.inputs)
             ],
             axis=0,
@@ -414,34 +445,71 @@ class LinearDecomposer(LinearInterpolator):
         self.remove_inconsistence()
         self.remove_incoherence()
 
-    def __call__(self, x: np.ndarray) -> float:
-        if len(x.shape) > 1:
-            x = x[0]
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
         return np.maximum(
-            self.lower_bound(x), np.sum([layer(x) for layer in self.layers], axis=0)
+            self.lower_bound(x),
+            np.sum([layer(x) for layer in self.layers], axis=0),
         )
 
     def remove_inconsistence(self, tolerance: float = 1) -> None:
         inputs, costs = self.lower_bound.inputs, self.lower_bound.costs
         assert all(costs + tolerance > 0)
-        guesses = np.array([layer(inputs) for layer in self.layers])  # N_res * N_inp
+        guesses = np.array(
+            [
+                [
+                    layer(
+                        array_to_area_value(
+                            x, [AreaIndex(f"{i}") for i in range(inputs[0].shape[0])]
+                        )
+                    )
+                    for x in inputs
+                ]
+                for layer in self.layers
+            ]
+        )  # N_res * N_inp
         while any(np.sum(guesses, axis=0) > costs + tolerance):
             # Identify likely source of error
             bad_guesses = np.sum(guesses, axis=0) > costs + tolerance
             # Removing first potential source of pb
             first_pb_inp = inputs[bad_guesses][0]
-            bad_lay = [layer for layer in self.layers if layer(first_pb_inp) > 0][-1]
+            bad_lay = [
+                layer
+                for layer in self.layers
+                if layer(
+                    array_to_area_value(
+                        first_pb_inp,
+                        [AreaIndex(f"{i}") for i in range(len(first_pb_inp))],
+                    )
+                )
+                > 0
+            ][-1]
             bad_lay.remove(bad_lay.get_owner(first_pb_inp))
             guesses = np.array(
-                [layer(inputs) for layer in self.layers]
+                [
+                    [
+                        layer(
+                            array_to_area_value(
+                                x,
+                                [AreaIndex(f"{i}") for i in range(inputs[0].shape[0])],
+                            )
+                        )
+                        for x in inputs
+                    ]
+                    for layer in self.layers
+                ]
             )  # N_res * N_inp
 
     def update(
         self,
-        costs: np.ndarray,
-        duals: np.ndarray,
-        controls: np.ndarray,
-        interp_mode: Optional[bool] = None,
+        Vu: Optional[float] = None,
+        slope: Optional[Dict[str, float]] = None,
+        n_scenario: Optional[int] = None,
+        idx: Optional[int] = None,
+        list_areas: Optional[List[str]] = None,
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
+        interp_mode: Optional[bool] = False,
     ) -> None:
 
         assert controls is not None
@@ -583,6 +651,12 @@ class LinearCostEstimator:
             Array of ... or LinearInterpolator
         """
         return self.estimators[index]
+
+    def get_week_estimators(self, week: int) -> Dict[ScenarioIndex, LinearInterpolator]:
+        return {
+            ScenarioIndex(s): self.estimators[TimeScenarioIndex(week, s)]
+            for s in range(self.param.len_scenario)
+        }
 
     def update(
         self,

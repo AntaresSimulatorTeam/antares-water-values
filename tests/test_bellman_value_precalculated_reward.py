@@ -8,11 +8,10 @@ from multi_stock_bellman_value_calculation import (
     generate_controls,
     get_antares_costs,
     initialize_antares_problems,
-    precalculated_method,
 )
 from optimization import WeeklyBellmanProblem
 from simple_bellman_value_calculation import (
-    calculate_bellman_value_with_precalculated_reward,
+    calculate_bellman_value_with_precalculated_cost,
 )
 from type_definition import (
     AreaIndex,
@@ -20,6 +19,7 @@ from type_definition import (
     List,
     ScenarioIndex,
     TimeScenarioIndex,
+    WeekIndex,
     area_value_to_area_scenario_value,
     timescenario_list_area_value_to_array,
     timescenario_list_value_to_array,
@@ -190,20 +190,148 @@ expected_vb = np.array(
     ]
 )
 
+expected_vb_ms = np.array(
+    [
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+    ]
+)
+
 
 def test_bellman_value_precalculated_reward(
     param: TimeScenarioParameter,
     multi_stock_management_one_node: MultiStockManagement,
 ) -> None:
 
-    xNsteps = 20
+    a = AreaIndex("area")
+    levels = {
+        WeekIndex(w): [
+            {a: x}
+            for x in np.linspace(
+                0,
+                multi_stock_management_one_node.dict_reservoirs[a].reservoir.capacity,
+                20,
+            )
+        ]
+        for w in range(param.len_week + 1)
+    }
 
-    vb, G = calculate_bellman_value_with_precalculated_reward(
+    vb, G, _, _ = calculate_bellman_value_with_precalculated_cost(
         len_controls=20,
         param=param,
         multi_stock_management=multi_stock_management_one_node,
         output_path="test_data/one_node",
-        len_bellman=xNsteps,
+        levels=levels,
+        piecewiselinear=True,
+        type_estimator="LinearInterpolator",
     )
 
     true_list_cut = [
@@ -235,7 +363,9 @@ def test_bellman_value_precalculated_reward(
         assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0], abs=1e-3)
 
     for week in range(param.len_week - 1, -1, -1):
-        assert vb[:, week] == pytest.approx(expected_vb[:, week], rel=1e-3)
+        assert vb[WeekIndex(week)].get_costs() == pytest.approx(
+            expected_vb[:, week], rel=1e-3
+        )
 
 
 def test_bellman_value_precalculated_reward_with_multi_stock(
@@ -243,19 +373,33 @@ def test_bellman_value_precalculated_reward_with_multi_stock(
     multi_stock_management_one_node: MultiStockManagement,
 ) -> None:
 
-    xNsteps = 20
+    a = AreaIndex("area")
+    levels = {
+        WeekIndex(w): [
+            {a: x}
+            for x in np.linspace(
+                0,
+                multi_stock_management_one_node.dict_reservoirs[a].reservoir.capacity,
+                20,
+            )
+        ]
+        for w in range(param.len_week + 1)
+    }
 
-    _, _, bellman_values, _ = precalculated_method(
+    bellman_values, _, _, _ = calculate_bellman_value_with_precalculated_cost(
         len_controls=20,
         param=param,
         multi_stock_management=multi_stock_management_one_node,
         output_path="test_data/one_node",
-        len_bellman=xNsteps,
+        levels=levels,
+        piecewiselinear=False,
+        type_estimator="LinearDecomposer",
     )
 
-    # assert np.transpose([v for v in bellman_values[WeekIndex(w)].costs]) == pytest.approx(
-    #     expected_vb[:, : param.len_week]
-    # )
+    for week in range(param.len_week - 1, -1, -1):
+        bellman_values[WeekIndex(week)].get_costs() == pytest.approx(
+            expected_vb_ms[week], rel=1e-3
+        )
 
 
 def test_get_all_cost(

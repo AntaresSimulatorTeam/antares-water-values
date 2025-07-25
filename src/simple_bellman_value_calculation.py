@@ -20,23 +20,26 @@ from type_definition import (
     Array1D,
     Array2D,
     Dict,
+    List,
     TimeScenarioIndex,
     TimeScenarioParameter,
     WeekIndex,
 )
 
 
-def calculate_bellman_value_with_precalculated_reward(
+def calculate_bellman_value_with_precalculated_cost(
     param: TimeScenarioParameter,
     multi_stock_management: MultiStockManagement,
     output_path: str,
     len_controls: int,
-    len_bellman: int,
+    levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    piecewiselinear: bool,
+    type_estimator: str,
+    n_cycle: int = 1,
     name_solver: str = "CLP",
-) -> tuple[
-    Array2D,
-    LinearCostEstimator,
-]:
+    controls_looked_up: str = "grid",
+    verbose: bool = False,
+) -> tuple[Dict[WeekIndex, Estimator], LinearCostEstimator, float, float]:
     """
     Algorithm to evaluate Bellman values. First reward is approximated thanks to multiple simulations. Then, Bellman values are computed with the reward approximation.
 
@@ -68,63 +71,54 @@ def calculate_bellman_value_with_precalculated_reward(
         multi_stock_management=multi_stock_management,
         output_path=output_path,
         name_solver=name_solver,
+        verbose=verbose,
     )
 
     controls = generate_controls(
         param=param,
         multi_stock_management=multi_stock_management,
-        controls_looked_up="grid",
+        controls_looked_up=controls_looked_up,
         xNsteps=len_controls,
     )
 
     costs, slopes, _, _ = get_antares_costs(
-        param=param, list_models=list_models, controls=controls
+        param=param,
+        list_models=list_models,
+        controls=controls,
+        verbose=verbose,
     )
 
-    reward = LinearCostEstimator(
+    costs_approx = LinearCostEstimator(
         param=param,
         controls=controls,
         costs=costs,
         duals=slopes,
-        type_estimator="LinearInterpolator",
+        type_estimator=type_estimator,
     )
 
-    for area, reservoir_management in multi_stock_management.dict_reservoirs.items():
-        X = np.linspace(0, reservoir_management.reservoir.capacity, num=len_bellman)
-
-        V = get_bellman_values_from_approximate_costs(
-            levels={
-                WeekIndex(w): [{reservoir_management.reservoir.area: x} for x in X]
-                for w in range(param.len_week + 1)
-            },
-            param=param,
-            multi_stock_management=MultiStockManagement([reservoir_management]),
-            costs_approx=reward,
-            piecewiselinear=True,
-        )
-
-    V0 = V[WeekIndex(0)](
-        {
-            reservoir_management.reservoir.area: reservoir_management.reservoir.initial_level
-        }
-    )
-
-    upper_bound, control_ub, current_itr, times = compute_upper_bound(
-        multi_stock_management=multi_stock_management,
+    V = get_bellman_values_from_approximate_costs(
+        levels=levels,
         param=param,
-        list_models=list_models,
-        V=V,
+        multi_stock_management=multi_stock_management,
+        costs_approx=costs_approx,
+        piecewiselinear=piecewiselinear,
+        name_solver=name_solver,
+        verbose=verbose,
+        n_cycle=n_cycle,
     )
 
-    gap = upper_bound + V0
-    print(gap, upper_bound, -V0)
+    lb = V[WeekIndex(0)](multi_stock_management.get_initial_level())
 
-    return (
-        np.transpose(
-            [V[WeekIndex(week)].get_costs() for week in range(param.len_week + 1)]
-        ),
-        reward,
-    )
+    if piecewiselinear:
+        ub, _, _, _ = compute_upper_bound(
+            multi_stock_management=multi_stock_management,
+            param=param,
+            list_models=list_models,
+            V=V,
+        )
+    else:
+        ub = -1
+    return (V, costs_approx, lb, ub)
 
 
 def calculate_bellman_value_directly(

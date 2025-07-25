@@ -4,11 +4,15 @@ import pytest
 from calculate_reward_and_bellman_values import get_default_linear_interpolator
 from estimation import LinearInterpolator
 from functions_iterative import TimeScenarioParameter
-from multi_stock_bellman_value_calculation import precalculated_method
+from multi_stock_bellman_value_calculation import get_correlation_matrix
 from optimization import WeeklyBellmanProblem
 from reservoir_management import MultiStockManagement
+from simple_bellman_value_calculation import (
+    calculate_bellman_value_with_precalculated_cost,
+)
 from type_definition import (
     ScenarioIndex,
+    TimeScenarioIndex,
     WeekIndex,
     area_scenario_value_to_array,
     area_value_to_area_scenario_value,
@@ -75,15 +79,37 @@ def test_bellman_value_precalculated_multi_stock(
     multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
 
-    levels, _, bellman_values, _ = precalculated_method(
+    levels = multi_stock_management_two_nodes.get_disc(
+        param=param,
+        xNsteps=5,
+        trajectory={
+            TimeScenarioIndex(w, s): {
+                a: mng.reservoir.bottom_rule_curve[0] * 0.7
+                + mng.reservoir.upper_rule_curve[0] * 0.3
+                for a, mng in multi_stock_management_two_nodes.dict_reservoirs.items()
+            }
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
+        correlation_matrix=get_correlation_matrix(
+            multi_stock_management=multi_stock_management_two_nodes,
+            corr_type="no_corrs",
+        ),
+        method="lines",
+    )
+
+    bellman_values, _, _, _ = calculate_bellman_value_with_precalculated_cost(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         output_path="test_data/two_nodes",
         len_controls=5,
-        len_bellman=5,
+        levels=levels,
         name_solver="CLP",
         controls_looked_up="line+diagonal",
         verbose=True,
+        n_cycle=2,
+        type_estimator="LinearDecomposer",
+        piecewiselinear=False,
     )
 
     assert time_list_area_value_to_array(

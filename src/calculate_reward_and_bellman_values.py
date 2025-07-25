@@ -11,7 +11,7 @@ from estimation import (
     LinearInterpolator,
     PieceWiseLinearInterpolator,
 )
-from optimization import AntaresProblem, Basis, WeeklyBellmanProblem
+from optimization import AntaresProblem, WeeklyBellmanProblem
 from reservoir_management import MultiStockManagement
 from type_definition import (
     AreaIndex,
@@ -21,6 +21,7 @@ from type_definition import (
     ScenarioIndex,
     TimeScenarioIndex,
     TimeScenarioParameter,
+    Union,
     WeekIndex,
     area_value_to_area_scenario_value,
     area_value_to_array,
@@ -314,79 +315,10 @@ def compute_upper_bound(
     return (upper_bound, controls, current_itr, times)
 
 
-def calculate_reward(
-    param: TimeScenarioParameter,
-    controls: Dict[TimeScenarioIndex, float],
-    list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    G: LinearCostEstimator,
-    i: int,
-    name_reservoir: AreaIndex,
-) -> tuple[
-    Dict[TimeScenarioIndex, int],
-    Dict[TimeScenarioIndex, float],
-    LinearCostEstimator,
-]:
-    """
-    Evaluate reward for a set of given controls for each week and each scenario to update reward approximation.
-
-    Parameters
-    ----------
-    param:AntaresParameter :
-        Time-related parameters
-    controls:Dict[TimeScenarioIndex, Dict[AreaIndex, float]] :
-        Set of controls to evaluate
-    list_models:Dict[TimeScenarioIndex, AntaresProblem] :
-        Optimization problems for every week and every scenario
-    G:Dict[TimeScenarioIndex, LinearInterpolator] :
-        Reward approximation to update for every week and every scenario
-    i:int :
-        Iteration of iterative algorithm
-
-    Returns
-    -------
-    current_itr:Dict[TimeScenarioIndex, int] :
-        Simplex iterations used to solve the problem
-    time:Dict[TimeScenarioIndex, float] :
-        Time to solve the problem
-    G:Dict[TimeScenarioIndex, LinearInterpolator] :
-        Updated reward approximation
-    """
-
-    current_itr = {}
-    times = {}
-
-    for scenario in range(param.len_scenario):
-        basis_0 = Basis([], [])
-        for week in range(param.len_week):
-            print(f"{scenario} {week}", end="\r")
-
-            beta, lamb, itr, computation_time = list_models[
-                TimeScenarioIndex(week, scenario)
-            ].solve_with_predefined_controls(
-                control={name_reservoir: controls[TimeScenarioIndex(week, scenario)]},
-                prev_basis=basis_0 if i == 0 else Basis([], []),
-            )
-            if list_models[TimeScenarioIndex(week, scenario)].store_basis:
-                basis_0 = list_models[TimeScenarioIndex(week, scenario)].basis[-1]
-            else:
-                basis_0 = Basis([], [])
-
-            G[TimeScenarioIndex(week, scenario)].update(
-                controls=np.array([[controls[TimeScenarioIndex(week, scenario)]]]),
-                duals=np.array([[lamb[name_reservoir]]]),
-                costs=np.array([beta]),
-            )
-
-            current_itr[TimeScenarioIndex(week, scenario)] = itr
-            times[TimeScenarioIndex(week, scenario)] = computation_time
-
-    return (current_itr, times, G)
-
-
 def get_week_scenario_costs(
     m: AntaresProblem,
-    controls_list: List[Dict[AreaIndex, float]],
-) -> tuple[List[float], List[Dict[AreaIndex, float]], int, List[float]]:
+    controls_list: Union[List[Dict[AreaIndex, float]], Dict[AreaIndex, float]],
+) -> tuple[List[float], List[Dict[AreaIndex, float]], int, float]:
     """
     Takes a control and an initialized Antares problem setup and returns the objective and duals
     for every week and every Scenario
@@ -407,39 +339,52 @@ def get_week_scenario_costs(
     """
 
     tot_iter = 0
-    times = []
+    times = 0.0
 
     # Initialize costs
     costs: List[float] = []
     slopes: List[Dict[AreaIndex, float]] = []
-    for u in controls_list:
+    if type(controls_list) is list:
+        controls = controls_list
+    else:
+        controls = [controls_list]  # type:ignore
+    for u in controls:
 
         # Solving the problem
         control_cost, control_slopes, itr, time_taken = (
             m.solve_with_predefined_controls(control=u)
         )
         tot_iter += itr
-        times.append(time_taken)
+        times += time_taken
 
         # Save results
         # print(f"Imposing control {control} costs {costs}, with duals {control_slopes}")
         costs.append(control_cost)
         slopes.append(control_slopes)
+
     return costs, slopes, tot_iter, times
 
 
-def get_all_costs(
+def get_antares_costs(
     param: TimeScenarioParameter,
-    list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    controls_list: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
+    controls: Union[
+        Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
+        Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
+    ],
+    multi_stock_management: Optional[MultiStockManagement] = None,
+    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {},
+    output_path: str = "",
+    name_solver: str = "CLP",
     saving_dir: Optional[str] = None,
+    save_protos: bool = False,
     verbose: bool = False,
-    already_init: bool = False,
     keep_intermed_res: bool = False,
+    prefix: str = "",
 ) -> tuple[
     Dict[TimeScenarioIndex, List[float]],
     Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-    Dict[TimeScenarioIndex, List[float]],
+    Dict[TimeScenarioIndex, float],
+    Dict[TimeScenarioIndex, int],
 ]:
     """
     Takes a problem and a discretization level and solves the Antares pb for every combination of stock for every week
@@ -456,110 +401,53 @@ def get_all_costs(
         -------
             Bellman Values:Dict[TimeScenarioIndex, List[float]]: Bellman values
     """
-    tot_iter = 0
-    times: Dict[TimeScenarioIndex, List[float]] = {}
-    if keep_intermed_res or already_init:
+    current_itr = {}
+    times: Dict[TimeScenarioIndex, float] = {}
+    costs: Dict[TimeScenarioIndex, List[float]] = {}
+    slopes: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]] = {}
+    week_start = 0
+    if keep_intermed_res:
         assert saving_dir is not None
-        filename = saving_dir + "/get_all_costs_run.pkl"
-
-    # Initializing the n_weeks*n_scenarios*n_controls*n_stocks values to fill
-    costs: Dict[TimeScenarioIndex, List[float]] = {}
-    slopes: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]] = {}
-    week_start = 0
-    if already_init:
-        with open(filename, "rb") as file:
-            pre_costs, pre_slopes = pkl.load(file)
-        week_start = len(pre_costs) // param.len_scenario
-        costs = pre_costs
-        slopes = pre_slopes
-    week_range = range(week_start, param.len_week)
-    if verbose:
-        week_range = tqdm(
-            range(week_start, param.len_week), colour="blue", desc="Simulation"
-        )
-    for week in week_range:
-        for scenario in range(param.len_scenario):
-            ts_id = TimeScenarioIndex(week=week, scenario=scenario)
-            # Antares problem
-            m = list_models[ts_id]
-            try:
-                costs_ws, slopes_ws, iters, times_ws = get_week_scenario_costs(
-                    m=m,
-                    controls_list=controls_list[TimeScenarioIndex(week, scenario)],
-                )
-            except ValueError:
-                print(
-                    f"Failed at week {week}, the conditions on control were: {controls_list[TimeScenarioIndex(week,scenario)]}"
-                )
-                raise ValueError
-            tot_iter += iters
-            times[TimeScenarioIndex(week, scenario)] = times_ws
-            costs[TimeScenarioIndex(week, scenario)] = costs_ws
-            slopes[TimeScenarioIndex(week, scenario)] = slopes_ws
-        if keep_intermed_res and saving_dir is not None:
-            if not (os.path.exists(saving_dir)):
-                os.makedirs(saving_dir)
-            with open(filename, "wb") as file:
-                pkl.dump((costs, slopes), file)
-    # print(f"Number of simplex pivot {tot_iter}")
-    return costs, slopes, times
-
-
-def Lget_costs(
-    param: TimeScenarioParameter,
-    multi_stock_management: MultiStockManagement,
-    output_path: str,
-    name_solver: str,
-    controls_list: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-    saving_directory: str,
-    verbose: bool = False,
-    save_protos: bool = False,
-    prefix: str = "",
-) -> tuple[
-    Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-    Dict[TimeScenarioIndex, List[float]],
-    Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
-]:
-    filename = f"{saving_directory}/{prefix}get_all_costs_run_{output_path.replace('/','_')[-27:]}.pkl"
-
-    costs: Dict[TimeScenarioIndex, List[float]] = {}
-    slopes: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]] = {}
-    week_start = 0
-    if Path(filename).is_file():
-        with open(filename, "rb") as file:
-            week_start, pre_controls, pre_costs, pre_slopes = pkl.load(file)
-        controls_list = pre_controls
-        costs = pre_costs
-        slopes = pre_slopes
+        filename = f"{saving_dir}/{prefix}get_all_costs_run.pkl"
+        if Path(filename).is_file():
+            with open(filename, "rb") as file:
+                week_start, pre_costs, pre_slopes = pkl.load(file)
+            costs = pre_costs
+            slopes = pre_slopes
     week_range = range(param.len_week)
     if verbose:
-        if week_start > 0:
-            print(f"Starting again at week {week_start}")
         week_range = tqdm(range(param.len_week), colour="blue", desc="Simulation")
     for week in week_range:
         if week >= week_start:
             for scenario in range(param.len_scenario):
-                m = AntaresProblem(
-                    scenario=scenario,
-                    week=week,
-                    path=output_path,
-                    saving_directory=saving_directory,
-                    name_solver=name_solver,
-                    save_protos=save_protos,
-                    param=param,
-                    multi_stock_management=multi_stock_management,
-                )
-                costs_ws, slopes_ws, _, _ = get_week_scenario_costs(
+                ts_id = TimeScenarioIndex(week=week, scenario=scenario)
+                try:
+                    m = list_models[ts_id]
+                except KeyError:
+                    assert output_path != ""
+                    assert multi_stock_management is not None
+                    m = AntaresProblem(
+                        scenario=scenario,
+                        week=week,
+                        path=output_path,
+                        saving_directory=saving_dir,
+                        name_solver=name_solver,
+                        save_protos=save_protos,
+                        param=param,
+                        multi_stock_management=multi_stock_management,
+                    )
+                costs_ws, slopes_ws, iters, times_ws = get_week_scenario_costs(
                     m=m,
-                    controls_list=controls_list[TimeScenarioIndex(week, scenario)],
+                    controls_list=controls[ts_id],
                 )
-                costs[TimeScenarioIndex(week, scenario)] = costs_ws
-                slopes[TimeScenarioIndex(week, scenario)] = slopes_ws
-            if not (os.path.exists(saving_directory)):
-                os.makedirs(saving_directory)
-            with open(filename, "wb") as file:
-                pkl.dump(
-                    (week, controls_list, costs, slopes),
-                    file,
-                )
-    return controls_list, costs, slopes
+                times[ts_id] = times_ws
+                costs[ts_id] = costs_ws
+                slopes[ts_id] = slopes_ws
+                current_itr[ts_id] = iters
+            if keep_intermed_res:
+                assert saving_dir is not None
+                if not (os.path.exists(saving_dir)):
+                    os.makedirs(saving_dir)
+                with open(filename, "wb") as file:
+                    pkl.dump((week, costs, slopes), file)
+    return costs, slopes, times, current_itr

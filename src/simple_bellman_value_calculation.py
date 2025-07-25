@@ -1,7 +1,7 @@
 import numpy as np
 
 from calculate_reward_and_bellman_values import (
-    get_all_costs,
+    get_antares_costs,
     get_bellman_values_from_approximate_costs,
 )
 from estimation import (
@@ -77,8 +77,8 @@ def calculate_bellman_value_with_precalculated_reward(
         xNsteps=len_controls,
     )
 
-    costs, slopes, _ = get_all_costs(
-        param=param, list_models=list_models, controls_list=controls
+    costs, slopes, _, _ = get_antares_costs(
+        param=param, list_models=list_models, controls=controls
     )
 
     reward = LinearCostEstimator(

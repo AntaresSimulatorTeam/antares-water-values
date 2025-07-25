@@ -6,7 +6,7 @@ from functions_iterative import MultiStockManagement, TimeScenarioParameter
 from multi_stock_bellman_value_calculation import (
     MultiStockManagement,
     generate_controls,
-    get_all_costs,
+    get_antares_costs,
     initialize_antares_problems,
     precalculated_method,
 )
@@ -284,8 +284,8 @@ def test_get_all_cost(
         verbose=False,
     )
 
-    costs, slopes, _ = get_all_costs(
-        param=param, list_models=list_models, controls_list=controls
+    costs, slopes, _, _ = get_antares_costs(
+        param=param, list_models=list_models, controls=controls
     )
     assert timescenario_list_area_value_to_array(
         controls, param, multi_stock_management_one_node.areas

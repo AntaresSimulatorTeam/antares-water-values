@@ -418,20 +418,24 @@ def test_Lget_costs(
     param: TimeScenarioParameter,
     multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
-    controls, costs, duals = Lget_costs(
+    costs, duals, _, _ = get_antares_costs(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         output_path=output_path,
-        saving_directory=saving_dir,
+        saving_dir=saving_dir,
         name_solver=name_solver,
-        controls_list=array_to_timescenario_list_area_value(
+        controls=array_to_timescenario_list_area_value(
             expected_controls_list, param, multi_stock_management_two_nodes.areas
         ),
         save_protos=True,
         verbose=False,
     )
     assert timescenario_list_area_value_to_array(
-        controls, param, multi_stock_management_two_nodes.areas
+        array_to_timescenario_list_area_value(
+            expected_controls_list, param, multi_stock_management_two_nodes.areas
+        ),
+        param,
+        multi_stock_management_two_nodes.areas,
     ) == pytest.approx(expected_controls)
     assert timescenario_list_value_to_array(costs, param) == pytest.approx(
         expected_costs
@@ -578,22 +582,27 @@ def test_get_opt_gap(
     multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
 
-    controls, costs, _ = Lget_costs(
+    costs, _, _, _ = get_antares_costs(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
-        controls_list=array_to_timescenario_list_area_value(
+        controls=array_to_timescenario_list_area_value(
             expected_controls_to_explore, param, multi_stock_management_two_nodes.areas
         ),
-        saving_directory=saving_dir,
+        saving_dir=saving_dir,
         output_path=output_path,
         name_solver=name_solver,
         verbose=False,
         save_protos=True,
+        keep_intermed_res=True,
         prefix=f"test_get_opt_gap",
     )
 
     assert timescenario_list_area_value_to_array(
-        controls, param, multi_stock_management_two_nodes.areas
+        array_to_timescenario_list_area_value(
+            expected_controls_to_explore, param, multi_stock_management_two_nodes.areas
+        ),
+        param,
+        multi_stock_management_two_nodes.areas,
     ) == pytest.approx(
         np.array(
             [
@@ -632,7 +641,9 @@ def test_get_opt_gap(
         param=param,
         costs=costs,
         costs_approx=costs_approx,
-        controls_list=controls,
+        controls_list=array_to_timescenario_list_area_value(
+            expected_controls_to_explore, param, multi_stock_management_two_nodes.areas
+        ),
         opt_gap=1,
         max_gap={WeekIndex(w): max_gap[w] for w in range(param.len_week)},
     )

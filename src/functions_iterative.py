@@ -3,8 +3,8 @@ from time import time
 import numpy as np
 
 from calculate_reward_and_bellman_values import (
-    calculate_reward,
     compute_upper_bound,
+    get_antares_costs,
     get_bellman_values_from_approximate_costs,
     get_optimal_trajectory_from_approximate_costs,
 )
@@ -19,6 +19,8 @@ from type_definition import (
     TimeScenarioIndex,
     TimeScenarioParameter,
     WeekIndex,
+    area_value_to_array,
+    list_area_value_to_array,
 )
 
 
@@ -93,7 +95,11 @@ def itr_control(
 
         if i == 0:
             controls = {
-                TimeScenarioIndex(w, s): reservoir_management.reservoir.inflow[w, s]
+                TimeScenarioIndex(w, s): {
+                    reservoir_management.reservoir.area: reservoir_management.reservoir.inflow[
+                        w, s
+                    ]
+                }
                 for w in range(param.len_week)
                 for s in range(param.len_scenario)
             }
@@ -114,14 +120,15 @@ def itr_control(
             )
         traj.append(initial_x)
 
-        current_itr, times, G = calculate_reward(
-            param=param,
-            controls=controls,
-            list_models=list_models,
-            G=G,
-            i=i,
-            name_reservoir=reservoir_management.reservoir.area,
+        costs, duals, _, current_itr = get_antares_costs(
+            param=param, controls=controls, list_models=list_models
         )
+        for idx in G.estimators.keys():
+            G[idx].update(
+                controls=np.array([area_value_to_array(controls[idx])]),
+                duals=list_area_value_to_array(duals[idx]),
+                costs=np.array(costs[idx]),
+            )
         itr_tot.append(current_itr)
 
         V = get_bellman_values_from_approximate_costs(

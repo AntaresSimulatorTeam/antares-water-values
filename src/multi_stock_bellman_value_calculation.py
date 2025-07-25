@@ -7,8 +7,7 @@ from scipy.stats import random_correlation
 from tqdm import tqdm
 
 from calculate_reward_and_bellman_values import (
-    Lget_costs,
-    get_all_costs,
+    get_antares_costs,
     get_bellman_values_from_approximate_costs,
     get_default_linear_interpolator,
     get_optimal_trajectory_from_approximate_costs,
@@ -160,7 +159,7 @@ def precalculated_method(
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     LinearCostEstimator,
     Dict[WeekIndex, Estimator],
-    Dict[TimeScenarioIndex, List[float]],
+    Dict[TimeScenarioIndex, float],
 ]:
     """
     Takes a control and an initialized Antares problem setup and returns the objective and duals
@@ -196,10 +195,10 @@ def precalculated_method(
         xNsteps=len_controls,
     )
 
-    costs, slopes, times = get_all_costs(
+    costs, slopes, times, _ = get_antares_costs(
         param=param,
         list_models=list_models,
-        controls_list=controls_list,
+        controls=controls_list,
         verbose=verbose,
     )
 
@@ -729,15 +728,16 @@ def cutting_plane_method(
             pbar.describe("Simulation")
 
         # Evaluating this "optimal" trajectory
-        controls, costs, slopes = Lget_costs(
+        costs, slopes, _, _ = get_antares_costs(
             param=param,
             multi_stock_management=multi_stock_management,
-            controls_list=controls_list,
-            saving_directory=saving_dir,
+            controls=controls_list,
+            saving_dir=saving_dir,
             output_path=output_path,
             name_solver=name_solver,
             verbose=verbose,
             save_protos=True,
+            keep_intermed_res=True,
             prefix=f"cut_plan_iter_{iter}_",
         )
 
@@ -745,7 +745,7 @@ def cutting_plane_method(
             param=param,
             costs=costs,
             costs_approx=costs_approx,
-            controls_list=controls,
+            controls_list=controls_list,
             opt_gap=opt_gap,
             max_gap={WeekIndex(w): max_gap[w] for w in range(param.len_week)},
         )
@@ -864,20 +864,20 @@ def iter_bell_vals(
     )
 
     # Get hyperplanes resulting from initial controls
-    controls, costs, duals = Lget_costs(
+    costs, duals, _, _ = get_antares_costs(
         param=param,
         multi_stock_management=multi_stock_management,
         output_path=output_path,
-        saving_directory=saving_dir,
+        saving_dir=saving_dir,
         name_solver=name_solver,
-        controls_list=controls_list,
+        controls=controls_list,
         save_protos=True,
         verbose=verbose,
     )
 
     costs_approx = LinearCostEstimator(
         param=param,
-        controls=controls,
+        controls=controls_list,
         costs=costs,
         duals=duals,
         type_estimator="LinearDecomposer",
@@ -1045,15 +1045,16 @@ def sddp_cutting_planes(
         if verbose:
             pbar.describe("Simulating")
 
-        controls, costs, slopes = Lget_costs(
+        costs, slopes, _, _ = get_antares_costs(
             param=param,
             multi_stock_management=multi_stock_management,
-            controls_list=controls,
+            controls=controls,
             output_path=output_path,
-            saving_directory=saving_dir,
+            saving_dir=saving_dir,
             name_solver=name_solver,
             verbose=False,
             save_protos=True,
+            keep_intermed_res=True,
             prefix=f"SDDP_iter_{iter}_",
         )
 
@@ -1133,13 +1134,13 @@ def iter_bell_vals_v2(
         n_controls_init=n_controls_init,
     )
 
-    controls_list, costs, duals = Lget_costs(
+    costs, duals, _, _ = get_antares_costs(
         param=param,
         multi_stock_management=multi_stock_management,
         output_path=output_path,
-        saving_directory=saving_dir,
+        saving_dir=saving_dir,
         name_solver=name_solver,
-        controls_list=controls_list,
+        controls=controls_list,
         save_protos=False,
         verbose=verbose,
     )

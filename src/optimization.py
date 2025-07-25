@@ -99,9 +99,10 @@ class AntaresProblem:
         else:
             name_scenario = scenario + 1
 
-        if saving_directory is not None:
+        if save_protos:
+            assert saving_directory is not None
             proto_path = saving_directory + f"/problem-{name_scenario}-{week+1}.pkl"
-            already_processed = Path(proto_path).is_file() and save_protos
+            already_processed = Path(proto_path).is_file()
         else:
             already_processed = False
 

@@ -3,14 +3,13 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 class Proxy:
-    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float, coeff:float) -> None:
+    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float) -> None:
         self.dir_study = dir_study
         self.name_area = name_area
         self.reservoir = Reservoir(dir_study, name_area)
 
         self.turb_efficiency=1
         self.alpha=alpha
-        self.coeff = coeff
 
         self.nb_weeks=52
         self.scenarios=range(MC_years)
@@ -57,7 +56,7 @@ class Proxy:
             hourly_pump.append(np.sum(pump * self.reservoir.efficiency))
             hourly_control = turb * self.turb_efficiency - pump * self.reservoir.efficiency
             weekly_control.append(np.sum(hourly_control))
-            cost = np.sum(np.abs(clipped_net_load) ** self.alpha / self.coeff)
+            cost = np.sum(np.abs(clipped_net_load) ** self.alpha)
             costs.append(cost)
         
         return hourly_turb,hourly_pump,weekly_control,costs

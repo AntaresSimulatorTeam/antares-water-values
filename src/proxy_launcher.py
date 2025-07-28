@@ -15,7 +15,6 @@ class Launch:
                  area_target:str|None, 
                  MC_years: int, 
                  alpha: float, 
-                 coeff_cost: int, 
                  enable_logging: bool, 
                  global_export_dir: str | None = None):
         
@@ -23,7 +22,6 @@ class Launch:
         self.name_area = area
         self.nb_scenarios = MC_years
         self.alpha = alpha
-        self.coeff = coeff_cost
         self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir
         self.area_target = area_target if area_target else area  # Use area_target if provided, otherwise use area
@@ -40,7 +38,7 @@ class Launch:
         os.makedirs(export_dir, exist_ok=True)
 
         start = time.time()
-        self.proxy = Proxy(dir_study=self.dir_study, name_area = self.name_area, MC_years= self.nb_scenarios, alpha=self.alpha,coeff=self.coeff)
+        self.proxy = Proxy(dir_study=self.dir_study, name_area = self.name_area, MC_years= self.nb_scenarios, alpha=self.alpha)
         self.bv = BellmanValuesProxy(self.proxy,enable_logging=self.enable_logging, export_dir=export_dir)
         self.trajectories = OptimalTrajectories(self.bv)
         end = time.time()
@@ -89,7 +87,14 @@ class Launch:
             else:
                 print(f"Unknown action: {action}")
 
-def run_for_area(area: str,area_target:str|None, dir_study: str, MC_years: int, alpha: float, coeff_cost: int, enable_logging: bool, actions: list[str] | None = None, global_export_dir: str | None = None) -> None:
+def run_for_area(area: str,
+                 area_target:str|None, 
+                 dir_study: str, 
+                 MC_years: int, 
+                 alpha: float, 
+                 enable_logging: bool, 
+                 actions: list[str] | None = None, 
+                 global_export_dir: str | None = None) -> None:
     # Si uniquement undo_modifications, ne passe pas d'export dir
     if actions is not None and len(actions) == 1 and actions[0] == "undo_modifications":
         Launch(
@@ -98,7 +103,6 @@ def run_for_area(area: str,area_target:str|None, dir_study: str, MC_years: int, 
             area_target=area_target,
             MC_years=MC_years,
             alpha=alpha,
-            coeff_cost=coeff_cost,
             enable_logging=enable_logging,
             global_export_dir=None,
         ).run(actions=actions)
@@ -109,7 +113,6 @@ def run_for_area(area: str,area_target:str|None, dir_study: str, MC_years: int, 
             area_target=area_target,
             MC_years=MC_years,
             alpha=alpha,
-            coeff_cost=coeff_cost,
             enable_logging=enable_logging,
             global_export_dir=global_export_dir,
         ).run(actions=actions)
@@ -150,27 +153,25 @@ def post_process_shared_files(dir_study: str, areas: list[str], area_target:str)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Lancer la génération des trajectoires pour plusieurs zones.")
-    parser.add_argument("--dir_study", type=str, required=True, help="Répertoire d'entrée contenant les données.")
-    parser.add_argument("--area", type=str, nargs='+', required=True, help="Liste des zones d'étude (séparées par un espace).")
+    parser.add_argument("--dir_study", type=str, required=True, help="Répertoire de l'étude Antares")
+    parser.add_argument("--areas", type=str, nargs='+', required=True, help="Liste des zones d'étude (séparées par un espace).")
     parser.add_argument("--MC_years", type=int, required=False, default=200, help="Nombre d'années Monte-Carlo à simuler.")
     parser.add_argument("--alpha", type=float, required=False,default=2, help="Coefficient alpha de la fonction de coût, par défaut vaut 2.")
-    parser.add_argument("--coeff_cost", type=int, required=False,default=1, help="Facteur d'échelle pour la fonction de coût, par défaut vaut 1e9.")
     parser.add_argument("--enable_logging", type=bool, default=False, help="Activer les logs.")
-    parser.add_argument("--actions", type=str, nargs='*', default=None, help="Liste des actions à effectuer (ex: export_bellman_values, plot_trajectories, modify_antares_data, undo_modifications, etc.)")
+    parser.add_argument("--actions", type=str, nargs='*', default=None, help="Liste des actions à effectuer")
     parser.add_argument("--area_target", type=str, required=False,default=None,help="Zone cible pour les modifications, si None utilise la zone actuelle.")
 
     args = parser.parse_args()
 
     # Si uniquement undo_modifications, ne crée aucun dossier d'export
     if args.actions is not None and len(args.actions) == 1 and args.actions[0] == "undo_modifications":
-        for area in args.area:
+        for area in args.areas:
             run_for_area(
                 area,
                 args.area_target,
                 args.dir_study,
                 args.MC_years,
                 args.alpha,
-                args.coeff_cost,
                 args.enable_logging,
                 args.actions,
                 None
@@ -182,14 +183,13 @@ def main() -> None:
     global_export_dir = os.path.join(args.dir_study, f"exports_LT_storage_trajectories_{date_str}")
     os.makedirs(global_export_dir, exist_ok=True)
 
-    if len(args.area) == 1:
+    if len(args.areas) == 1:
         run_for_area(
-            args.area[0],
+            args.areas[0],
             args.area_target,
             args.dir_study,
             args.MC_years,
             args.alpha,
-            args.coeff_cost,
             args.enable_logging,
             args.actions,
             global_export_dir,
@@ -204,11 +204,10 @@ def main() -> None:
                     args.dir_study,
                     args.MC_years,
                     args.alpha,
-                    args.coeff_cost,
                     args.enable_logging,
                     args.actions,
                     global_export_dir
-                ): area for area in args.area
+                ): area for area in args.areas
             }
             for future in as_completed(future_to_area):
                 area = future_to_area[future]
@@ -220,7 +219,7 @@ def main() -> None:
                     traceback.print_exc()
 
     # Post-traitement des fichiers partagés
-    post_process_shared_files(args.dir_study, args.area, args.area_target)
+    post_process_shared_files(args.dir_study, args.areas, args.area_target)
 
 if __name__ == "__main__":
     main()

@@ -16,13 +16,15 @@ class Launch:
                  area_target:str|None, 
                  MC_years: int, 
                  alpha: float, 
-                 enable_logging: bool, 
+                 enable_logging: bool,
+                 fictive: bool, 
                  global_export_dir: str | None = None):
         
         self.dir_study = dir_study
         self.name_area = area
         self.nb_scenarios = MC_years
         self.alpha = alpha
+        self.fictive = fictive
         self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir
         self.area_target = area_target if area_target else area  # Use area_target if provided, otherwise use area
@@ -39,7 +41,7 @@ class Launch:
         os.makedirs(export_dir, exist_ok=True)
 
         start = time.time()
-        self.proxy = Proxy(dir_study=self.dir_study, name_area = self.name_area, MC_years= self.nb_scenarios, alpha=self.alpha)
+        self.proxy = Proxy(dir_study=self.dir_study, name_area = self.name_area, MC_years= self.nb_scenarios, alpha=self.alpha, area_target=self.area_target, fictive=self.fictive)
         self.bv = BellmanValuesProxy(self.proxy,enable_logging=self.enable_logging, export_dir=export_dir)
         self.trajectories = OptimalTrajectories(self.bv)
         end = time.time()
@@ -93,7 +95,8 @@ def run_for_area(area: str,
                  dir_study: str, 
                  MC_years: int, 
                  alpha: float, 
-                 enable_logging: bool, 
+                 enable_logging: bool,
+                 fictive: bool, 
                  actions: list[str] | None = None, 
                  global_export_dir: str | None = None) -> None:
     # Si uniquement undo_modifications, ne passe pas d'export dir
@@ -105,6 +108,7 @@ def run_for_area(area: str,
             MC_years=MC_years,
             alpha=alpha,
             enable_logging=enable_logging,
+            fictive=fictive,
             global_export_dir=None,
         ).run(actions=actions)
     else:
@@ -115,6 +119,7 @@ def run_for_area(area: str,
             MC_years=MC_years,
             alpha=alpha,
             enable_logging=enable_logging,
+            fictive=fictive,
             global_export_dir=global_export_dir,
         ).run(actions=actions)
 
@@ -162,6 +167,7 @@ def main() -> None:
     parser.add_argument("--enable_logging", type=bool, default=False, help="Activer les logs.")
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="Liste des actions à effectuer")
     parser.add_argument("--area_target", type=str, required=False,default=None,help="Zone cible pour les modifications, si None utilise la zone actuelle.")
+    parser.add_argument("--fictive", type=bool, default=False, help="Utiliser un noeuf fictif pour le réservoir.")
 
     args = parser.parse_args()
 
@@ -175,6 +181,7 @@ def main() -> None:
                 args.MC_years,
                 args.alpha,
                 args.enable_logging,
+                args.fictive,
                 args.actions,
                 None
             )
@@ -193,6 +200,7 @@ def main() -> None:
             args.MC_years,
             args.alpha,
             args.enable_logging,
+            args.fictive,
             args.actions,
             global_export_dir,
         )
@@ -207,6 +215,7 @@ def main() -> None:
                     args.MC_years,
                     args.alpha,
                     args.enable_logging,
+                    args.fictive,
                     args.actions,
                     global_export_dir
                 ): area for area in args.areas

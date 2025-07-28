@@ -35,6 +35,9 @@ class Reservoir:
         self,
         dir_study: str,
         name_area: str,
+        fictive :bool,
+        area_target : str|None
+        # If fictive is True, max pump and max turb are read in the link data between real node and ficitive node (real node is target area)
     ) -> None:
         """
         Create a new reservoir.
@@ -52,17 +55,35 @@ class Reservoir:
         """
 
         self.area = name_area
-
         hydro_ini_file = self.get_hydro_ini_file(dir_study=dir_study)
 
         self.read_capacity(hydro_ini_file=hydro_ini_file)
         self.read_efficiency(hydro_ini_file=hydro_ini_file)
         self.read_rule_curves(dir_study)
         self.read_inflow(dir_study)
-        self.read_max_power(dir_study)
+        self.read_max_power(dir_study, fictive=fictive, area_target=area_target)
         self.read_allocation_matrix(dir_study)
 
-    def read_max_power(self, dir_study: str) -> None:
+    def read_max_power(self, dir_study: str, fictive:bool,area_target:str|None) -> None:
+        if fictive and area_target is not None:
+            # Read max power from the link data between real node and fictive node
+            turb_file = os.path.join(dir_study, "input", "links", f"{area_target}","capacities",f"{self.area}_indirect.txt")
+            pump_file = os.path.join(dir_study, "input", "links", f"{area_target}","capacities",f"{self.area}_direct.txt")
+            if not os.path.exists(turb_file):
+                raise FileNotFoundError(f"Turbine link file {turb_file} does not exist.")
+            if not os.path.exists(pump_file):
+                raise FileNotFoundError(f"Pump link file {pump_file} does not exist.")
+            self.max_hourly_turb = np.loadtxt(turb_file)[:self.days_in_year*self.hours_in_day]
+            self.max_hourly_pump = np.loadtxt(pump_file)[:self.days_in_year*self.hours_in_day]
+            
+            self.max_daily_turb = np.sum(self.max_hourly_turb.reshape((self.days_in_year, self.hours_in_day)), axis=1)
+            self.max_daily_pump = np.sum(self.max_hourly_pump.reshape((self.days_in_year, self.hours_in_day)), axis=1) 
+
+            self.max_weekly_turb = np.sum(self.max_daily_turb.reshape((self.weeks_in_year, self.days_in_week)), axis=1) 
+            self.max_weekly_pump = np.sum(self.max_daily_pump.reshape((self.weeks_in_year, self.days_in_week)), axis=1)
+            return
+
+        
         max_power_data = np.loadtxt(
             f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
         )

@@ -3,10 +3,10 @@ import numpy as np
 from scipy.interpolate import interp1d
 
 class Proxy:
-    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float) -> None:
+    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float, area_target:str|None, fictive:bool) -> None:
         self.dir_study = dir_study
         self.name_area = name_area
-        self.reservoir = Reservoir(dir_study, name_area)
+        self.reservoir = Reservoir(dir_study, name_area, fictive=fictive, area_target=area_target)
 
         self.turb_efficiency=1
         self.alpha=alpha

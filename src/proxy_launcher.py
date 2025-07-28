@@ -14,14 +14,14 @@ class Launch:
                  dir_study: str, 
                  area: str,
                  area_target:str|None, 
-                 MC_years: list, 
+                 MC_years: int, 
                  alpha: float, 
                  enable_logging: bool, 
                  global_export_dir: str | None = None):
         
         self.dir_study = dir_study
         self.name_area = area
-        self.MC_years = MC_years
+        self.nb_scenarios = MC_years
         self.alpha = alpha
         self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir

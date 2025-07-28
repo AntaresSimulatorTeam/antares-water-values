@@ -121,7 +121,7 @@ class Plotter:
         colors = px.colors.qualitative.Plotly
 
         for s in self.bv.scenarios:
-            visible = True if s == 0 else False
+            visible = True if s == self.bv.scenarios[0] else False
             color = colors[s % len(colors)]
             stock_percent = self.trajectories.trajectories[s] / self.bv.proxy.reservoir.capacity * 100
             fig.add_trace(go.Scatter(
@@ -142,17 +142,17 @@ class Plotter:
             area = getattr(self.bv, 'area', None)
         area_str = f" - Zone : {area}" if area else ""
 
-        for s in self.bv.scenarios:
-            visibility = [True] * n_shared_guides + [False] * n_scenarios
-            visibility[n_shared_guides + s] = True
-            buttons.append(dict(
-                label=f"MC {s + 1}",
-                method="update",
-                args=[
-                    {"visible": visibility},
-                    {"title.text": f"Trajectoire du stock - MC {s + 1}{area_str}"}
-                ]
-            ))
+        for i, s in enumerate(self.bv.scenarios):
+                visibility = [True] * n_shared_guides + [False] * n_scenarios
+                visibility[n_shared_guides + i] = True
+                buttons.append(dict(
+                    label=f"MC {s + 1}",
+                    method="update",
+                    args=[
+                        {"visible": visibility},
+                        {"title.text": f"Trajectoire du stock - MC {s + 1}{area_str}"}
+                    ]
+                ))
 
         visibility_all = [True] * (n_shared_guides + n_scenarios)
         buttons.append(dict(

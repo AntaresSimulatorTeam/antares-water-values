@@ -93,8 +93,9 @@ class Proxy:
 
 
     def compute_stage_cost_functions(self)->np.ndarray:
-        cost_functions=np.array([[self.stage_cost_function(w,s) for s in self.scenarios] for w in range(self.nb_weeks)])
-        return cost_functions
+            cost_functions=np.array([[self.stage_cost_function(w,s) for s in self.scenarios] for w in range(self.nb_weeks)])
+            return cost_functions
+            
 
     def upper_bound_cost(self, week: int) -> float:
         return 168 * (

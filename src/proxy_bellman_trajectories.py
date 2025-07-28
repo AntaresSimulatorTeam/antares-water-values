@@ -21,7 +21,7 @@ class BellmanValuesProxy:
         self.turb_functions = self.stage_cost_functions[:, :, 1]
         self.pump_functions = self.stage_cost_functions[:, :, 2]
 
-        self.bv = np.zeros((self.nb_weeks, 51, len(self.scenarios)))
+        self.bv = np.zeros((self.nb_weeks, 51, 200))
         self.mean_bv = np.zeros((self.nb_weeks, 51))
 
         if not isinstance(export_dir, str) or not export_dir:
@@ -210,7 +210,7 @@ class BellmanValuesProxy:
                     self.bv[w, c // 2, s] = final_best_value
                     self.logger.debug(f"Valeur de Bellman enregistrée pour stock {current_stock:.2f} MWh : {best_value:.2f}")
 
-                self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2])
+                self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2,self.scenarios])
             self.logger.debug(f"Valeurs de Bellman moyennes pour la semaine {w+1} : {self.mean_bv[w]}")
 
     def compute_usage_values(self) -> None:
@@ -266,7 +266,7 @@ class OptimalTrajectories:
     def compute_trajectories(self) -> None:
         self.init_log_trajectories()
 
-        self.trajectories = np.zeros((len(self.scenarios), self.nb_weeks))
+        self.trajectories = np.zeros((200, self.nb_weeks))
         self.optimal_controls = np.zeros_like(self.trajectories)
         self.optimal_turb = np.zeros_like(self.trajectories)
         self.optimal_pump = np.zeros_like(self.trajectories)

@@ -8,19 +8,20 @@ from configparser import ConfigParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 
+
 class Launch:
     def __init__(self, 
                  dir_study: str, 
                  area: str,
                  area_target:str|None, 
-                 MC_years: int, 
+                 MC_years: list, 
                  alpha: float, 
                  enable_logging: bool, 
                  global_export_dir: str | None = None):
         
         self.dir_study = dir_study
         self.name_area = area
-        self.nb_scenarios = MC_years
+        self.MC_years = MC_years
         self.alpha = alpha
         self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir
@@ -117,6 +118,7 @@ def run_for_area(area: str,
             global_export_dir=global_export_dir,
         ).run(actions=actions)
 
+
 def post_process_shared_files(dir_study: str, areas: list[str], area_target:str) -> None:
     # ✅ Modifier hydro.ini
     hydro_ini_path = os.path.join(dir_study, "input", "hydro", "hydro.ini")
@@ -153,7 +155,7 @@ def post_process_shared_files(dir_study: str, areas: list[str], area_target:str)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Lancer la génération des trajectoires pour plusieurs zones.")
-    parser.add_argument("--dir_study", type=str, required=True, help="Répertoire de l'étude Antares")
+    parser.add_argument("--dir_study", type=str, required=True, help="Répertoire de l'étude Antares.")
     parser.add_argument("--areas", type=str, nargs='+', required=True, help="Liste des zones d'étude (séparées par un espace).")
     parser.add_argument("--MC_years", type=int, required=False, default=200, help="Nombre d'années Monte-Carlo à simuler.")
     parser.add_argument("--alpha", type=float, required=False,default=2, help="Coefficient alpha de la fonction de coût, par défaut vaut 2.")

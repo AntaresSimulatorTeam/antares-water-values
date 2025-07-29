@@ -279,6 +279,27 @@ class LaunchTempo :
         df.to_csv(output_path, index=False)
         print(f"Daily control trajectories export succeeded : {output_path}")
 
+    def export_usage_values(self, bv_r: BellmanValuesTempo,bv_wr : BellmanValuesTempo, filename: str = "usage_values.csv") -> None:
+        data = []
+        max_capacity = max(bv_r.capacity, bv_wr.capacity)
+
+        for week in range(61):
+            for stock in range(max_capacity):
+                val_r = bv_r.usage_values[week, stock] if week < bv_r.usage_values.shape[0] and stock < bv_r.capacity else np.nan
+                val_wr = bv_wr.usage_values[week, stock] if week < bv_wr.usage_values.shape[0] and stock < bv_wr.capacity else np.nan
+                data.append({
+                "week": week + 1,
+                "remaining_stock": stock,
+                "usage_value_red": val_r,
+                "usage_value_wr": val_wr,
+            })
+
+        df = pd.DataFrame(data)
+        output_path = os.path.join(self.export_dir, filename)
+        df.to_csv(output_path, index=False)
+        print(f"Usage values export succeeded: {output_path}")
+
+
     def plot_stock_trajectories(self, trajectories_r: TrajectoriesTempo, trajectories_wr: TrajectoriesTempo) -> None:
         nb_scenarios = trajectories_wr.nb_scenarios
         weeks = np.arange(1, 62)
@@ -585,8 +606,8 @@ class LaunchTempo :
 
         plt.show()
 
-
-    def run(self)->None:
+    
+    def run(self, actions: list[str] | None = None) -> None:
         start=time.time()    
         net_load=NetLoad(dir_study=self.dir_study,name_area=self.area)
 
@@ -600,28 +621,39 @@ class LaunchTempo :
         trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,stock_trajectories_red=trajectories_r.stock_trajectories)
         end=time.time()
         print("Execution time: ", end-start)
-        # self.export_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
-        # self.export_daily_control_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
-        # self.plot_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
-        # self.plot_daily_residual_net_load_pyplot(net_load=net_load, week=34, scenario=17)
-        # self.plot_usage_values(bv=bellman_values_r)
-        # self.plot_stock_trajectory_pyplot(trajectories_r=trajectories_r, trajectories_wr=trajectories_white_and_red, scenario=17)
-        # self.plot_all_red_tempos_pyplot(trajectories_r=trajectories_r)
-        # self.plot_all_white_tempos_pyplot(trajectories_wr=trajectories_white_and_red)
-        # self.plot_all_wr_tempos_pyplot(trajectories_wr=trajectories_white_and_red)
-        
+
+        if actions is None:
+            raise ValueError("Actions must be filled-in")
+
+        for action in actions:
+            if action == "export_trajectories":
+                self.export_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+            elif action == "export_daily_controls":
+                 self.export_daily_control_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+            elif action == "export_usage_values":
+                self.export_usage_values(bv_r=bellman_values_r,bv_wr=bellman_values_wr)
+            elif action == "plot_trajectories":
+                self.plot_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+            elif action == "plot_usage_values_red":
+                self.plot_usage_values(bv=bellman_values_r)
+            elif action == "plot_usage_values_wr":
+                self.plot_usage_values(bv=bellman_values_wr)
+            else:
+                print(f"Unknown action: {action}")
+
 
 def main()->None:
 
     parser = argparse.ArgumentParser(description="Lancer la génération des trajectoires Tempo.")
     parser.add_argument("--dir_study", type=str, required=True, help="Répertoire d'entrée contenant les données.")
     parser.add_argument("--area", type=str, required=True, help="Nom de la zone d'étude.")
+    parser.add_argument("--actions", type = str,nargs = '*',required=True, help  = "Liste de commandes")
     parser.add_argument("--cvar", type=float, default=1.0, help="Paramètre CVaR pour la génération des trajectoires.")
 
     args = parser.parse_args()
 
     launcher = LaunchTempo(dir_study=args.dir_study, area=args.area, CVar=args.cvar)
-    launcher.run()
+    launcher.run(args.actions)
 
 
 if __name__ == "__main__":

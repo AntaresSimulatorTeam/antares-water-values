@@ -4,6 +4,18 @@ from scipy.interpolate import interp1d
 
 class Proxy:
     def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float, area_target:str|None, fictive:bool) -> None:
+        """
+        Initialize the object with study directory, area, number of Monte-Carlo scenarios,
+        cost exponent alpha, target area and fictive node boolean (last two arguments are specific to one use-case).
+
+        Args:
+            dir_study (str): Path to study directory.
+            name_area (str): Name of the area.
+            MC_years (int): Number of Monte-Carlo scenarios.
+            alpha (float): Exponent for cost function.
+            area_target (str | None): Target area for modifications, or None to use current area.
+            fictive (bool): Whether to use a fictive reservoir (Clement Bernerd use case).
+        """
         self.dir_study = dir_study
         self.name_area = name_area
         self.reservoir = Reservoir(dir_study, name_area, fictive=fictive, area_target=area_target)
@@ -18,6 +30,12 @@ class Proxy:
 
     
     def compute_weighted_net_load(self)-> np.ndarray:
+        """
+        Compute the weighted net load across all areas using the allocation weights.
+
+        Returns:
+            np.ndarray: A (8760, 200) array of hourly weighted net load for each scenario.
+        """
         weighted_net_load = np.zeros((365 * 24, 200))
         for key, value in self.reservoir.allocation_dict.items():
             weighted_net_load += value * NetLoad(self.dir_study, key).compute_net_load()
@@ -30,6 +48,13 @@ class Proxy:
                                               max_hourly_turb : np.ndarray, 
                                               max_hourly_pump : np.ndarray, 
                                               null_pump : bool) -> tuple:
+        """
+        Compute weekly turbine and pump energy, control, and cost for given thresholds 
+        of net load above which turbining is profitable.
+
+        Returns:
+            tuple: (hourly_turb, hourly_pump, weekly_control, costs)
+        """  
         hourly_turb = []
         hourly_pump = []
         weekly_control = []
@@ -64,6 +89,22 @@ class Proxy:
 
 
     def stage_cost_function(self, week: int, scenario: int) -> np.ndarray:
+        """
+        Compute the cost, turbined energy, and pumped energy for a given week and scenario,
+        as functions of the weekly energy control.
+
+        For each turbining threshold, the corresponding pumping threshold is computed using:
+            pump_threshold = turb_threshold * (η_pump / η_turb)^{1 / (α - 1)}
+
+        where η_pump is the pumping efficiency, η_turb the turbining efficiency, and α is the convexity
+        exponent of the cost function.
+
+        Returns:
+            np.ndarray: Array of three interpolators (scipy interp1d):
+                - cost(control),
+                - turbined_energy(control),
+                - pumped_energy(control)
+        """
         weekly_net_load = self.weighted_net_load[week * 168:(week + 1) * 168, scenario]
         max_hourly_turb = self.reservoir.max_hourly_turb[(week)*168:(week+1)*168]
         max_hourly_pump = self.reservoir.max_hourly_pump[(week)*168:(week+1)*168]
@@ -93,11 +134,39 @@ class Proxy:
 
 
     def compute_stage_cost_functions(self)->np.ndarray:
+            """
+            Compute and store cost-related interpolators for all weeks and scenarios.
+
+            For each (week, scenario) pair, computes:
+                - cost(control),
+                - turbined_energy(control),
+                - pumped_energy(control)
+
+            Returns:
+                np.ndarray: Array of shape (nb_weeks, nb_scenarios), containing
+                3-element arrays of scipy interp1d interpolators.
+            """
             cost_functions=np.array([[self.stage_cost_function(w,s) for s in self.scenarios] for w in range(self.nb_weeks)])
             return cost_functions
             
 
     def upper_bound_cost(self, week: int) -> float:
+        """
+        Compute an upper bound on the stage cost for a given week.
+
+        This upper bound is based on the maximum absolute net load value
+        across all scenarios for the specified week, raised to the power alpha
+        and scaled by the number of hours in a week (168).
+
+        The resulting bound is used to calculate penalties related to
+        guide curves and final stock constraints.
+
+        Args:
+            week (int): Index of the week.
+
+        Returns:
+            float: Upper bound cost for the given week.
+        """
         return 168 * (
             max(
                 np.abs(self.weighted_net_load[week * 168:(week + 1) * 168, scenario]).max()

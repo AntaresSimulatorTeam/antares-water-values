@@ -8,7 +8,11 @@ import os
 
 
 class Exporter:
-    def __init__(self, proxy: Proxy, bv: BellmanValuesProxy, trajectories : OptimalTrajectories):
+    def __init__(self, proxy: Proxy, bv: BellmanValuesProxy, trajectories: OptimalTrajectories):
+        """
+        Initialize Exporter with Proxy, BellmanValuesProxy, and OptimalTrajectories instances.
+        Sets export directory, number of weeks, and scenarios.
+        """
         self.proxy = proxy
         self.bv = bv
         self.trajectories = trajectories
@@ -17,17 +21,21 @@ class Exporter:
         self.nb_weeks = proxy.nb_weeks
         self.scenarios = proxy.scenarios
 
-    def export_controls(self,filename:str="controls.csv") -> None:
+    def export_controls(self, filename: str = "controls.csv") -> None:
+        """
+        Export optimal control trajectories (control u, turbine, pump) 
+        for all scenarios and weeks to a CSV file.
+        """
         data = []
         for s in self.scenarios:
             for w in range(self.nb_weeks):
                 u = self.trajectories.optimal_controls[s, w]
-                t = self.trajectories.optimal_turb[s,w]
-                p = self.trajectories.optimal_pump[s,w]
+                t = self.trajectories.optimal_turb[s, w]
+                p = self.trajectories.optimal_pump[s, w]
                 data.append({
                     "area": self.proxy.name_area,
                     "u": u,
-                    "turb" : t,
+                    "turb": t,
                     "pump": p,
                     "week": w + 1,
                     "mcYear": s + 1,
@@ -35,18 +43,19 @@ class Exporter:
                 })
 
         df = pd.DataFrame(data)
-        for col in ["u", "turb", "pump"]:
-            if col in df.columns:
-                df[col] = df[col]
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
         print(f"Control trajectories export succeeded : {output_path}")
 
     def export_bellman_values(self, filename: str = "bellman_values.csv") -> None:
+        """
+        Export Bellman values for each stock percentage, week, and scenario
+        to a CSV file.
+        """
         data = []
         for w in range(self.nb_weeks):
             for c_index, c in enumerate(range(0, 101, 2)):
-                stock_percent = c  # stock exprimé en %
+                stock_percent = c  # stock expressed in %
                 for s in self.scenarios:
                     value = self.bv.bv[w, c_index, s]
                     data.append({
@@ -57,18 +66,20 @@ class Exporter:
                     })
 
         df = pd.DataFrame(data)
-        if "bellman_value" in df.columns:
-            df["bellman_value"] = df["bellman_value"]
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
         print(f"Bellman values export succeeded: {output_path}")
 
-    def export_trajectories(self,filename:str="trajectories.csv") ->None:
+    def export_trajectories(self, filename: str = "trajectories.csv") -> None:
+        """
+        Export optimal stock trajectories for all scenarios and weeks
+        to a CSV file.
+        """
         data = []
 
         for s in self.scenarios:
             for w in range(self.nb_weeks):
-                hlevel =self.trajectories.trajectories[s,w]
+                hlevel = self.trajectories.trajectories[s, w]
                 data.append({
                     "area": self.proxy.name_area,
                     "hlevel": hlevel,
@@ -77,25 +88,30 @@ class Exporter:
                     "sim": "u_0"
                 })
         df = pd.DataFrame(data)
-        if "hlevel" in df.columns:
-            df["hlevel"] = df["hlevel"]
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
         print(f"Stock trajectories export succeeded : {output_path}")
+
     
 
 class ModifyAntaresStudy:
-    def __init__(self, bv:BellmanValuesProxy, trajectories:OptimalTrajectories, area_target:str):
+    def __init__(self, bv: BellmanValuesProxy, trajectories: OptimalTrajectories, area_target: str):
+        """
+        Initialize the class with BellmanValuesProxy, optimal trajectories, and the target area.
+        """
         self.bv = bv
         self.trajectories = trajectories
         self.nb_weeks = bv.nb_weeks
         self.scenarios = bv.scenarios
-        self.dir_study= bv.proxy.dir_study
+        self.dir_study = bv.proxy.dir_study
         self.name_area = bv.proxy.name_area
         self.area_target = area_target
 
-
     def overwrite_inflows(self) -> None:
+        """
+        Replace the inflows file (mod.txt) with a file where all values are zero,
+        backing up the original file first.
+        """
         inflow_path = os.path.join(self.dir_study, "input", "hydro", "series", self.name_area, "mod.txt")
         inflow_backup_path = inflow_path.replace(".txt", "_old.txt")
 
@@ -108,14 +124,21 @@ class ModifyAntaresStudy:
         np.savetxt(inflow_path, inflows, fmt="%.6f", delimiter="\t")
 
     def overwrite_hydro_ini_file(self) -> None:
+        """
+        Create a flag file indicating that the area should be disabled in hydro.ini.
+        """
         flag_dir = os.path.join(self.dir_study, "tmp", "hydro_flags")
         os.makedirs(flag_dir, exist_ok=True)
         flag_path = os.path.join(flag_dir, f"{self.name_area}.flag")
         with open(flag_path, "w") as f:
-            f.write("false\n")  # indique que la zone doit être désactivée
+            f.write("false\n")
 
     def create_st_cluster(self) -> None:
-        contenu = f"""[lt_stock_proxy_{self.area_target}]
+        """
+        Append a section to the list.ini file defining an ST storage cluster,
+        including its capacities and efficiencies.
+        """
+        content = f"""[lt_stock_proxy_{self.area_target}]
 name = lt_stock_proxy_{self.area_target}
 group = PSP_open
 reservoircapacity = {self.bv.proxy.reservoir.capacity}
@@ -130,9 +153,14 @@ enabled = true
         list_ini_path = os.path.join(self.dir_study, "input", "st-storage", "clusters", self.area_target, "list.ini")
         os.makedirs(os.path.dirname(list_ini_path), exist_ok=True)
         with open(list_ini_path, "a") as f:
-            f.write(contenu)
+            f.write(content)
 
     def create_pmax_file(self) -> None:
+        """
+        Generate PMAX-injection.txt and PMAX-withdrawal.txt files for the area,
+        based on maximum hourly pumping and turbine capacities,
+        concatenated with 24 additional values.
+        """
         pmax_injection_hourly = self.bv.proxy.reservoir.max_hourly_pump
         pmax_withdrawal_hourly = self.bv.proxy.reservoir.max_hourly_turb
 
@@ -156,6 +184,10 @@ enabled = true
         np.savetxt(os.path.join(folder_path, "PMAX-withdrawal.txt"), modulation_withdrawal, fmt="%.20f")
 
     def create_rule_curve_file(self) -> None:
+        """
+        Create the adjusted hourly lower-rule-curve.txt and upper-rule-curve.txt files
+        based on adjusted trajectories, or default values if absent.
+        """
         folder_path = os.path.join(
             self.dir_study, "input", "st-storage", "series", self.area_target, f"lt_stock_proxy_{self.area_target}"
         )
@@ -174,6 +206,10 @@ enabled = true
         np.savetxt(os.path.join(folder_path, "upper-rule-curve.txt"), upper_arr, fmt="%.6f")
 
     def modify_scenario_builder(self) -> None:
+        """
+        Create a text file in tmp/scenariobuilder_lines listing
+        the lines needed to assign ST clusters to MC scenarios.
+        """
         config = ConfigParser(strict=False)
         config.read(os.path.join(self.dir_study, "settings", "generaldata.ini"))
         nbyears = int(config["general"]["nbyears"])
@@ -188,19 +224,31 @@ enabled = true
         with open(os.path.join(sb_dir, f"{self.area_target}.txt"), "w") as f:
             f.write("\n".join(lines) + "\n")
 
-    def adjust_inflow_pmax_withdrawal_constraint(self,balance: np.ndarray,week : int) -> np.ndarray:
-        delta=np.sum(balance)-np.sum(self.bv.proxy.reservoir.max_weekly_turb[week]*self.bv.proxy.turb_efficiency)
-        if delta>0:
-            balance[-1]-= np.ceil(delta/1e-6)*1e-6
+    def adjust_inflow_pmax_withdrawal_constraint(self, balance: np.ndarray, week: int) -> np.ndarray:
+        """
+        Adjust the hourly balance at the end of the week to not exceed
+        the maximum weekly turbine capacity accounting for efficiency.
+        """
+        delta = np.sum(balance) - np.sum(self.bv.proxy.reservoir.max_weekly_turb[week] * self.bv.proxy.turb_efficiency)
+        if delta > 0:
+            balance[-1] -= np.ceil(delta / 1e-6) * 1e-6
         return balance
-    
+
     def adjust_inflows_pmax_injection_constraint(self, balance: np.ndarray, week: int) -> np.ndarray:
-        delta = np.sum(balance) + np.sum(self.bv.proxy.reservoir.max_weekly_pump[week]*self.bv.proxy.reservoir.efficiency)
+        """
+        Adjust the hourly balance at the end of the week to not exceed
+        the maximum weekly pumping capacity accounting for efficiency.
+        """
+        delta = np.sum(balance) + np.sum(self.bv.proxy.reservoir.max_weekly_pump[week] * self.bv.proxy.reservoir.efficiency)
         if delta < 0:
-            balance[-1] -= np.floor(delta/1e-6)*1e-6
+            balance[-1] -= np.floor(delta / 1e-6) * 1e-6
         return balance
 
     def create_inflows_sts(self) -> None:
+        """
+        Generate inflows.txt for the ST proxy by calculating the adjusted hourly balance
+        according to constraints for each scenario and week.
+        """
         balance = np.zeros((168 * self.nb_weeks, len(self.scenarios)))
         for s in self.scenarios:
             for w in range(self.nb_weeks):
@@ -212,55 +260,61 @@ enabled = true
                 hlevel_end = self.trajectories.trajectories[s, w]
                 balance[hour_start, s] = hlevel_start - self.bv.proxy.reservoir.capacity / 2
                 balance[hour_start + 167, s] = self.bv.proxy.reservoir.capacity / 2 - hlevel_end
-                hourly_inflow = self.bv.proxy.reservoir.hourly_inflow[hour_start:hour_start+168,s]
+                hourly_inflow = self.bv.proxy.reservoir.hourly_inflow[hour_start:hour_start + 168, s]
                 balance[hour_start:hour_start + 168, s] += hourly_inflow
 
                 # balance[hour_start:hour_start + 168, s] -= self.trajectories.inflow_adjust_rule_curves[w, s, :]
                 balance[hour_start:hour_start + 168, s] -= self.trajectories.inflow_adjust_overflow[w, s, :]
-                balance[hour_start:hour_start + 168, s] = self.adjust_inflow_pmax_withdrawal_constraint(balance[hour_start:hour_start + 168, s], w)
-                balance[hour_start:hour_start + 168, s] = self.adjust_inflows_pmax_injection_constraint(balance[hour_start:hour_start + 168, s], w)
-                if np.sum(balance[hour_start:hour_start + 168, s])>self.bv.proxy.reservoir.max_weekly_turb[w]*self.bv.proxy.turb_efficiency \
-                    or np.sum(balance[hour_start:hour_start + 168, s])<-self.bv.proxy.reservoir.max_weekly_pump[w]*self.bv.proxy.reservoir.efficiency:
+                balance[hour_start:hour_start + 168, s] = self.adjust_inflow_pmax_withdrawal_constraint(
+                    balance[hour_start:hour_start + 168, s], w
+                )
+                balance[hour_start:hour_start + 168, s] = self.adjust_inflows_pmax_injection_constraint(
+                    balance[hour_start:hour_start + 168, s], w
+                )
+
+                if (
+                    np.sum(balance[hour_start:hour_start + 168, s])
+                    > self.bv.proxy.reservoir.max_weekly_turb[w] * self.bv.proxy.turb_efficiency
+                    or np.sum(balance[hour_start:hour_start + 168, s])
+                    < -self.bv.proxy.reservoir.max_weekly_pump[w] * self.bv.proxy.reservoir.efficiency
+                ):
                     raise ValueError(
-                        f"Erreur pour la zone {self.name_area} dans la semaine {w} pour le scénario {s}: controle : {np.sum(balance[hour_start:hour_start + 168, s])}, \
-                        turb_max : {self.bv.proxy.reservoir.max_weekly_turb[w]*self.bv.proxy.turb_efficiency},\
-                        pump_max : {-self.bv.proxy.reservoir.max_weekly_pump[w]*self.bv.proxy.reservoir.efficiency}"
+                        f"Error for area {self.name_area} in week {w} scenario {s}: balance: {np.sum(balance[hour_start:hour_start + 168, s])}, "
+                        f"max turbine: {self.bv.proxy.reservoir.max_weekly_turb[w] * self.bv.proxy.turb_efficiency}, "
+                        f"max pump: {-self.bv.proxy.reservoir.max_weekly_pump[w] * self.bv.proxy.reservoir.efficiency}"
                     )
-                # assert np.sum(balance[hour_start:hour_start + 168, s])==self.trajectories.optimal_controls[s,w],\
-                #     f"Erreur pour la zone {self.name_area} dans la semaine {w} pour le scénario {s}: la modélisation stock CT ne correspond pas au contrôle opimal."\
-                #     f" controle : {np.sum(balance[hour_start:hour_start + 168, s])}, controle optimal : {self.trajectories.optimal_controls[s,w]}"
+
         balance = np.vstack([balance, np.zeros((24, len(self.scenarios)))])
         path = os.path.join(
-            self.dir_study, "input", "st-storage", "series", self.area_target,
-            f"lt_stock_proxy_{self.area_target}", "inflows.txt"
+            self.dir_study,
+            "input",
+            "st-storage",
+            "series",
+            self.area_target,
+            f"lt_stock_proxy_{self.area_target}",
+            "inflows.txt",
         )
         np.savetxt(path, balance, fmt="%.20f", delimiter="\t")
 
     def adjust_to_spillage_constraint(self) -> None:
         """
-        Adjust misc-gen and load files to include spillage constraints.
-        Specifically, adds max(hourly_turbine, hourly_pump) to column 6 of misc-gen
-        and adds the same to load.txt at each hour.
+        Adjust misc-gen and load files to include the spillage constraint.
+        Adds max(hourly_turb, hourly_pump) to the 6th column of misc-gen
+        and to every column of the load file.
         """
-        # Chemins vers les fichiers
-        miscgen_path = os.path.join(
-            self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt"
-        )
-        load_path = os.path.join(
-            self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt"
-        )
+        miscgen_path = os.path.join(self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt")
+        load_path = os.path.join(self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt")
 
         miscgen_backup_path = miscgen_path.replace(".txt", "_old.txt")
         load_backup_path = load_path.replace(".txt", "_old.txt")
 
-        # Sauvegarde : renommage des fichiers d’origine s’ils existent
         if os.path.exists(miscgen_path):
             if not os.path.exists(miscgen_backup_path):
                 os.rename(miscgen_path, miscgen_backup_path)
             else:
-                os.remove(miscgen_path)  # évite conflit si backup existe déjà
+                os.remove(miscgen_path)
         else:
-            raise FileNotFoundError(f"Fichier miscgen non trouvé : {miscgen_path}")
+            raise FileNotFoundError(f"miscgen file not found: {miscgen_path}")
 
         if os.path.exists(load_path):
             if not os.path.exists(load_backup_path):
@@ -268,9 +322,8 @@ enabled = true
             else:
                 os.remove(load_path)
         else:
-            raise FileNotFoundError(f"Fichier load non trouvé : {load_path}")
+            raise FileNotFoundError(f"load file not found: {load_path}")
 
-        # Chargement des données
         try:
             miscgen_data = np.loadtxt(miscgen_backup_path)
             if miscgen_data.size == 0:
@@ -282,31 +335,29 @@ enabled = true
             load_data = np.loadtxt(load_backup_path)
             if load_data.size == 0:
                 load_data = np.zeros((8760, 200))
-            if load_data.ndim==1:
+            if load_data.ndim == 1:
                 load_data = np.repeat(load_data[:, np.newaxis], 200, axis=1)
         except Exception:
             load_data = np.zeros((8760, 200))
 
-        # Vérification dimensions
         if miscgen_data.shape[0] != 8760 or load_data.shape[0] != 8760:
-            raise ValueError("Les fichiers doivent contenir exactement 8760 lignes (données horaires).")
+            raise ValueError("Files must contain exactly 8760 lines (hourly data).")
 
-        # Calcul de la contrainte de déversement : max(turb, pump)
         hourly_turb = self.bv.proxy.reservoir.max_hourly_turb
         hourly_pump = self.bv.proxy.reservoir.max_hourly_pump
         spill_constraint = np.maximum(hourly_turb, hourly_pump)
-        spill_constraint = np.concatenate([spill_constraint, spill_constraint[-24:]])  # Ajout de 24 heures pour compléter
+        spill_constraint = np.concatenate([spill_constraint, spill_constraint[-24:]])
 
-        # Modification des données
         miscgen_data[:, 5] += spill_constraint
         load_data += spill_constraint[:, np.newaxis]
 
-        # Sauvegarde
         np.savetxt(miscgen_path, miscgen_data, fmt="%.20f", delimiter="\t")
         np.savetxt(load_path, load_data, fmt="%.20f", delimiter="\t")
 
-
     def apply_all(self) -> None:
+        """
+        Execute all the steps to modify the Antares study in order.
+        """
         self.overwrite_inflows()
         self.overwrite_hydro_ini_file()
         self.create_st_cluster()
@@ -318,13 +369,22 @@ enabled = true
         print(f"✅ Antares study modified for area '{self.area_target if self.area_target else self.name_area}'\n")
 
 
+
+
 class UndoAntaresModifications:
-    def __init__(self, dir_study: str, area: str, area_target:str):
+    def __init__(self, dir_study: str, area: str, area_target: str):
+        """
+        Initialize with study directory path, original area, and target area.
+        """
         self.dir_study = dir_study
         self.area = area
         self.area_target = area_target
 
     def restore_inflows(self) -> None:
+        """
+        Restore the inflows file (mod.txt) by replacing the current version
+        with the backup (_old.txt) if it exists.
+        """
         inflow_path = os.path.join(
             self.dir_study, "input", "hydro", "series", self.area, "mod.txt"
         )
@@ -338,6 +398,10 @@ class UndoAntaresModifications:
             print("⚠ inflow backup not found. Nothing restored.")
 
     def restore_hydro_ini(self) -> None:
+        """
+        Modify hydro.ini to reactivate the area in the [reservoir] section
+        by setting its value to "true".
+        """
         path = os.path.join(self.dir_study, "input", "hydro", "hydro.ini")
         config = ConfigParser()
         config.read(path)
@@ -350,6 +414,10 @@ class UndoAntaresModifications:
             print(f"⚠ hydro.ini unchanged: missing [reservoir]/{self.area} section.")
 
     def remove_st_cluster_section(self) -> None:
+        """
+        Remove the ST proxy section from the storage cluster list.ini file
+        for the target area.
+        """
         list_ini_path = os.path.join(
             self.dir_study, "input", "st-storage", "clusters", self.area_target, "list.ini"
         )
@@ -377,6 +445,9 @@ class UndoAntaresModifications:
         print("✔ st-cluster section removed.")
 
     def remove_st_series_folder(self) -> None:
+        """
+        Remove the folder containing ST proxy series for the target area.
+        """
         folder = os.path.join(
             self.dir_study, "input", "st-storage", "series", self.area_target,
             f"lt_stock_proxy_{self.area_target}"
@@ -388,6 +459,10 @@ class UndoAntaresModifications:
             print("⚠ st-series folder not found.")
 
     def clean_scenariobuilder(self) -> None:
+        """
+        Clean the scenariobuilder.dat file by removing lines associated with
+        the ST proxy for the target area.
+        """
         path = os.path.join(self.dir_study, "settings", "scenariobuilder.dat")
         if not os.path.exists(path):
             print("⚠ scenariobuilder.dat not found.")
@@ -406,7 +481,11 @@ class UndoAntaresModifications:
         print("✔ scenariobuilder cleaned.")
 
     def restore_miscgen_and_load(self) -> None:
-        # Restoration miscgen
+        """
+        Restore miscgen and load files by replacing them with their _old.txt
+        backups, if they exist.
+        """
+        # Restore miscgen
         miscgen_path = os.path.join(
             self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt"
         )
@@ -420,7 +499,7 @@ class UndoAntaresModifications:
         else:
             print("⚠ miscgen backup not found. Nothing restored.")
 
-        # Restoration load
+        # Restore load
         load_path = os.path.join(
             self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt"
         )
@@ -434,8 +513,10 @@ class UndoAntaresModifications:
         else:
             print("⚠ load backup not found. Nothing restored.")
 
-
     def undo_all(self) -> None:
+        """
+        Perform the full restoration of the Antares study for the original area.
+        """
         print(f"\n🔁 Restoring Antares study for area: {self.area}")
         self.restore_inflows()
         self.restore_hydro_ini()
@@ -444,4 +525,6 @@ class UndoAntaresModifications:
         self.clean_scenariobuilder()
         self.restore_miscgen_and_load()
         print(f"✅ Restoration complete for area '{self.area}'\n")
+
+
 

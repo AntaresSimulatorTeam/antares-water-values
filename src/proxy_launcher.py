@@ -7,19 +7,65 @@ from datetime import datetime
 from configparser import ConfigParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
+"""
+Long-Term Storage Trajectories Generator for Antares Studies
+
+This script computes optimal storage trajectories and controls for multiple study areas
+based on Monte-Carlo scenarios and a cost function parameterized by alpha.
+It supports exporting Bellman values, controls, trajectories, and generating various plots.
+It also allows modifying Antares study input files and undoing modifications.
+
+The processing can be run for multiple areas in parallel, and shared study files
+(hydro.ini and scenariobuilder.dat) are post-processed automatically after computation.
+
+Usage example:
+
+python launch_long_term_storage.py --dir_study "/path/to/antares/study" --areas Area1 Area2 \
+    --MC_years 200 --alpha 2 --enable_logging False --actions export_trajectories plot_usage_values \
+    --area_target AreaTarget --fictive False
+
+Arguments:
+  --dir_study       (str)    : Path to the Antares study directory (required)
+  --areas           (list)   : List of study areas to process, space-separated (required)
+  --MC_years        (int)    : Number of Monte-Carlo years to simulate (default: 200)
+  --alpha           (float)  : Cost function alpha parameter (default: 2)
+  --enable_logging  (bool)   : Enable detailed logging (default: False)
+  --actions         (list)   : Actions to perform (default: modify_antares_data)
+      Available actions include:
+      - export_bellman_values
+      - export_controls
+      - export_trajectories
+      - plot_trajectories
+      - plot_usage_values
+      - plot_usage_values_heatmap
+      - plot_all_trajectories_pyplot
+      - plot_adjusted_rule_curves
+      - modify_antares_data
+      - undo_modifications
+  --area_target     (str)    : Target area for modifications; if None, uses current area (default: None)
+  --fictive         (bool)   : Use a fictive node for the reservoir (default: False)
+
+Note:
+- When using 'undo_modifications' as the only action, no export directory is created.
+- For parallel runs on multiple areas, results are saved in a timestamped directory under the study folder.
+
+"""
 
 
 class Launch:
     def __init__(self, 
                  dir_study: str, 
                  area: str,
-                 area_target:str|None, 
+                 area_target: str | None, 
                  MC_years: int, 
                  alpha: float, 
                  enable_logging: bool,
                  fictive: bool, 
                  global_export_dir: str | None = None):
-        
+        """
+        Initialize the Launch class with study directory, area, target area, Monte-Carlo years,
+        cost function parameter alpha, logging flag, fictive node flag, and global export directory.
+        """
         self.dir_study = dir_study
         self.name_area = area
         self.nb_scenarios = MC_years
@@ -27,29 +73,41 @@ class Launch:
         self.fictive = fictive
         self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir
-        self.area_target = area_target if area_target else area  # Use area_target if provided, otherwise use area
+        self.area_target = area_target if area_target else area  # Use area_target if provided, else use area
 
     def run(self, actions: list[str] | None = None) -> None:
-        # Si uniquement undo_modifications, ne crée aucun dossier d'export ni objet inutile
+        """
+        Execute requested actions including generating trajectories, exporting data, plotting,
+        modifying or undoing Antares study data.
+        """
+        # If the only action is undo_modifications, skip creating export directories or unnecessary objects
         if actions is not None and len(actions) == 1 and actions[0] == "undo_modifications":
             UndoAntaresModifications(self.dir_study, self.name_area, self.area_target).undo_all()
             return
 
         if self.global_export_dir is None:
             raise ValueError("A per-area export_dir must be provided via global_export_dir in all cases except undo_modifications.")
+        
         export_dir = os.path.join(self.global_export_dir, self.name_area)
         os.makedirs(export_dir, exist_ok=True)
 
         start = time.time()
-        self.proxy = Proxy(dir_study=self.dir_study, name_area = self.name_area, MC_years= self.nb_scenarios, alpha=self.alpha, area_target=self.area_target, fictive=self.fictive)
-        self.bv = BellmanValuesProxy(self.proxy,enable_logging=self.enable_logging, export_dir=export_dir)
+        self.proxy = Proxy(
+            dir_study=self.dir_study,
+            name_area=self.name_area,
+            MC_years=self.nb_scenarios,
+            alpha=self.alpha,
+            area_target=self.area_target,
+            fictive=self.fictive
+        )
+        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir)
         self.trajectories = OptimalTrajectories(self.bv)
         end = time.time()
-        print(f"Stage cost functions, Bellman values and trajectories for area {self.name_area} computed in : {end-start} s.")
+        print(f"Stage cost functions, Bellman values and trajectories for area '{self.name_area}' computed in: {end - start:.2f} seconds.")
 
-        self.plotter = Plotter(self.bv,self.trajectories)
-        self.exporter = Exporter(self.proxy, self.bv,self.trajectories)
-        self.modifier = ModifyAntaresStudy(self.bv,self.trajectories,self.area_target)
+        self.plotter = Plotter(self.bv, self.trajectories)
+        self.exporter = Exporter(self.proxy, self.bv, self.trajectories)
+        self.modifier = ModifyAntaresStudy(self.bv, self.trajectories, self.area_target)
 
         if actions is None:
             actions = ["modify_antares_data"]
@@ -86,12 +144,13 @@ class Launch:
             elif action == "modify_antares_data":
                 self.modifier.apply_all()
             elif action == "undo_modifications":
-                UndoAntaresModifications(self.dir_study, self.name_area,self.area_target).undo_all()
+                UndoAntaresModifications(self.dir_study, self.name_area, self.area_target).undo_all()
             else:
                 print(f"Unknown action: {action}")
 
+
 def run_for_area(area: str,
-                 area_target:str|None, 
+                 area_target: str | None, 
                  dir_study: str, 
                  MC_years: int, 
                  alpha: float, 
@@ -99,7 +158,10 @@ def run_for_area(area: str,
                  fictive: bool, 
                  actions: list[str] | None = None, 
                  global_export_dir: str | None = None) -> None:
-    # Si uniquement undo_modifications, ne passe pas d'export dir
+    """
+    Launch the processing for a single area with given parameters and actions.
+    If action is only undo_modifications, does not pass export directory.
+    """
     if actions is not None and len(actions) == 1 and actions[0] == "undo_modifications":
         Launch(
             dir_study=dir_study,
@@ -124,8 +186,12 @@ def run_for_area(area: str,
         ).run(actions=actions)
 
 
-def post_process_shared_files(dir_study: str, areas: list[str], area_target:str) -> None:
-    # ✅ Modifier hydro.ini
+def post_process_shared_files(dir_study: str, areas: list[str], area_target: str | None) -> None:
+    """
+    Post-process shared study files (hydro.ini and scenariobuilder.dat)
+    after all parallel computations to ensure consistency.
+    """
+    # Modify hydro.ini to disable reservoirs for flagged areas
     hydro_ini_path = os.path.join(dir_study, "input", "hydro", "hydro.ini")
     config = ConfigParser()
     config.read(hydro_ini_path)
@@ -140,7 +206,7 @@ def post_process_shared_files(dir_study: str, areas: list[str], area_target:str)
     with open(hydro_ini_path, "w") as configfile:
         config.write(configfile)
 
-    # ✅ Modifier scenariobuilder.dat
+    # Modify scenariobuilder.dat by appending lines from temporary files
     sb_lines = []
     if area_target is None:
         for area in areas:
@@ -158,20 +224,26 @@ def post_process_shared_files(dir_study: str, areas: list[str], area_target:str)
     with open(sb_path, "a") as f:
         f.writelines(sb_lines)
 
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Lancer la génération des trajectoires pour plusieurs zones.")
-    parser.add_argument("--dir_study", type=str, required=True, help="Répertoire de l'étude Antares.")
-    parser.add_argument("--areas", type=str, nargs='+', required=True, help="Liste des zones d'étude (séparées par un espace).")
-    parser.add_argument("--MC_years", type=int, required=False, default=200, help="Nombre d'années Monte-Carlo à simuler.")
-    parser.add_argument("--alpha", type=float, required=False,default=2, help="Coefficient alpha de la fonction de coût, par défaut vaut 2.")
-    parser.add_argument("--enable_logging", type=bool, default=False, help="Activer les logs.")
-    parser.add_argument("--actions", type=str, nargs='*', default=None, help="Liste des actions à effectuer")
-    parser.add_argument("--area_target", type=str, required=False,default=None,help="Zone cible pour les modifications, si None utilise la zone actuelle.")
-    parser.add_argument("--fictive", type=bool, default=False, help="Utiliser un noeuf fictif pour le réservoir.")
+    """
+    Main entry point for the script.
+    Parses command line arguments, runs the requested actions on specified areas,
+    optionally in parallel, then post-processes shared files.
+    """
+    parser = argparse.ArgumentParser(description="Launch the generation of storage trajectories for multiple areas.")
+    parser.add_argument("--dir_study", type=str, required=True, help="Antares study directory.")
+    parser.add_argument("--areas", type=str, nargs='+', required=True, help="List of study areas (space-separated).")
+    parser.add_argument("--MC_years", type=int, required=False, default=200, help="Number of Monte-Carlo years to simulate.")
+    parser.add_argument("--alpha", type=float, required=False, default=2, help="Cost function alpha parameter, default is 2.")
+    parser.add_argument("--enable_logging", type=bool, default=False, help="Enable logging.")
+    parser.add_argument("--actions", type=str, nargs='*', default=None, help="List of actions to perform.")
+    parser.add_argument("--area_target", type=str, required=False, default=None, help="Target area for modifications; if None uses current area.")
+    parser.add_argument("--fictive", type=bool, default=False, help="Use a fictive node for the reservoir.")
 
     args = parser.parse_args()
 
-    # Si uniquement undo_modifications, ne crée aucun dossier d'export
+    # If only undo_modifications action, do not create export directories
     if args.actions is not None and len(args.actions) == 1 and args.actions[0] == "undo_modifications":
         for area in args.areas:
             run_for_area(
@@ -187,7 +259,7 @@ def main() -> None:
             )
         return
 
-    # Sinon, création du dossier global d'export (daté)
+    # Otherwise, create a global export directory with timestamp
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
     global_export_dir = os.path.join(args.dir_study, f"exports_LT_storage_trajectories_{date_str}")
     os.makedirs(global_export_dir, exist_ok=True)
@@ -225,12 +297,12 @@ def main() -> None:
                 try:
                     future.result()
                 except Exception as e:
-                    
-                    print(f"❌ Erreur pour la zone {area} : {e}")
+                    print(f"❌ Error for area {area}: {e}")
                     traceback.print_exc()
 
-    # Post-traitement des fichiers partagés
+    # Post-process the shared files after parallel runs
     post_process_shared_files(args.dir_study, args.areas, args.area_target)
+
 
 if __name__ == "__main__":
     main()

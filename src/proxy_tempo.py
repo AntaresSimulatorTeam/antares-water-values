@@ -14,177 +14,254 @@ from matplotlib import rcParams
 rcParams['font.family'] = 'Cambria'
 
 
-"""To launch the calculations, export daily contro, stock trajectories and plots:
-python "path"/tempo.py --dir_study "path_to_study" --area "name_area" --cvar float(CVar parameter, default 1) """
+"""
+To run the calculations, export daily control trajectories, stock trajectories, and generate plots, use:
+
+python "path/to/tempo.py" --dir_study "path_to_study" --area "area_name" --actions <list_of_actions> [--cvar <float>]
+
+- --dir_study : Path to the Antares study directory (required).
+- --area      : Name of the area to process (required).
+- --actions   : Space-separated list of commands to execute (required). Possible commands:
+    * export_trajectories     : Export weekly stock trajectories CSV.
+    * export_daily_controls   : Export daily control trajectories CSV.
+    * export_usage_values     : Export weekly usage values CSV.
+    * plot_trajectories       : Generate interactive stock trajectories plot (HTML).
+    * plot_usage_values_red   : Plot usage values for red day stocks.
+    * plot_usage_values_wr    : Plot usage values for white+red day stocks.
+
+- --cvar      : (Optional) CVaR parameter controlling risk aversion (default=1.0).
+
+Example:
+
+python tempo.py --dir_study "/path/to/study" --area "MyArea" --actions export_trajectories plot_trajectories --cvar 1.5
+"""
+
+
 
 class GainFunctionTempo:
-    def __init__(self, net_load : NetLoad, max_control:int):
-        
-        self.net_load=net_load.compute_net_load()
-        juillet_aout = self.net_load[24:65*24, :]
-        self.net_load = np.concatenate((self.net_load, juillet_aout), axis=0)
-        self.nb_scenarios=net_load.nb_scenarios
-        self.daily_net_load=self.net_load.reshape(365+64,24,self.nb_scenarios).sum(axis=1)
-        self.max_control=max_control
+    def __init__(self, net_load: NetLoad, max_control: int):
+        """
+        Initialize gain function with net load data and maximum weekly control.
+        Extends net_load data by repeating July-August period for continuity.
+        """
+        self.net_load = net_load.compute_net_load()
+        july_august = self.net_load[24:65*24, :]  # Select July-August data (days 1-64)
+        self.net_load = np.concatenate((self.net_load, july_august), axis=0)
+        self.nb_scenarios = net_load.nb_scenarios
+        self.daily_net_load = self.net_load.reshape(365 + 64, 24, self.nb_scenarios).sum(axis=1)  # Sum hourly to daily load
+        self.max_control = max_control
 
-    def gain_for_week_control_and_scenario(self, week_index: int, control : int, scenario : int) -> float:
+    def gain_for_week_control_and_scenario(self, week_index: int, control: int, scenario: int) -> float:
+        """
+        Compute gain for a given week index, control level, and scenario.
+        Gains are sum of the top 'control' daily net loads in the considered week,
+        limited by max_control.
+        """
+        week_start = week_index * 7 + 2  # Offset for alignment
+        week_end = week_start + 7
 
-        week_start=week_index*7+2
-        week_end=week_start+7
-        
-        self.daily_net_load_for_week=self.daily_net_load[week_start:week_end,scenario]
+        daily_load_week = self.daily_net_load[week_start:week_end, scenario]
+        # Sort and take top 'max_control' values in descending order
+        daily_load_week = np.sort(daily_load_week[:self.max_control])[::-1]
 
-        self.daily_net_load_for_week=(np.sort(self.daily_net_load_for_week[:self.max_control]))[::-1]
-
-        gain=np.sum(self.daily_net_load_for_week[:control])
+        gain = np.sum(daily_load_week[:control])
         return gain
 
 
 class BellmanValuesTempo:
-    
-    def __init__(self, gain_function : GainFunctionTempo,
-                 capacity:int, 
-                 start_week:int,
-                 end_week:int,
-                 CVar:float):
-        
-        self.max_control=gain_function.max_control
-        self.gain_function=gain_function
-        self.start_week=start_week
-        self.end_week=end_week
 
-        self.capacity=capacity
-        self.nb_scenarios=self.gain_function.nb_scenarios
-        self.CVar=CVar
+    def __init__(self, gain_function: GainFunctionTempo,
+                 capacity: int,
+                 start_week: int,
+                 end_week: int,
+                 CVar: float):
+        """
+        Initialize Bellman value calculator over a period of weeks with given capacity and CVar.
+        Prepares arrays to store Bellman values, their mean with CVar risk measure, and usage values.
+        """
+        self.max_control = gain_function.max_control
+        self.gain_function = gain_function
+        self.start_week = start_week
+        self.end_week = end_week
 
-        self.bv=np.zeros((61,self.capacity+1,self.nb_scenarios))
-        self.mean_bv=np.zeros((61,self.capacity+1))
-        self.usage_values=np.zeros((61,self.capacity))
-        
+        self.capacity = capacity
+        self.nb_scenarios = self.gain_function.nb_scenarios
+        self.CVar = CVar
+
+        self.bv = np.zeros((61, self.capacity + 1, self.nb_scenarios))  # Bellman values: weeks x capacity x scenarios
+        self.mean_bv = np.zeros((61, self.capacity + 1))  # CVaR aggregated values over scenarios
+        self.usage_values = np.zeros((61, self.capacity))  # Marginal usage values
+
         self.compute_bellman_values()
         self.compute_usage_values()
 
-    def penalty(self)->Callable:
-        penalty=interp1d([-1,0,self.capacity,self.capacity+1],
-                         [-1e9,0,0,-1e9], kind='linear',bounds_error=False,fill_value=-1e9)
-        # penalty=lambda x:0
+    def penalty(self) -> Callable:
+        """
+        Return a penalty function (linear interpolation) heavily penalizing states outside [0, capacity].
+        """
+        penalty = interp1d([-1, 0, self.capacity, self.capacity + 1],
+                           [-1e9, 0, 0, -1e9],
+                           kind='linear', bounds_error=False, fill_value=-1e9)
+        # Alternative no penalty: penalty = lambda x: 0
         return penalty
 
     def compute_bellman_values(self) -> None:
-        self.mean_bv[self.end_week]=np.zeros(self.capacity+1)
-        for w in reversed(range(self.start_week,self.end_week)):
-            for c in range(self.capacity+1):
+        """
+        Compute Bellman values backward in time with risk-adjusted expectations (CVaR).
+        For each week, capacity level, and scenario, optimize over possible control actions.
+        """
+        self.mean_bv[self.end_week] = np.zeros(self.capacity + 1)
+        for w in reversed(range(self.start_week, self.end_week)):
+            for c in range(self.capacity + 1):
                 for s in range(self.nb_scenarios):
-                    best_value=0
-                    for control in range(self.max_control+1):
-                        gain = self.gain_function.gain_for_week_control_and_scenario(w+1,control,s)
-                        penalty=self.penalty()
-                        future_value=self.mean_bv[w+1,c-control]
-                        total_value=gain+future_value+penalty(c-control)
-                        if total_value>best_value:
-                            best_value=total_value
-                    self.bv[w,c,s]=best_value
+                    best_value = -np.inf
+                    penalty = self.penalty()
+                    for control in range(self.max_control + 1):
+                        gain = self.gain_function.gain_for_week_control_and_scenario(w + 1, control, s)
+                        future_value = self.mean_bv[w + 1, c - control]
+                        total_value = gain + future_value + penalty(c - control)
+                        if total_value > best_value:
+                            best_value = total_value
+                    self.bv[w, c, s] = best_value
 
                 alpha = self.CVar
                 bellman_values = self.bv[w, c]
                 sorted_bv = np.sort(bellman_values)
-                cutoff_index = int((1-alpha) * len(sorted_bv))
+                cutoff_index = int((1 - alpha) * len(sorted_bv))
                 self.mean_bv[w, c] = np.mean(sorted_bv[cutoff_index:])
 
     def compute_usage_values(self) -> None:
-        for w in range(self.start_week,self.end_week+1):
-            for c in range(1,self.capacity+1):
-                self.usage_values[w,c-1]=self.mean_bv[w,c]-self.mean_bv[w,c-1]
-    
+        """
+        Compute marginal usage values as difference of Bellman mean values between successive capacity levels.
+        """
+        for w in range(self.start_week, self.end_week + 1):
+            for c in range(1, self.capacity + 1):
+                self.usage_values[w, c - 1] = self.mean_bv[w, c] - self.mean_bv[w, c - 1]
 
-class TrajectoriesTempo :
+
+class TrajectoriesTempo:
     def __init__(self,
-                bv:BellmanValuesTempo,
-                stock_trajectories_red:Optional[np.ndarray]=None):
-        
-        self.bv=bv
-        self.usage_values=bv.usage_values
-        self.net_load=self.bv.gain_function.net_load
-        self.capacity=self.bv.capacity
-        self.nb_scenarios=self.bv.nb_scenarios
-        self.start_week=self.bv.start_week
-        self.end_week=self.bv.end_week
-        self.max_control=self.bv.max_control
+                 bv: BellmanValuesTempo,
+                 stock_trajectories_red: Optional[np.ndarray] = None):
+        """
+        Compute optimal stock and control trajectories based on Bellman values,
+        optionally constrained by 'red' stock trajectories.
+        """
+        self.bv = bv
+        self.usage_values = bv.usage_values
+        self.net_load = self.bv.gain_function.net_load
+        self.capacity = self.bv.capacity
+        self.nb_scenarios = self.bv.nb_scenarios
+        self.start_week = self.bv.start_week
+        self.end_week = self.bv.end_week
+        self.max_control = self.bv.max_control
 
-        self.control_trajectories=np.zeros((self.nb_scenarios,61)) 
-        self.stock_trajectories=np.zeros((self.nb_scenarios,61))
-        
-        self.stock_trajectories_red=stock_trajectories_red
+        self.control_trajectories = np.zeros((self.nb_scenarios, 61))
+        self.stock_trajectories = np.zeros((self.nb_scenarios, 61))
+
+        self.stock_trajectories_red = stock_trajectories_red
 
         self.compute_trajectories()
         self.compute_trajectories_white()
-    
 
     def compute_trajectories(self) -> None:
+        """
+        Compute stock and control trajectories over all scenarios and weeks,
+        considering possible constraints from reduced stock trajectories.
+        """
         for s in range(self.nb_scenarios):
-            self.stock_trajectories[s,:self.start_week]=self.capacity
-            for w in range(self.start_week,self.end_week+1):
-                if self.stock_trajectories[s,w-1]==0:
-                    self.stock_trajectories[s,w:]=0
+            self.stock_trajectories[s, :self.start_week] = self.capacity
+            for w in range(self.start_week, self.end_week + 1):
+                if self.stock_trajectories[s, w - 1] == 0:
+                    self.stock_trajectories[s, w:] = 0
                     break
-                best_value=0
-                best_control=None
-                for c in range(self.max_control+1):
-                    gain = self.bv.gain_function.gain_for_week_control_and_scenario(w,c,s)
-                    future_value=self.bv.mean_bv[w,int(self.stock_trajectories[s,w-1])-c]
-                    penalty=self.bv.penalty()
-                    total_value=gain+future_value+penalty(int(self.stock_trajectories[s,w-1])-c)
-                    if total_value>best_value:
-                        best_control=c
-                        best_value=total_value
+                best_value = -np.inf
+                best_control = None
+                penalty = self.bv.penalty()
+                for c in range(self.max_control + 1):
+                    gain = self.bv.gain_function.gain_for_week_control_and_scenario(w, c, s)
+                    future_value = self.bv.mean_bv[w, int(self.stock_trajectories[s, w - 1]) - c]
+                    total_value = gain + future_value + penalty(int(self.stock_trajectories[s, w - 1]) - c)
+                    if total_value > best_value:
+                        best_control = c
+                        best_value = total_value
                 if self.stock_trajectories_red is not None and best_control is not None:
-                    # interdit les stocks négatifs pour les stocks blancs
-                    if self.stock_trajectories[s,w-1]-best_control<self.stock_trajectories_red[s,w]:
-                        best_control=self.stock_trajectories[s,w-1]-self.stock_trajectories_red[s,w]
-                    # interdit les controles négatifs pour les stocks blancs
-                    if best_control<self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]:
-                        best_control=self.stock_trajectories_red[s,w-1]-self.stock_trajectories_red[s,w]
+                    # Do not allow negative stocks below red stocks
+                    if self.stock_trajectories[s, w - 1] - best_control < self.stock_trajectories_red[s, w]:
+                        best_control = self.stock_trajectories[s, w - 1] - self.stock_trajectories_red[s, w]
+                    # Do not allow negative controls below red controls
+                    if best_control < self.stock_trajectories_red[s, w - 1] - self.stock_trajectories_red[s, w]:
+                        best_control = self.stock_trajectories_red[s, w - 1] - self.stock_trajectories_red[s, w]
 
                 if best_control is not None:
-                    self.stock_trajectories[s,w]=self.stock_trajectories[s,w-1]-best_control
-                    self.control_trajectories[s,w]=best_control
+                    self.stock_trajectories[s, w] = self.stock_trajectories[s, w - 1] - best_control
+                    self.control_trajectories[s, w] = best_control
                 else:
-                    self.stock_trajectories[s,w]=None
-                    self.control_trajectories[s,w]=None
+                    self.stock_trajectories[s, w] = np.nan
+                    self.control_trajectories[s, w] = np.nan
 
-
-    def compute_trajectories_white(self)->None:
+    def compute_trajectories_white(self) -> None:
+        """
+        Compute the 'white' stock and control trajectories as residuals after
+        subtracting the 'red' stock trajectories, if provided.
+        """
         if self.stock_trajectories_red is not None:
-            self.stock_trajectories_white=self.stock_trajectories-self.stock_trajectories_red
+            self.stock_trajectories_white = self.stock_trajectories - self.stock_trajectories_red
         else:
-            self.stock_trajectories_white=np.array([[]])
-        self.control_trajectories_white=np.zeros((self.nb_scenarios,61))
+            self.stock_trajectories_white = np.array([[]])
+        self.control_trajectories_white = np.zeros((self.nb_scenarios, 61))
         if self.stock_trajectories_red is not None:
             for s in range(self.nb_scenarios):
-                for w in range(1,61):
-                    self.control_trajectories_white[s,w]=self.stock_trajectories_white[s,w-1]-self.stock_trajectories_white[s,w]
+                for w in range(1, 61):
+                    self.control_trajectories_white[s, w] = self.stock_trajectories_white[s, w - 1] - self.stock_trajectories_white[s, w]
 
-    def control_trajectory_for_scenario(self, scenario:int)-> np.ndarray:
+    def control_trajectory_for_scenario(self, scenario: int) -> np.ndarray:
+        """
+        Return control trajectory for a given scenario.
+        """
         return self.control_trajectories[scenario]
 
-    def stock_trajectory_for_scenario(self,scenario:int) -> np.ndarray:
+    def stock_trajectory_for_scenario(self, scenario: int) -> np.ndarray:
+        """
+        Return stock trajectory for a given scenario.
+        """
         return self.stock_trajectories[scenario]
-    
+
     def control_trajectory_for_scenario_white(self, scenario: int) -> np.ndarray:
-        return self.control_trajectories_white[scenario] if self.control_trajectories_white[scenario].shape[0]>0 else np.array([])
+        """
+        Return white control trajectory for a given scenario, or empty if none.
+        """
+        if self.control_trajectories_white.shape[0] > 0:
+            return self.control_trajectories_white[scenario]
+        else:
+            return np.array([])
 
     def stock_trajectory_for_scenario_white(self, scenario: int) -> np.ndarray:
-        return self.stock_trajectories_white[scenario] if self.stock_trajectories_white[scenario].shape[0]>0 else np.array([])
+        """
+        Return white stock trajectory for a given scenario, or empty if none.
+        """
+        if self.stock_trajectories_white.shape[0] > 0:
+            return self.stock_trajectories_white[scenario]
+        else:
+            return np.array([])
 
 
-class LaunchTempo :
+class LaunchTempo:
     def __init__(self, dir_study: str, area: str, CVar: float):
-            self.dir_study = dir_study
-            self.area = area
-            self.CVar = CVar
-            self.export_dir = self.make_unique_export_dir()
+        """
+        Initialize the launcher with study directory, area name, and CVaR parameter.
+        Automatically creates a unique export directory.
+        """
+        self.dir_study = dir_study
+        self.area = area
+        self.CVar = CVar
+        self.export_dir = self.make_unique_export_dir()
 
     def make_unique_export_dir(self) -> str:
+        """
+        Create a unique export directory under the study path.
+        Returns the path of the created directory.
+        """
         base_path = os.path.join(self.dir_study, "exports_tempo")
         if not os.path.exists(base_path):
             os.makedirs(base_path)
@@ -198,11 +275,13 @@ class LaunchTempo :
                 return new_path
             i += 1
 
-    def export_stock_trajectories(self, trajectories_r: TrajectoriesTempo,
-                            trajectories_wr: TrajectoriesTempo,
-                            filename: str = "stock_trajectories.csv") -> None:
+    def export_stock_trajectories(self, trajectories_r: 'TrajectoriesTempo',
+                                 trajectories_wr: 'TrajectoriesTempo',
+                                 filename: str = "stock_trajectories.csv") -> None:
+        """
+        Export red and white stock trajectories for all scenarios and weeks into a CSV file.
+        """
         data = []
-
         nb_scenarios = trajectories_wr.nb_scenarios
 
         for s in range(nb_scenarios):
@@ -212,39 +291,43 @@ class LaunchTempo :
             for week in range(61):
                 data.append({
                     "MC": s + 1,
-                    "semaine": week + 1,
-                    "jours_rouges_restants": stock_r[week],
-                    "jours_blancs_restants": stock_w[week]
+                    "week": week + 1,
+                    "red_days_remaining": stock_r[week],
+                    "white_days_remaining": stock_w[week]
                 })
 
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
-        print(f"Stock trajectories export succeeded : {output_path}")
+        print(f"Stock trajectories export succeeded: {output_path}")
 
-    def export_daily_control_trajectories(self, trajectories_r: TrajectoriesTempo,
-                    trajectories_wr: TrajectoriesTempo,
-                    filename: str = "daily_control_trajectories.csv") -> None:
+    def export_daily_control_trajectories(self, trajectories_r: 'TrajectoriesTempo',
+                                          trajectories_wr: 'TrajectoriesTempo',
+                                          filename: str = "daily_control_trajectories.csv") -> None:
+        """
+        Export daily control trajectories (red and white) for all scenarios and weeks to CSV.
+        The daily net loads are sorted and matched to the controls.
+        """
         data = []
         nb_scenarios = trajectories_wr.nb_scenarios
         net_load = trajectories_wr.bv.gain_function.net_load
 
         for s in range(nb_scenarios):
-            tirage_r = trajectories_r.control_trajectory_for_scenario(s)
-            tirage_w = trajectories_wr.control_trajectory_for_scenario_white(s)
+            control_r = trajectories_r.control_trajectory_for_scenario(s)
+            control_w = trajectories_wr.control_trajectory_for_scenario_white(s)
 
             for week in range(61):
-                week_start = week* 7 + 2
+                week_start = week * 7 + 2
                 week_end = week_start + 7
                 week_days = net_load[week_start * 24: week_end * 24, s].reshape(7, 24).sum(axis=1)
                 week_days_r = week_days[:5]
                 week_days_w = week_days[:6]
- 
+
                 sorted_days_r = np.argsort(week_days_r)[::-1]
                 sorted_days_w = np.argsort(week_days_w)[::-1]
 
-                r = int(tirage_r[week]) if tirage_r[week] is not None else None
-                w = int(tirage_w[week]) if tirage_w[week] is not None else None
+                r = int(control_r[week]) if control_r[week] is not None else None
+                w = int(control_w[week]) if control_w[week] is not None else None
 
                 used_days = set()
 
@@ -262,7 +345,7 @@ class LaunchTempo :
                         })
 
                 for d in sorted_days_w:
-                    if w is not None and w> 0 and d not in used_days:
+                    if w is not None and w > 0 and d not in used_days:
                         color = "white"
                         used_days.add(d)
                         w -= 1
@@ -277,37 +360,44 @@ class LaunchTempo :
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
-        print(f"Daily control trajectories export succeeded : {output_path}")
+        print(f"Daily control trajectories export succeeded: {output_path}")
 
-    def export_usage_values(self, bv_r: BellmanValuesTempo,bv_wr : BellmanValuesTempo, filename: str = "usage_values.csv") -> None:
+    def export_usage_values(self, bv_r: 'BellmanValuesTempo', bv_wr: 'BellmanValuesTempo',
+                            filename: str = "usage_values.csv") -> None:
+        """
+        Export usage values (marginal values) for red and white stocks over weeks and stock levels.
+        """
         data = []
         max_capacity = max(bv_r.capacity, bv_wr.capacity)
 
         for week in range(61):
             for stock in range(max_capacity):
-                val_r = bv_r.usage_values[week, stock] if week < bv_r.usage_values.shape[0] and stock < bv_r.capacity else np.nan
-                val_wr = bv_wr.usage_values[week, stock] if week < bv_wr.usage_values.shape[0] and stock < bv_wr.capacity else np.nan
+                val_r = bv_r.usage_values[week, stock] if (week < bv_r.usage_values.shape[0] and stock < bv_r.capacity) else np.nan
+                val_wr = bv_wr.usage_values[week, stock] if (week < bv_wr.usage_values.shape[0] and stock < bv_wr.capacity) else np.nan
                 data.append({
-                "week": week + 1,
-                "remaining_stock": stock,
-                "usage_value_red": val_r,
-                "usage_value_wr": val_wr,
-            })
+                    "week": week + 1,
+                    "remaining_stock": stock,
+                    "usage_value_red": val_r,
+                    "usage_value_white_red": val_wr,
+                })
 
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
         print(f"Usage values export succeeded: {output_path}")
 
-
-    def plot_stock_trajectories(self, trajectories_r: TrajectoriesTempo, trajectories_wr: TrajectoriesTempo) -> None:
+    def plot_stock_trajectories(self, trajectories_r: 'TrajectoriesTempo', trajectories_wr: 'TrajectoriesTempo') -> None:
+        """
+        Plot interactive stock trajectories (red and white) for all scenarios with toggles.
+        Saves an HTML interactive plot in the export directory.
+        """
         nb_scenarios = trajectories_wr.nb_scenarios
         weeks = np.arange(1, 62)
 
         fig = go.Figure()
-
         color_palette = px.colors.qualitative.Bold
 
+        # Plot red and white stock per scenario visible by default
         for s in range(nb_scenarios):
             stock_r = trajectories_r.stock_trajectory_for_scenario(s)
             stock_w = trajectories_wr.stock_trajectory_for_scenario_white(s)
@@ -315,52 +405,35 @@ class LaunchTempo :
             fig.add_trace(go.Scatter(
                 x=weeks,
                 y=stock_r,
-                name=f"Stock jours rouges MC {s + 1}",
+                name=f"Red stock MC {s + 1}",
                 visible=(s == 0),
                 line=dict(color='red'),
                 showlegend=False,
-                hovertemplate=(
-                    "Semaine %{x}<br>" +
-                    "Stock: %{y}<br>" +
-                    f"MC {s + 1}<br>" +
-                    "rouge<br>" +
-                    "<extra></extra>"
-                )
+                hovertemplate=f"Week {{x}}<br>Stock: {{y}}<br>MC {s + 1}<br>Red<br><extra></extra>"
             ))
 
             fig.add_trace(go.Scatter(
                 x=weeks,
                 y=stock_w,
-                name=f"Stock jours blancs MC {s + 1}",
+                name=f"White stock MC {s + 1}",
                 visible=(s == 0),
                 line=dict(color='green'),
                 showlegend=False,
-                hovertemplate=(
-                    "Semaine %{x}<br>" +
-                    "Stock: %{y}<br>" +
-                    f"MC {s + 1}<br>" +
-                    "blanc<br>" +
-                    "<extra></extra>"
-                )
+                hovertemplate=f"Week {{x}}<br>Stock: {{y}}<br>MC {s + 1}<br>White<br><extra></extra>"
             ))
 
+        # Additional all MC plots hidden by default
         for s in range(nb_scenarios):
             stock_r = trajectories_r.stock_trajectory_for_scenario(s)
             color = color_palette[s % len(color_palette)]
             fig.add_trace(go.Scatter(
                 x=weeks,
                 y=stock_r,
-                name=f"All MC rouges {s + 1}",
+                name=f"All MC Red {s + 1}",
                 visible=False,
                 line=dict(color=color),
                 showlegend=False,
-                hovertemplate=(
-                    "Semaine %{x}<br>" +
-                    "Stock: %{y}<br>" +
-                    f"MC {s + 1}<br>" +
-                    "rouge<br>" +
-                    "<extra></extra>"
-                )
+                hovertemplate=f"Week {{x}}<br>Stock: {{y}}<br>MC {s + 1}<br>Red<br><extra></extra>"
             ))
 
         for s in range(nb_scenarios):
@@ -369,19 +442,14 @@ class LaunchTempo :
             fig.add_trace(go.Scatter(
                 x=weeks,
                 y=stock_w,
-                name=f"All MC blancs {s + 1}",
+                name=f"All MC White {s + 1}",
                 visible=False,
                 line=dict(color=color),
                 showlegend=False,
-                hovertemplate=(
-                    "Semaine %{x}<br>" +
-                    "Stock: %{y}<br>" +
-                    f"MC {s + 1}<br>" +
-                    "blanc<br>" +
-                    "<extra></extra>"
-                )
+                hovertemplate=f"Week {{x}}<br>Stock: {{y}}<br>MC {s + 1}<br>White<br><extra></extra>"
             ))
 
+        # Create toggle buttons
         buttons = []
         for s in range(nb_scenarios):
             visibility = [False] * (4 * nb_scenarios)
@@ -390,34 +458,25 @@ class LaunchTempo :
             buttons.append(dict(
                 label=f"MC {s + 1}",
                 method="update",
-                args=[
-                    {"visible": visibility},
-                    {"title.text": f"Stocks des jours Tempo - MC {s + 1}"}
-                ]
+                args=[{"visible": visibility}, {"title.text": f"Tempo Day Stocks - MC {s + 1}"}]
             ))
 
-        visibility_all_rouge = [False] * (4 * nb_scenarios)
+        visibility_all_red = [False] * (4 * nb_scenarios)
         for s in range(nb_scenarios):
-            visibility_all_rouge[2 * nb_scenarios + s] = True
+            visibility_all_red[2 * nb_scenarios + s] = True
         buttons.append(dict(
-            label="all MC rouges",
+            label="All MC Red",
             method="update",
-            args=[
-                {"visible": visibility_all_rouge},
-                {"title.text": "Stocks des jours rouges - All MC"}
-            ]
+            args=[{"visible": visibility_all_red}, {"title.text": "Red Day Stocks - All MC"}]
         ))
 
-        visibility_all_blanc = [False] * (4 * nb_scenarios)
+        visibility_all_white = [False] * (4 * nb_scenarios)
         for s in range(nb_scenarios):
-            visibility_all_blanc[3 * nb_scenarios + s] = True
+            visibility_all_white[3 * nb_scenarios + s] = True
         buttons.append(dict(
-            label="all MC blancs",
+            label="All MC White",
             method="update",
-            args=[
-                {"visible": visibility_all_blanc},
-                {"title.text": "Stocks des jours blancs - All MC"}
-            ]
+            args=[{"visible": visibility_all_white}, {"title.text": "White Day Stocks - All MC"}]
         ))
 
         fig.update_layout(
@@ -429,9 +488,9 @@ class LaunchTempo :
                 y=1.15,
                 showactive=True
             )],
-            title=dict(text="Stocks des jours Tempo - MC 1", x=0.5),
+            title=dict(text="Tempo Day Stocks - MC 1", x=0.5),
             xaxis=dict(
-                title="Semaine",
+                title="Week",
                 showgrid=True,
                 gridcolor="rgba(100,100,100,0.2)",
                 gridwidth=1,
@@ -439,17 +498,14 @@ class LaunchTempo :
                 tick0=1
             ),
             yaxis=dict(
-                title="Stock de jours restants",
+                title="Remaining Day Stock",
                 showgrid=True,
                 gridcolor="rgba(100,100,100,0.2)",
                 gridwidth=1,
                 dtick=1,
                 tick0=0
             ),
-            font=dict(
-                family="Cambria",
-                size=14
-            ),
+            font=dict(family="Cambria", size=14),
             legend=dict(visible=False),
             margin=dict(t=100, b=120)
         )
@@ -460,31 +516,33 @@ class LaunchTempo :
         fig.write_html(html_path)
         print(f"Interactive plot saved at: {html_path}")
 
-
-    def plot_stock_trajectory_pyplot(self,trajectories_r:TrajectoriesTempo, trajectories_wr:TrajectoriesTempo, scenario: int) -> None:
+    def plot_stock_trajectory_pyplot(self, trajectories_r: 'TrajectoriesTempo',
+                                    trajectories_wr: 'TrajectoriesTempo', scenario: int) -> None:
+        """
+        Plot stock trajectories for red, white, and total (red+white) days for a single scenario using matplotlib.
+        """
         weeks = np.arange(1, 62)
         stock_r = trajectories_r.stock_trajectory_for_scenario(scenario)
         stock_w = trajectories_wr.stock_trajectory_for_scenario_white(scenario)
-        stock_rw = trajectories_wr.stock_trajectory_for_scenario(scenario)
+        stock_total = trajectories_wr.stock_trajectory_for_scenario(scenario)
 
         plt.figure(figsize=(12, 6))
-        plt.plot(weeks, stock_r, color='red', label=f"Stock jours rouges scénario {scenario+1}")
-        plt.plot(weeks, stock_w, color='green', label=f"Stock jours blancs scénario {scenario+1}")
-        plt.plot(weeks, stock_rw, color='blue', linestyle='--', label=f"Stock total rouge+blanc scénario {scenario+1}")
+        plt.plot(weeks, stock_r, color='red', label=f"Red day stock scenario {scenario + 1}")
+        plt.plot(weeks, stock_w, color='green', label=f"White day stock scenario {scenario + 1}")
+        plt.plot(weeks, stock_total, color='blue', linestyle='--', label=f"Total day stock scenario {scenario + 1}")
 
-        plt.title(f"Stocks des jours Tempo - Scénario {scenario+1}", fontsize=16)
-        plt.xlabel("Semaine", fontsize=14)
-        plt.ylabel("Stock de jours Tempo restants", fontsize=14)
+        plt.title(f"Tempo Day Stocks - Scenario {scenario + 1}", fontsize=16)
+        plt.xlabel("Week", fontsize=14)
+        plt.ylabel("Remaining Tempo Day Stock", fontsize=14)
         plt.xticks(weeks)
         plt.grid(True, linestyle='--', alpha=0.5)
         plt.legend(fontsize=12)
         plt.tight_layout()
         plt.show()
 
-
-    def plot_all_red_tempos_pyplot(self,trajectories_r:TrajectoriesTempo) -> None:
+    def plot_all_red_tempos_pyplot(self, trajectories_r: 'TrajectoriesTempo') -> None:
         """
-        Affiche tous les stocks de jours rouges (tous scénarios) sur un même graphe.
+        Plot all red day stocks for all scenarios using matplotlib.
         """
         weeks = np.arange(1, 62)
         nb_scenarios = trajectories_r.nb_scenarios
@@ -493,20 +551,19 @@ class LaunchTempo :
         plt.figure(figsize=(12, 6))
         for s in range(nb_scenarios):
             stock_r = trajectories_r.stock_trajectory_for_scenario(s)
-            plt.plot(weeks, stock_r, color=color_palette(s), label=f"MC {s+1}")
+            plt.plot(weeks, stock_r, color=color_palette(s), label=f"MC {s + 1}")
 
-        plt.title("Stocks des jours rouges - Tous les scénarios", fontsize=16)
-        plt.xlabel("Semaine", fontsize=14)
-        plt.ylabel("Stock de jours Tempo rouges restants", fontsize=14)
+        plt.title("Red Day Stocks - All Scenarios", fontsize=16)
+        plt.xlabel("Week", fontsize=14)
+        plt.ylabel("Remaining Red Tempo Day Stock", fontsize=14)
         plt.xticks(weeks)
         plt.grid(True, linestyle='--', alpha=0.5)
         plt.tight_layout()
         plt.show()
 
-
-    def plot_all_white_tempos_pyplot(self,trajectories_wr:TrajectoriesTempo) -> None:
+    def plot_all_white_tempos_pyplot(self, trajectories_wr: 'TrajectoriesTempo') -> None:
         """
-        Affiche tous les stocks de jours blancs (tous scénarios) sur un même graphe.
+        Plot all white day stocks for all scenarios using matplotlib.
         """
         weeks = np.arange(1, 62)
         nb_scenarios = trajectories_wr.nb_scenarios
@@ -515,125 +572,120 @@ class LaunchTempo :
         plt.figure(figsize=(12, 6))
         for s in range(nb_scenarios):
             stock_w = trajectories_wr.stock_trajectory_for_scenario_white(s)
-            plt.plot(weeks, stock_w, color=color_palette(s), label=f"MC {s+1}")
+            plt.plot(weeks, stock_w, color=color_palette(s), label=f"MC {s + 1}")
 
-        plt.title("Stocks des jours blancs - Tous les scénarios", fontsize=16)
-        plt.xlabel("Semaine", fontsize=14)
-        plt.ylabel("Stock de jours Tempo blancs restants", fontsize=14)
+        plt.title("White Day Stocks - All Scenarios", fontsize=16)
+        plt.xlabel("Week", fontsize=14)
+        plt.ylabel("Remaining White Tempo Day Stock", fontsize=14)
         plt.xticks(weeks)
         plt.grid(True, linestyle='--', alpha=0.5)
         plt.tight_layout()
         plt.show()
 
-    def plot_all_wr_tempos_pyplot(self,trajectories_wr:TrajectoriesTempo) -> None:
-
+    def plot_all_wr_tempos_pyplot(self, trajectories_wr: 'TrajectoriesTempo') -> None:
+        """
+        Plot total red+white day stocks for all scenarios using matplotlib.
+        """
         weeks = np.arange(1, 62)
         nb_scenarios = trajectories_wr.nb_scenarios
         color_palette = plt.cm.get_cmap('tab20', nb_scenarios)
 
         plt.figure(figsize=(12, 6))
         for s in range(nb_scenarios):
-            stock_wr = trajectories_wr.stock_trajectory_for_scenario(s)
-            plt.plot(weeks, stock_wr, color=color_palette(s), label=f"MC {s+1}")
+            stock_total = trajectories_wr.stock_trajectory_for_scenario(s)
+            plt.plot(weeks, stock_total, color=color_palette(s), label=f"MC {s + 1}")
 
-        plt.title("Stocks des jours rouge+blancs - Tous les scénarios", fontsize=16)
-        plt.xlabel("Semaine", fontsize=14)
-        plt.ylabel("Stock de jours Tempo rouge+blancs restants", fontsize=14)
+        plt.title("Total Red+White Day Stocks - All Scenarios", fontsize=16)
+        plt.xlabel("Week", fontsize=14)
+        plt.ylabel("Remaining Total Tempo Day Stock", fontsize=14)
         plt.xticks(weeks)
         plt.grid(True, linestyle='--', alpha=0.5)
         plt.tight_layout()
         plt.show()
 
-
-    def plot_daily_residual_net_load_pyplot(self,net_load: NetLoad, week: int, scenario: int) -> None:
-
-        # Début et fin de la semaine
+    def plot_daily_residual_net_load_pyplot(self, net_load: NetLoad, week: int, scenario: int) -> None:
+        """
+        Plot daily residual net load bar chart for a specific week and scenario.
+        """
         day_start = week * 7 + 2
         day_end = day_start + 7
 
-        # Résumé journalier
         net_load_reshaped = net_load.compute_net_load().reshape(-1, 24, net_load.nb_scenarios)
         daily_net_load = net_load_reshaped.sum(axis=1)
         week_values = daily_net_load[day_start:day_end, scenario]
 
-        # Jours et couleurs
-        jours = ["Lun", "Mar", "Mer", "Jeu", "Ven", "Sam", "Dim"]
+        days_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
         x = range(1, 8)
 
-        # Couleurs : orange pour Mer-Jeu-Ven (indices 2, 3, 4)
-        # colors = ["steelblue" if i not in [2, 3, 4] else "darkorange" for i in range(7)]
-
-        # Plot
         plt.figure(figsize=(8, 5))
         plt.bar(x, week_values, width=0.3)
-        plt.xlabel("Jour de la semaine",fontsize=14)
-        plt.ylabel("Consommation résiduelle (MWh)",fontsize=14)
-        plt.title(f"Scénario {scenario+1}, Semaine {week+1}",fontsize=14)
-        plt.xticks(ticks=x, labels=jours)
+        plt.xlabel("Day of Week", fontsize=14)
+        plt.ylabel("Residual Consumption (MWh)", fontsize=14)
+        plt.title(f"Scenario {scenario + 1}, Week {week + 1}", fontsize=14)
+        plt.xticks(ticks=x, labels=days_labels)
         plt.grid(True, linestyle='--', alpha=0.5)
         plt.tight_layout()
         plt.show()
 
-
-    def plot_usage_values(self,bv: BellmanValuesTempo) -> None:
+    def plot_usage_values(self, bv: 'BellmanValuesTempo') -> None:
         """
-        Affiche les valeurs d’usage en fonction du stock, pour chaque semaine.
-        La légende est placée proprement sous le graphe sans le chevaucher.
+        Plot usage values as a function of stock for each week.
+        Legend is placed outside the plot for clarity.
         """
         stock_levels = np.arange(1, bv.capacity + 1)
 
         fig, ax = plt.subplots(figsize=(12, 6))
 
         for w in range(bv.start_week, bv.end_week + 1):
-            ax.plot(
-                stock_levels,
-                bv.usage_values[w],
-                label=f"W{w + 1}"
-            )
+            ax.plot(stock_levels, bv.usage_values[w], label=f"W{w + 1}")
 
-        ax.set_xlabel('Stock (jours restants)',fontsize=14)
-        ax.set_ylabel("Valeur d’usage (MWh/effacement)",fontsize=14)
-        ax.set_title("Valeurs d’usage hebdomadaires en fonction du stock",fontsize=14)
+        ax.set_xlabel('Stock (remaining days)', fontsize=14)
+        ax.set_ylabel("Usage Value (MWh/load reduction)", fontsize=14)
+        ax.set_title("Weekly Usage Values by Stock Level", fontsize=14)
         ax.grid(True)
 
         ax.legend(
-        loc='center left',
-        bbox_to_anchor=(1.02, 0.5),
-        ncol=1,
-        fontsize=8,
-        frameon=False
+            loc='center left',
+            bbox_to_anchor=(1.02, 0.5),
+            ncol=1,
+            fontsize=8,
+            frameon=False
         )
 
         plt.show()
 
-    
-    def run(self, actions: list[str] | None = None) -> None:
-        start=time.time()    
-        net_load=NetLoad(dir_study=self.dir_study,name_area=self.area)
+    def run(self, actions: Optional[list[str]] = None) -> None:
+        """
+        Run the specified list of actions, including calculation, export, and plotting.
+        """
+        start = time.time()
+        net_load = NetLoad(dir_study=self.dir_study, name_area=self.area)
 
-        gain_function_tempo_r=GainFunctionTempo(net_load=net_load,max_control=5)
-        gain_function_tempo_wr=GainFunctionTempo(net_load=net_load,max_control=6)
+        gain_function_tempo_r = GainFunctionTempo(net_load=net_load, max_control=5)
+        gain_function_tempo_wr = GainFunctionTempo(net_load=net_load, max_control=6)
 
-        bellman_values_r=BellmanValuesTempo(gain_function=gain_function_tempo_r,capacity=22,start_week=18,end_week=38,CVar=self.CVar)
-        bellman_values_wr=BellmanValuesTempo(gain_function=gain_function_tempo_wr,capacity=65,start_week=9,end_week=60,CVar=self.CVar)
+        bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo_r, capacity=22,
+                                              start_week=18, end_week=38, CVar=self.CVar)
+        bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo_wr, capacity=65,
+                                               start_week=9, end_week=60, CVar=self.CVar)
 
-        trajectories_r=TrajectoriesTempo(bv=bellman_values_r)
-        trajectories_white_and_red=TrajectoriesTempo(bv=bellman_values_wr,stock_trajectories_red=trajectories_r.stock_trajectories)
-        end=time.time()
-        print("Execution time: ", end-start)
+        trajectories_r = TrajectoriesTempo(bv=bellman_values_r)
+        trajectories_white_and_red = TrajectoriesTempo(bv=bellman_values_wr, stock_trajectories_red=trajectories_r.stock_trajectories)
+        end = time.time()
+        print(f"Execution time: {end - start:.2f} seconds")
 
         if actions is None:
-            raise ValueError("Actions must be filled-in")
+            raise ValueError("Actions must be provided")
 
         for action in actions:
             if action == "export_trajectories":
-                self.export_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+                self.export_stock_trajectories(trajectories_r=trajectories_r, trajectories_wr=trajectories_white_and_red)
             elif action == "export_daily_controls":
-                 self.export_daily_control_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+                self.export_daily_control_trajectories(trajectories_r=trajectories_r, trajectories_wr=trajectories_white_and_red)
             elif action == "export_usage_values":
-                self.export_usage_values(bv_r=bellman_values_r,bv_wr=bellman_values_wr)
+                self.export_usage_values(bv_r=bellman_values_r, bv_wr=bellman_values_wr)
             elif action == "plot_trajectories":
-                self.plot_stock_trajectories(trajectories_r=trajectories_r,trajectories_wr=trajectories_white_and_red)
+                self.plot_stock_trajectories(trajectories_r=trajectories_r, trajectories_wr=trajectories_white_and_red)
             elif action == "plot_usage_values_red":
                 self.plot_usage_values(bv=bellman_values_r)
             elif action == "plot_usage_values_wr":
@@ -641,14 +693,15 @@ class LaunchTempo :
             else:
                 print(f"Unknown action: {action}")
 
-
-def main()->None:
-
-    parser = argparse.ArgumentParser(description="Lancer la génération des trajectoires Tempo.")
-    parser.add_argument("--dir_study", type=str, required=True, help="Répertoire d'entrée contenant les données.")
-    parser.add_argument("--area", type=str, required=True, help="Nom de la zone d'étude.")
-    parser.add_argument("--actions", type = str,nargs = '*',required=True, help  = "Liste de commandes")
-    parser.add_argument("--cvar", type=float, default=1.0, help="Paramètre CVaR pour la génération des trajectoires.")
+def main() -> None:
+    """
+    Main entry point: parse CLI arguments and launch the processing.
+    """
+    parser = argparse.ArgumentParser(description="Launch Tempo trajectories generation.")
+    parser.add_argument("--dir_study", type=str, required=True, help="Input directory containing the data.")
+    parser.add_argument("--area", type=str, required=True, help="Study area name.")
+    parser.add_argument("--actions", type=str, nargs='*', required=True, help="List of commands to execute.")
+    parser.add_argument("--cvar", type=float, default=1.0, help="CVaR parameter for trajectory generation.")
 
     args = parser.parse_args()
 
@@ -658,4 +711,5 @@ def main()->None:
 
 if __name__ == "__main__":
     main()
+
 

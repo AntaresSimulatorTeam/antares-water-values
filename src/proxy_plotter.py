@@ -7,50 +7,56 @@ import plotly.express as px
 import os
 
 class Plotter:
-    def __init__(self,bv:BellmanValuesProxy,trajectories:OptimalTrajectories):
+    def __init__(self, bv: BellmanValuesProxy, trajectories: OptimalTrajectories):
+        """
+        Initialize Plotter with BellmanValuesProxy and OptimalTrajectories instances.
+        """
         self.bv = bv
         self.trajectories = trajectories
 
     def plot_bellman_value(self, week_index: int) -> None:
+        """
+        Plot Bellman value as a function of stock level for a given week.
+        Raises ValueError if the week_index is out of bounds.
+        """
         if week_index < 0 or week_index >= self.bv.nb_weeks:
-            raise ValueError(f"Semaine invalide : {week_index}. Doit être entre 0 et {self.bv.nb_weeks - 1}.")
+            raise ValueError(f"Invalid week: {week_index}. Must be between 0 and {self.bv.nb_weeks - 1}.")
 
         stock_levels = np.linspace(0, 100, 51)
-        bellman_values = self.bv.mean_bv[week_index,:]
+        bellman_values = self.bv.mean_bv[week_index, :]
 
         plt.figure(figsize=(10, 5))
-        plt.plot(stock_levels, bellman_values, label=f"Semaine {week_index + 1}", color='tab:blue')
+        plt.plot(stock_levels, bellman_values, label=f"Week {week_index + 1}", color='tab:blue')
 
         plt.xlabel("Stock (%)")
-        plt.ylabel("Valeur de Bellman")
-        area = getattr(self.bv.proxy, 'name_area', None)
-        if area is None:
-            area = getattr(self.bv, 'area', None)
-        area_str = f" - Zone : {area}" if area else ""
-        plt.title(f"Valeur de Bellman en fonction du stock - Semaine {week_index + 1}{area_str}")
+        plt.ylabel("Bellman Value")
+        area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
+        area_str = f" - Area: {area}" if area else ""
+        plt.title(f"Bellman Value vs Stock - Week {week_index + 1}{area_str}")
         plt.grid(True)
         plt.legend()
         plt.tight_layout()
         plt.show()
 
     def plot_usage_values(self) -> None:
-        stock_levels = np.linspace(2, 100, 50) 
+        """
+        Plot usage values as a function of stock level for all weeks.
+        """
+        stock_levels = np.linspace(2, 100, 50)
         plt.figure(figsize=(12, 6))
 
         for w in range(self.bv.nb_weeks):
             plt.plot(
-                stock_levels, 
+                stock_levels,
                 self.bv.usage_values[w],
-                label=f"S {w+1}"
+                label=f"W {w+1}"
             )
 
         plt.xlabel('Stock (%)')
-        plt.ylabel('Valeur d\'usage (MWh)')
-        area = getattr(self.bv.proxy, 'name_area', None)
-        if area is None:
-            area = getattr(self.bv, 'area', None)
-        area_str = f" - Zone : {area}" if area else ""
-        plt.title(f"Valeurs d'usage en fonction du stock{area_str}")
+        plt.ylabel('Usage Value (MWh)')
+        area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
+        area_str = f" - Area: {area}" if area else ""
+        plt.title(f"Usage Values vs Stock{area_str}")
         plt.legend(
             loc='lower right',
             bbox_to_anchor=(1, -0.15),
@@ -62,10 +68,12 @@ class Plotter:
         plt.show()
 
     def plot_usage_values_heatmap(self) -> None:
+        """
+        Plot a heatmap of usage values over weeks and stock levels.
+        """
         fig, ax = plt.subplots(figsize=(14, 6))
 
         norm = colors.Normalize(np.min(self.bv.usage_values[:-1]), np.max(self.bv.usage_values[:-1]))
-        # norm = colors.Normalize(vmin=-29, vmax=0)
 
         im = ax.imshow(
             self.bv.usage_values[:-1].T,
@@ -74,27 +82,28 @@ class Plotter:
             cmap='nipy_spectral',
             extent=(1, 52, 2, 100),
             norm=norm,
-            interpolation='bilinear'  # lissage
+            interpolation='bilinear'  # smoothing
         )
 
         cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(np.min(self.bv.usage_values[:-1]), np.max(self.bv.usage_values[:-1]), 10))
-        # cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(-29, 0, 10))
-        cbar.set_label("Valeur d’usage")
+        cbar.set_label("Usage Value")
 
-        ax.set_xlabel("Semaine")
+        ax.set_xlabel("Week")
         ax.set_ylabel("Stock (%)")
-        area = getattr(self.bv.proxy, 'name_area', None)
-        if area is None:
-            area = getattr(self.bv, 'area', None)
-        area_str = f" - Zone : {area}" if area else ""
-        ax.set_title(f"Nappes de valeurs d’usage (α={self.bv.proxy.alpha}){self.bv.proxy.name_area}")
+        area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
+        area_str = f" - Area: {area}" if area else ""
+        ax.set_title(f"Usage Value Heatmap (α={self.bv.proxy.alpha}){area_str}")
 
         plt.grid(False)
         plt.tight_layout()
         plt.show()
 
-
     def plot_trajectories(self) -> None:
+        """
+        Plot stock trajectories along with upper and lower rule curves interactively using Plotly.
+        Includes buttons to toggle scenario visibility.
+        Saves the plot as an HTML file in the export directory.
+        """
         fig = go.Figure()
         weeks = list(range(1, self.bv.nb_weeks + 2))
 
@@ -134,33 +143,31 @@ class Plotter:
             ))
 
         n_scenarios = len(self.bv.scenarios)
-        n_shared_guides = 2 
+        n_shared_guides = 2
         buttons = []
 
-        area = getattr(self.bv.proxy, 'name_area', None)
-        if area is None:
-            area = getattr(self.bv, 'area', None)
-        area_str = f" - Zone : {area}" if area else ""
+        area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
+        area_str = f" - Area: {area}" if area else ""
 
         for i, s in enumerate(self.bv.scenarios):
-                visibility = [True] * n_shared_guides + [False] * n_scenarios
-                visibility[n_shared_guides + i] = True
-                buttons.append(dict(
-                    label=f"MC {s + 1}",
-                    method="update",
-                    args=[
-                        {"visible": visibility},
-                        {"title.text": f"Trajectoire du stock - MC {s + 1}{area_str}"}
-                    ]
-                ))
+            visibility = [True] * n_shared_guides + [False] * n_scenarios
+            visibility[n_shared_guides + i] = True
+            buttons.append(dict(
+                label=f"Scenario {s + 1}",
+                method="update",
+                args=[
+                    {"visible": visibility},
+                    {"title.text": f"Stock Trajectory - MC {s + 1}{area_str}"}
+                ]
+            ))
 
         visibility_all = [True] * (n_shared_guides + n_scenarios)
         buttons.append(dict(
-            label=f"all MC",
+            label="All MC",
             method="update",
             args=[
                 {"visible": visibility_all},
-                {"title.text": f"Trajectoires du stock - All MC{area_str}"}
+                {"title.text": f"Stock Trajectories - All MC{area_str}"}
             ]
         ))
 
@@ -174,9 +181,9 @@ class Plotter:
                 y=1.15,
                 showactive=True
             )],
-            title=dict(text=f"Trajectoire du stock - MC 1{area_str}", font=dict(family="Cambria", size=18)),
+            title=dict(text=f"Stock Trajectory - MC 1{area_str}", font=dict(family="Cambria", size=18)),
             xaxis=dict(
-                title="Semaine",
+                title="Week",
                 showgrid=True,
                 gridcolor='lightgray',
                 gridwidth=1,
@@ -204,6 +211,9 @@ class Plotter:
         print(f"Interactive plot saved at: {html_path}")
 
     def plot_all_trajectories_pyplot(self) -> None:
+        """
+        Plot all stock trajectories and rule curves with Matplotlib.
+        """
         weeks = np.arange(1, self.bv.nb_weeks + 1)
         n_scenarios = len(self.bv.scenarios)
         color_palette = plt.cm.get_cmap('tab20', n_scenarios)
@@ -216,7 +226,7 @@ class Plotter:
             color="green",
             linestyle="--",
             linewidth=2,
-            label="Courbe guide supérieure"
+            label="Upper rule curve"
         )
 
         plt.plot(
@@ -225,7 +235,7 @@ class Plotter:
             color="red",
             linestyle="--",
             linewidth=2,
-            label="Courbe guide inférieure"
+            label="Lower rule curve"
         )
 
         for s in range(n_scenarios):
@@ -236,35 +246,35 @@ class Plotter:
                 color=color_palette(s)
             )
 
-        plt.xlabel("Semaine", fontsize=14)
+        plt.xlabel("Week", fontsize=14)
         plt.ylabel("Stock (%)", fontsize=14)
-        area = getattr(self.bv.proxy, 'name_area', None)
-        if area is None:
-            area = getattr(self.bv, 'area', None)
-        area_str = f" - Zone : {area}" if area else ""
-        plt.title(f"Trajectoires de stock avec courbes guides - Tous scénarios (α={self.bv.proxy.alpha}){area_str}", fontsize=16)
+        area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
+        area_str = f" - Area: {area}" if area else ""
+        plt.title(f"Stock Trajectories with Rule Curves - All MC (α={self.bv.proxy.alpha}){area_str}", fontsize=16)
         plt.grid(True, linestyle='--', alpha=0.5)
         plt.legend(fontsize=12, loc='upper right')
         plt.tight_layout()
         plt.show()
 
     def plot_adjusted_rule_curves(self) -> None:
+        """
+        Plot adjusted versus interpolated hourly rule curves (upper and lower).
+        Does nothing if the trajectories do not have adjusted curves computed.
+        """
         plt.figure(figsize=(16, 6))
         if hasattr(self.trajectories, "final_lower_rule_curve") and hasattr(self.trajectories, "final_upper_rule_curve"):
-            plt.plot(self.trajectories.final_lower_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Inférieure ajustée", color="blue", linewidth=2)
-            plt.plot(self.trajectories.hourly_lower_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Inférieure interpolée", color="cyan", linestyle="--", linewidth=1.5)
+            plt.plot(self.trajectories.final_lower_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Adjusted Lower", color="blue", linewidth=2)
+            plt.plot(self.trajectories.hourly_lower_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Interpolated Lower", color="cyan", linestyle="--", linewidth=1.5)
 
-            plt.plot(self.trajectories.final_upper_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Supérieure ajustée", color="darkred", linewidth=2)
-            plt.plot(self.trajectories.hourly_upper_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Supérieure interpolée", color="orange", linestyle="--", linewidth=1.5)
+            plt.plot(self.trajectories.final_upper_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Adjusted Upper", color="darkred", linewidth=2)
+            plt.plot(self.trajectories.hourly_upper_rule_curve / self.bv.proxy.reservoir.capacity * 100, label="Interpolated Upper", color="orange", linestyle="--", linewidth=1.5)
         else:
             return
-        plt.xlabel("Heure de l'année")
+        plt.xlabel("Hour of the year")
         plt.ylabel("Stock (%)")
-        area = getattr(self.bv.proxy, 'name_area', None)
-        if area is None:
-            area = getattr(self.bv, 'area', None)
-        area_str = f" - Zone : {area}" if area else ""
-        plt.title(f"Courbes guides horaires : ajustées vs interpolées{area_str}")
+        area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
+        area_str = f" - Area: {area}" if area else ""
+        plt.title(f"Hourly Rule Curves: Adjusted vs Interpolated{area_str}")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()

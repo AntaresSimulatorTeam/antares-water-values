@@ -15,7 +15,7 @@ from scipy.interpolate import interp1d
 def test_bellman_value_precalculated_reward_overflow() -> None:
 
     param = TimeScenarioParameter(len_week=5, len_scenario=1)
-    reservoir = Reservoir("test_data/one_node", "area")
+    reservoir = Reservoir("test_data/one_node", "area",False,None)
     reservoir.initial_level = reservoir.capacity
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,

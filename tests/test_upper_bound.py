@@ -5,7 +5,7 @@ from functions_iterative import (
     TimeScenarioIndex,
     ReservoirManagement,
     BellmanValueCalculation,
-)
+) 
 from optimization import AntaresProblem
 from read_antares_data import Reservoir
 import pytest
@@ -16,7 +16,7 @@ import ortools.linear_solver.pywraplp as pywraplp
 def test_upper_bound() -> None:
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     param = TimeScenarioParameter(len_week=1, len_scenario=1)
-    reservoir = Reservoir("test_data/one_node", "area")
+    reservoir = Reservoir("test_data/one_node", "area",False,None)
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
         penalty_bottom_rule_curve=0,
@@ -31,8 +31,8 @@ def test_upper_bound() -> None:
         param=param,
         reward={
             TimeScenarioIndex(0, 0): RewardApproximation(
-                lb_control=-reservoir.max_pumping[0],
-                ub_control=reservoir.max_generating[0],
+                lb_control=-reservoir.max_weekly_pump[0],
+                ub_control=reservoir.max_weekly_turb[0],
                 ub_reward=0,
             )
         },
@@ -43,8 +43,8 @@ def test_upper_bound() -> None:
         param=param,
         reward={
             TimeScenarioIndex(0, 0): RewardApproximation(
-                lb_control=-reservoir.max_pumping[0],
-                ub_control=reservoir.max_generating[0],
+                lb_control=-reservoir.max_weekly_pump[0],
+                ub_control=reservoir.max_weekly_turb[0],
                 ub_reward=0,
             )
         },
@@ -92,7 +92,7 @@ def test_upper_bound_with_xpress() -> None:
             name_solver="XPRESS_LP",
         )
         param = TimeScenarioParameter(len_week=1, len_scenario=1)
-        reservoir = Reservoir("test_data/one_node", "area")
+        reservoir = Reservoir("test_data/one_node", "area",False,None)
         reservoir_management = ReservoirManagement(
             reservoir=reservoir,
             penalty_bottom_rule_curve=0,
@@ -107,8 +107,8 @@ def test_upper_bound_with_xpress() -> None:
             param=param,
             reward={
                 TimeScenarioIndex(0, 0): RewardApproximation(
-                    lb_control=-reservoir.max_pumping[0],
-                    ub_control=reservoir.max_generating[0],
+                    lb_control=-reservoir.max_weekly_pump[0],
+                    ub_control=reservoir.max_weekly_turb[0],
                     ub_reward=0,
                 )
             },
@@ -119,8 +119,8 @@ def test_upper_bound_with_xpress() -> None:
             param=param,
             reward={
                 TimeScenarioIndex(0, 0): RewardApproximation(
-                    lb_control=-reservoir.max_pumping[0],
-                    ub_control=reservoir.max_generating[0],
+                    lb_control=-reservoir.max_weekly_pump[0],
+                    ub_control=reservoir.max_weekly_turb[0],
                     ub_reward=0,
                 )
             },

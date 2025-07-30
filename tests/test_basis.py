@@ -25,7 +25,7 @@ def test_basis_with_xpress() -> None:
             name_solver="XPRESS_LP",
         )
         param = TimeScenarioParameter(len_week=52, len_scenario=1)
-        reservoir = Reservoir("test_data/one_node", "area")
+        reservoir = Reservoir("test_data/one_node", "area",False,None)
         reservoir_management = ReservoirManagement(
             reservoir=reservoir,
             penalty_bottom_rule_curve=0,
@@ -70,7 +70,7 @@ def test_basis_with_upper_bound() -> None:
             name_solver="XPRESS_LP",
         )
         param = TimeScenarioParameter(len_week=1, len_scenario=1)
-        reservoir = Reservoir("test_data/one_node", "area")
+        reservoir = Reservoir("test_data/one_node", "area",False,None)
         reservoir_management = ReservoirManagement(
             reservoir=reservoir,
             penalty_bottom_rule_curve=0,
@@ -89,8 +89,8 @@ def test_basis_with_upper_bound() -> None:
             param=param,
             reward={
                 TimeScenarioIndex(0, 0): RewardApproximation(
-                    lb_control=-reservoir.max_pumping[0],
-                    ub_control=reservoir.max_generating[0],
+                    lb_control=-reservoir.max_weekly_pump[0],
+                    ub_control=reservoir.max_weekly_turb[0],
                     ub_reward=0,
                 )
             },

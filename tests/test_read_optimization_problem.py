@@ -8,7 +8,7 @@ import ortools.linear_solver.pywraplp as pywraplp
 def test_create_and_modify_weekly_problem() -> None:
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     param = TimeScenarioParameter(len_week=52, len_scenario=1)
-    reservoir = Reservoir("test_data/one_node", "area")
+    reservoir = Reservoir("test_data/one_node", "area",False,None)
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
         penalty_bottom_rule_curve=0,
@@ -60,7 +60,7 @@ def test_create_and_modify_weekly_problem_with_xpress() -> None:
             name_solver="XPRESS_LP",
         )
         param = TimeScenarioParameter(len_week=52, len_scenario=1)
-        reservoir = Reservoir("test_data/one_node", "area")
+        reservoir = Reservoir("test_data/one_node", "area",False,None)
         reservoir_management = ReservoirManagement(
             reservoir=reservoir,
             penalty_bottom_rule_curve=0,

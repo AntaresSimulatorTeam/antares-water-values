@@ -13,7 +13,7 @@ from simple_bellman_value_calculation import calculate_bellman_value_directly
 def test_bellman_value_exact() -> None:
 
     param = TimeScenarioParameter(len_week=5, len_scenario=1)
-    reservoir = Reservoir("test_data/one_node", "area")
+    reservoir = Reservoir("test_data/one_node", "area",False,None)
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
         penalty_bottom_rule_curve=3000,

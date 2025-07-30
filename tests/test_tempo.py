@@ -1,7 +1,7 @@
 from read_antares_data import NetLoad
-from proxy.proxy_tempo import GainFunctionTempo
-from proxy.proxy_tempo import BellmanValuesTempo
-from proxy.proxy_tempo import TrajectoriesTempo
+from proxy_tempo import GainFunctionTempo
+from proxy_tempo import BellmanValuesTempo
+from proxy_tempo import TrajectoriesTempo
 import numpy as np
 import pytest
 

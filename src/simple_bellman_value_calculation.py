@@ -22,9 +22,9 @@ def calculate_complete_reward(
     for week in range(param.len_week):
         for scenario in range(param.len_scenario):
             r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week]
+                lb_control=-reservoir_management.reservoir.max_weekly_pump[week]
                 * reservoir_management.reservoir.efficiency,
-                ub_control=reservoir_management.reservoir.max_generating[week],
+                ub_control=reservoir_management.reservoir.max_weekly_turb[week],
                 ub_reward=float("inf"),
             )
             reward[TimeScenarioIndex(week, scenario)] = r
@@ -32,9 +32,9 @@ def calculate_complete_reward(
     controls = np.array(
         [
             np.linspace(
-                -reservoir_management.reservoir.max_pumping[week]
+                -reservoir_management.reservoir.max_weekly_pump[week]
                 * reservoir_management.reservoir.efficiency,
-                reservoir_management.reservoir.max_generating[week],
+                reservoir_management.reservoir.max_weekly_turb[week],
                 num=len_controls,
             )
             for week in range(param.len_week)
@@ -205,9 +205,9 @@ def calculate_bellman_value_directly(
     for week in range(param.len_week):
         for scenario in range(param.len_scenario):
             r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week]
+                lb_control=-reservoir_management.reservoir.max_weekly_pump[week]
                 * reservoir_management.reservoir.efficiency,
-                ub_control=reservoir_management.reservoir.max_generating[week],
+                ub_control=reservoir_management.reservoir.max_weekly_turb[week],
                 ub_reward=0,
             )
             reward[TimeScenarioIndex(week, scenario)] = r

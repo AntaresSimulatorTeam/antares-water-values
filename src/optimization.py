@@ -224,9 +224,9 @@ class AntaresProblem:
         )
 
         U = model.Var(
-            lb=-reservoir_management.reservoir.max_pumping[self.week]
+            lb=-reservoir_management.reservoir.max_weekly_pump[self.week]
             * reservoir_management.reservoir.efficiency,
-            ub=reservoir_management.reservoir.max_generating[self.week],
+            ub=reservoir_management.reservoir.max_weekly_turb[self.week],
             integer=False,
             name="u",
         )
@@ -236,7 +236,7 @@ class AntaresProblem:
                 x_s_1
                 <= x_s
                 - U
-                + reservoir_management.reservoir.inflow[self.week, self.scenario],
+                + reservoir_management.reservoir.weekly_inflow[self.week, self.scenario],
                 name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
         else:
@@ -244,7 +244,7 @@ class AntaresProblem:
                 x_s_1
                 == x_s
                 - U
-                + reservoir_management.reservoir.inflow[self.week, self.scenario],
+                + reservoir_management.reservoir.weekly_inflow[self.week, self.scenario],
                 name=f"ReservoirConservation::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
 
@@ -256,13 +256,13 @@ class AntaresProblem:
             model.Add(
                 y
                 >= -reservoir_management.penalty_bottom_rule_curve
-                * (x_s_1 - reservoir_management.reservoir.bottom_rule_curve[self.week]),
+                * (x_s_1 - reservoir_management.reservoir.weekly_lower_rule_curve[self.week]),
                 name=f"PenaltyForViolatingBottomRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
             model.Add(
                 y
                 >= reservoir_management.penalty_upper_rule_curve
-                * (x_s_1 - reservoir_management.reservoir.upper_rule_curve[self.week]),
+                * (x_s_1 - reservoir_management.reservoir.weekly_upper_rule_curve[self.week]),
                 name=f"PenaltyForViolatingUpperRuleCurve::area<{reservoir_management.reservoir.area}>::week<{self.week}>",
             )
         else:
@@ -506,7 +506,7 @@ class AntaresProblem:
             -(
                 xf
                 - level_i
-                - bellman_value_calculation.reservoir_management.reservoir.inflow[
+                - bellman_value_calculation.reservoir_management.reservoir.weekly_inflow[
                     self.week, self.scenario
                 ]
             ),

@@ -654,6 +654,38 @@ class LaunchTempo:
 
         plt.show()
 
+    def export_weighted_net_load(self, gain_function: GainFunctionTempo, filename: str = "daily_residual_net_load.csv") -> None:
+        """
+        Export daily residual net load for each scenario into a CSV file.
+        Includes 'day', 'MC_year', and 'residual_net_load' columns.
+        """
+        net_load = gain_function.net_load  # shape: (nb_days * 24, nb_scenarios)
+        nb_days = 429
+        nb_scenarios = gain_function.nb_scenarios
+
+        # Reshape to daily net load: (nb_days, 24, nb_scenarios) then sum over hours
+        daily_net_load = net_load.reshape(nb_days, 24, nb_scenarios).sum(axis=1)  # shape: (nb_days, nb_scenarios)
+
+        # Build long-format DataFrame: one row per (day, scenario)
+        records = []
+        for mc in range(nb_scenarios):
+            for day in range(nb_days):
+                records.append({
+                    "day": day + 1,
+                    "MC_year": mc + 1,
+                    "residual_net_load": daily_net_load[day, mc]
+                })
+
+        df = pd.DataFrame.from_records(records)
+
+        # Save to file
+        output_path = os.path.join(self.export_dir, filename)
+        df.to_csv(output_path, index=False)
+        print(f"Residual daily net load export succeeded: {output_path}")
+
+
+
+
     def run(self, actions: Optional[list[str]] = None) -> None:
         """
         Run the specified list of actions, including calculation, export, and plotting.
@@ -690,6 +722,8 @@ class LaunchTempo:
                 self.plot_usage_values(bv=bellman_values_r)
             elif action == "plot_usage_values_wr":
                 self.plot_usage_values(bv=bellman_values_wr)
+            elif action == "export_net_load":
+                self.export_weighted_net_load(gain_function=gain_function_tempo_r)
             else:
                 print(f"Unknown action: {action}")
 

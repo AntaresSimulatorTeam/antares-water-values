@@ -4,10 +4,11 @@ from proxy_logger import LoggerSetup
 import os
 from type_definition import Callable
 from scipy.interpolate import interp1d
+from tqdm import tqdm
 
 
 class BellmanValuesProxy:
-    def __init__(self, proxy: Proxy, enable_logging: bool, export_dir: str):
+    def __init__(self, proxy: Proxy, enable_logging: bool, export_dir: str, pbar : tqdm):
         """
         Initialize BellmanValuesProxy with given Proxy, logging flag, and export directory.
         Sets up cost functions, storage arrays, and logger, then computes Bellman and usage values.
@@ -16,8 +17,9 @@ class BellmanValuesProxy:
         self.nb_weeks = proxy.nb_weeks
         self.scenarios = proxy.scenarios
         self.export_dir = export_dir
+        self.pbar = pbar
 
-        self.stage_cost_functions = self.proxy.compute_stage_cost_functions()
+        self.stage_cost_functions = self.proxy.stage_cost_functions
 
         self.cost_functions = self.stage_cost_functions[:, :, 0]
         self.turb_functions = self.stage_cost_functions[:, :, 1]
@@ -188,7 +190,7 @@ class BellmanValuesProxy:
         ])
 
         self.logger.debug(f"Final penalty values (week {self.nb_weeks}): {self.mean_bv[self.nb_weeks - 1]}")
-
+        self.pbar.set_postfix_str("Bellman values computing") 
         for w in reversed(range(self.nb_weeks - 1)):
             self.init_log_bellman_week(w)
 
@@ -202,6 +204,7 @@ class BellmanValuesProxy:
                 current_stock = (c / 100) * self.proxy.reservoir.capacity
 
                 for s in self.scenarios:
+                    self.pbar.update(1)
                     weekly_inflow = self.proxy.reservoir.weekly_inflow[w + 1, s]
                     cost_function = self.cost_functions[w + 1, s]
                     controls = cost_function.x
@@ -252,7 +255,8 @@ class BellmanValuesProxy:
 
 class OptimalTrajectories:
     def __init__(self,
-                 bellman_values : BellmanValuesProxy):
+                 bellman_values : BellmanValuesProxy,
+                 pbar : tqdm):
         """
         Initialize OptimalTrajectories with a BellmanValuesProxy instance.
         Prepares data and computes optimal trajectories.
@@ -262,6 +266,7 @@ class OptimalTrajectories:
         self.scenarios = bellman_values.scenarios
         self.logger = bellman_values.logger
         self.export_dir = bellman_values.export_dir
+        self.pbar = pbar
         
         self.mean_bv=bellman_values.mean_bv
         self.compute_trajectories()
@@ -319,7 +324,7 @@ class OptimalTrajectories:
         Adjusts hourly inflows to avoid overflow or negative stock.
         """
         self.init_log_trajectories()
-
+        self.pbar.set_postfix_str("Optimal trajectories computing") 
         self.trajectories = np.zeros((200, self.nb_weeks))
         self.optimal_controls = np.zeros_like(self.trajectories)
         self.optimal_turb = np.zeros_like(self.trajectories)
@@ -331,6 +336,7 @@ class OptimalTrajectories:
             current_stock = self.bellman_values.proxy.reservoir.initial_level
             
             for w in range(self.nb_weeks):
+                self.pbar.update(1)
                 self.logger.debug(f"\n[Week {w+1} | Scenario {s+1} | Previous stock: {current_stock:.2f} MWh]")
                 weekly_inflow = self.bellman_values.proxy.reservoir.weekly_inflow[w, s]
                 hourly_inflow = self.bellman_values.proxy.reservoir.hourly_inflow[w * 168:(w + 1) * 168, s]

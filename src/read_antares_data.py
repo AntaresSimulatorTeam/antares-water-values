@@ -107,9 +107,14 @@ class Reservoir:
 
         self.daily_inflow = daily_inflow[: self.days_in_year]
 
+        # try:
         self.weekly_inflow = self.daily_inflow.reshape(
             (self.weeks_in_year, self.days_in_week, 200)
         ).sum(axis=1)
+        # except Exception:
+        #     self.weekly_inflow = self.daily_inflow.reshape(
+        #         (self.weeks_in_year, self.days_in_week, self.daily_inflow.shape[1])
+        #     ).sum(axis=1)
 
         self.hourly_inflow = np.repeat(self.daily_inflow/24.0,24,axis=0)
 
@@ -191,7 +196,7 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
     with open(dir_study + "/input/hydro/hydro.ini", "w") as configfile:  # save
         hydro_ini.write(configfile)
 
-    
+
 @dataclass
 class NetLoad:
 
@@ -282,11 +287,6 @@ class NetLoad:
         return total_renewable
 
     def read_misc_gen(self) -> np.ndarray:
-        """
-        Read hourly miscellaneous generation from miscgen file
-        and compute total hourly values by summing all columns.
-        If the file is missing, empty, or malformed, returns zeros.
-        """
         file_path = os.path.join(
             self.dir_study, "input", "misc-gen", f"miscgen-{self.area}.txt"
         )

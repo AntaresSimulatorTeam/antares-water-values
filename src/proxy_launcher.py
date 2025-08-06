@@ -2,10 +2,11 @@ from proxy_stage_cost_function import Proxy
 from proxy_bellman_trajectories import BellmanValuesProxy, OptimalTrajectories
 from proxy_exporter import Exporter, ModifyAntaresStudy, UndoAntaresModifications
 from proxy_plotter import Plotter
-import time, os, argparse, traceback
+import os, argparse, traceback
 from datetime import datetime
 from configparser import ConfigParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from tqdm import tqdm
 
 """
 Long-Term Storage Trajectories Generator for Antares Studies
@@ -42,8 +43,8 @@ Arguments:
       - plot_adjusted_rule_curves
       - modify_antares_data
       - undo_modifications
-  --area_target     (str)    : Target area for modifications; if None, uses current area (default: None)
-  --fictive         (bool)   : Use a fictive node for the reservoir (default: False)
+  --area_target     (str)    : Target area for modifications; if None, uses current area (default: None, only usefull por STEP use case)
+  --fictive         (bool)   : Use a fictive node for the reservoir (default: False, only usefull por STEP use case)
 
 Note:
 - When using 'undo_modifications' as the only action, no export directory is created.
@@ -90,20 +91,24 @@ class Launch:
         
         export_dir = os.path.join(self.global_export_dir, self.name_area)
         os.makedirs(export_dir, exist_ok=True)
+        steps = ["Init Proxy", "Bellman values", "Trajectories", "Setup export/modif"]
+        pbar = tqdm(total=len(steps)+52*self.nb_scenarios+51*self.nb_scenarios*51+52*self.nb_scenarios,
+                     desc=f"Zone {self.name_area}", unit="step")
 
-        start = time.time()
         self.proxy = Proxy(
             dir_study=self.dir_study,
             name_area=self.name_area,
             MC_years=self.nb_scenarios,
             alpha=self.alpha,
             area_target=self.area_target,
-            fictive=self.fictive
+            fictive=self.fictive,
+            pbar=pbar
         )
-        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir)
-        self.trajectories = OptimalTrajectories(self.bv)
-        end = time.time()
-        print(f"Stage cost functions, Bellman values and trajectories for area '{self.name_area}' computed in: {end - start:.2f} seconds.")
+        pbar.update(1)
+        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir,pbar=pbar)
+        pbar.update(1)
+        self.trajectories = OptimalTrajectories(self.bv,pbar=pbar)
+        pbar.update(1)
 
         self.plotter = Plotter(self.bv, self.trajectories)
         self.exporter = Exporter(self.proxy, self.bv, self.trajectories)
@@ -147,7 +152,7 @@ class Launch:
                 UndoAntaresModifications(self.dir_study, self.name_area, self.area_target).undo_all()
             else:
                 print(f"Unknown action: {action}")
-
+        pbar.update(1)
 
 def run_for_area(area: str,
                  area_target: str | None, 

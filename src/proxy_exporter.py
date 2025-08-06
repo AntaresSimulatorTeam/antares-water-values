@@ -45,7 +45,7 @@ class Exporter:
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
-        print(f"Control trajectories export succeeded : {output_path}")
+        # print(f"Control trajectories export succeeded : {output_path}")
 
     def export_bellman_values(self, filename: str = "bellman_values.csv") -> None:
         """
@@ -68,7 +68,7 @@ class Exporter:
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
-        print(f"Bellman values export succeeded: {output_path}")
+        # print(f"Bellman values export succeeded: {output_path}")
 
     def export_trajectories(self, filename: str = "trajectories.csv") -> None:
         """
@@ -90,7 +90,7 @@ class Exporter:
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
-        print(f"Stock trajectories export succeeded : {output_path}")
+        # print(f"Stock trajectories export succeeded : {output_path}")
 
     
 
@@ -366,7 +366,7 @@ enabled = true
         self.modify_scenario_builder()
         self.create_inflows_sts()
         self.adjust_to_spillage_constraint()
-        print(f"✅ Antares study modified for area '{self.area_target if self.area_target else self.name_area}'\n")
+        # print(f"✅ Antares study modified for area '{self.area_target if self.area_target else self.name_area}'\n")
 
 
 
@@ -393,9 +393,9 @@ class UndoAntaresModifications:
             if os.path.exists(inflow_path):
                 os.remove(inflow_path)
             os.rename(inflow_backup_path, inflow_path)
-            print("✔ inflows restored.")
-        else:
-            print("⚠ inflow backup not found. Nothing restored.")
+            # print("✔ inflows restored.")
+        # else:
+            # print("⚠ inflow backup not found. Nothing restored.")
 
     def restore_hydro_ini(self) -> None:
         """
@@ -409,9 +409,9 @@ class UndoAntaresModifications:
             config["reservoir"][f"{self.area}"] = "true"
             with open(path, "w") as configfile:
                 config.write(configfile)
-            print("✔ hydro.ini restored.")
-        else:
-            print(f"⚠ hydro.ini unchanged: missing [reservoir]/{self.area} section.")
+            # print("✔ hydro.ini restored.")
+        # else:
+            # print(f"⚠ hydro.ini unchanged: missing [reservoir]/{self.area} section.")
 
     def remove_st_cluster_section(self) -> None:
         """
@@ -422,7 +422,7 @@ class UndoAntaresModifications:
             self.dir_study, "input", "st-storage", "clusters", self.area_target, "list.ini"
         )
         if not os.path.exists(list_ini_path):
-            print("⚠ list.ini not found.")
+            # print("⚠ list.ini not found.")
             return
 
         with open(list_ini_path, "r") as f:
@@ -442,7 +442,7 @@ class UndoAntaresModifications:
         with open(list_ini_path, "w") as f:
             f.writelines(new_lines)
 
-        print("✔ st-cluster section removed.")
+        # print("✔ st-cluster section removed.")
 
     def remove_st_series_folder(self) -> None:
         """
@@ -454,9 +454,9 @@ class UndoAntaresModifications:
         )
         if os.path.exists(folder):
             shutil.rmtree(folder)
-            print("✔ st-series folder removed.")
-        else:
-            print("⚠ st-series folder not found.")
+            # print("✔ st-series folder removed.")
+        # else:
+            # print("⚠ st-series folder not found.")
 
     def clean_scenariobuilder(self) -> None:
         """
@@ -465,7 +465,7 @@ class UndoAntaresModifications:
         """
         path = os.path.join(self.dir_study, "settings", "scenariobuilder.dat")
         if not os.path.exists(path):
-            print("⚠ scenariobuilder.dat not found.")
+            # print("⚠ scenariobuilder.dat not found.")
             return
 
         with open(path, "r") as f:
@@ -478,7 +478,7 @@ class UndoAntaresModifications:
         with open(path, "w") as f:
             f.writelines(filtered)
 
-        print("✔ scenariobuilder cleaned.")
+        # print("✔ scenariobuilder cleaned.")
 
     def restore_miscgen_and_load(self) -> None:
         """
@@ -495,9 +495,9 @@ class UndoAntaresModifications:
             if os.path.exists(miscgen_path):
                 os.remove(miscgen_path)
             os.rename(miscgen_backup_path, miscgen_path)
-            print("✔ miscgen restored.")
-        else:
-            print("⚠ miscgen backup not found. Nothing restored.")
+            # print("✔ miscgen restored.")
+        # else:
+            # print("⚠ miscgen backup not found. Nothing restored.")
 
         # Restore load
         load_path = os.path.join(
@@ -509,22 +509,22 @@ class UndoAntaresModifications:
             if os.path.exists(load_path):
                 os.remove(load_path)
             os.rename(load_backup_path, load_path)
-            print("✔ load restored.")
-        else:
-            print("⚠ load backup not found. Nothing restored.")
+            # print("✔ load restored.")
+        # else:
+            # print("⚠ load backup not found. Nothing restored.")
 
     def undo_all(self) -> None:
         """
         Perform the full restoration of the Antares study for the original area.
         """
-        print(f"\n🔁 Restoring Antares study for area: {self.area}")
+        # print(f"\n🔁 Restoring Antares study for area: {self.area}")
         self.restore_inflows()
         self.restore_hydro_ini()
         self.remove_st_cluster_section()
         self.remove_st_series_folder()
         self.clean_scenariobuilder()
         self.restore_miscgen_and_load()
-        print(f"✅ Restoration complete for area '{self.area}'\n")
+        # print(f"✅ Restoration complete for area '{self.area}'\n")
 
 
 

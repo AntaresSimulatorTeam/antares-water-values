@@ -1,9 +1,15 @@
+from tracemalloc import start
 from read_antares_data import Reservoir,NetLoad
 import numpy as np
 from scipy.interpolate import interp1d
+import matplotlib.pyplot as plt
+from scipy.ndimage import binary_dilation
+from tqdm import tqdm
+
+
 
 class Proxy:
-    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float, area_target:str|None, fictive:bool) -> None:
+    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float, area_target:str|None, fictive:bool, pbar:tqdm) -> None:
         """
         Initialize the object with study directory, area, number of Monte-Carlo scenarios,
         cost exponent alpha, target area and fictive node boolean (last two arguments are specific to one use-case).
@@ -19,6 +25,8 @@ class Proxy:
         self.dir_study = dir_study
         self.name_area = name_area
         self.reservoir = Reservoir(dir_study, name_area, fictive=fictive, area_target=area_target)
+        self.pbar = pbar
+        
 
         self.turb_efficiency=1
         self.alpha=alpha
@@ -27,6 +35,7 @@ class Proxy:
         self.scenarios=range(MC_years)
         
         self.weighted_net_load = self.compute_weighted_net_load()
+        self.stage_cost_functions = self.compute_stage_cost_functions()
 
     
     def compute_weighted_net_load(self)-> np.ndarray:
@@ -134,21 +143,31 @@ class Proxy:
 
 
     def compute_stage_cost_functions(self)->np.ndarray:
-            """
-            Compute and store cost-related interpolators for all weeks and scenarios.
+        """
+        Compute and store cost-related interpolators for all weeks and scenarios.
 
-            For each (week, scenario) pair, computes:
-                - cost(control),
-                - turbined_energy(control),
-                - pumped_energy(control)
+        For each (week, scenario) pair, computes:
+            - cost(control),
+            - turbined_energy(control),
+            - pumped_energy(control)
 
-            Returns:
-                np.ndarray: Array of shape (nb_weeks, nb_scenarios), containing
-                3-element arrays of scipy interp1d interpolators.
-            """
-            cost_functions=np.array([[self.stage_cost_function(w,s) for s in self.scenarios] for w in range(self.nb_weeks)])
-            return cost_functions
-            
+        Returns:
+            np.ndarray: Array of shape (nb_weeks, nb_scenarios), containing
+            3-element arrays of scipy interp1d interpolators.
+        """
+        cost_functions = np.empty(
+            (self.nb_weeks, len(self.scenarios), 3), 
+            dtype=object
+        )
+        if hasattr(self, "pbar"):
+            self.pbar.set_postfix_str("Stage cost functions computing")        
+        for w in range(self.nb_weeks):
+            for s in range(len(self.scenarios)):
+                if hasattr(self,"pbar"):
+                    self.pbar.update(1)
+                cost_functions[w,s]=self.stage_cost_function(w,s)
+        return cost_functions
+        
 
     def upper_bound_cost(self, week: int) -> float:
         """

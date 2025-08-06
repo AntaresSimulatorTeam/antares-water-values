@@ -75,17 +75,17 @@ class ReservoirManagement:
             pen = interp1d(
                 [
                     0,
-                    self.reservoir.bottom_rule_curve[week],
-                    self.reservoir.upper_rule_curve[week],
+                    self.reservoir.weekly_lower_rule_curve[week],
+                    self.reservoir.weekly_upper_rule_curve[week],
                     self.reservoir.capacity,
                 ],
                 [
                     -self.penalty_bottom_rule_curve
-                    * (self.reservoir.bottom_rule_curve[week]),
+                    * (self.reservoir.weekly_lower_rule_curve[week]),
                     0,
                     0,
                     -self.penalty_upper_rule_curve
-                    * (self.reservoir.capacity - self.reservoir.upper_rule_curve[week]),
+                    * (self.reservoir.capacity - self.reservoir.weekly_upper_rule_curve[week]),
                 ],
             )
         return pen
@@ -287,13 +287,13 @@ class BellmanValueCalculation:
         X = self.stock_discretization
 
         for i_fut in range(len(X)):
-            u = -X[i_fut] + level_i + stock.inflow[week, scenario]
-            if -stock.max_pumping[week] * stock.efficiency <= u:
+            u = -X[i_fut] + level_i + stock.weekly_inflow[week, scenario]
+            if -stock.max_weekly_pump[week] * stock.efficiency <= u:
                 if (
                     self.reservoir_management.overflow
-                    or u <= stock.max_generating[week]
+                    or u <= stock.max_weekly_turb[week]
                 ):
-                    u = min(u, stock.max_generating[week])
+                    u = min(u, stock.max_weekly_turb[week])
                     G = reward_fn(u)
                     penalty = pen(X[i_fut])
                     if (G + V_fut(X[i_fut]) + penalty) > Vu:
@@ -302,7 +302,7 @@ class BellmanValueCalculation:
                         control = u
 
         for u in range(len(points)):
-            state_fut = level_i - points[u] + stock.inflow[week, scenario]
+            state_fut = level_i - points[u] + stock.weekly_inflow[week, scenario]
             if 0 <= state_fut <= stock.capacity:
                 penalty = pen(state_fut)
                 G = reward_fn(points[u])
@@ -311,26 +311,26 @@ class BellmanValueCalculation:
                     xf = state_fut
                     control = points[u]
 
-        Umin = level_i + stock.inflow[week, scenario] - stock.bottom_rule_curve[week]
+        Umin = level_i + stock.weekly_inflow[week, scenario] - stock.weekly_lower_rule_curve[week]
         if (
-            -stock.max_pumping[week] * stock.efficiency
+            -stock.max_weekly_pump[week] * stock.efficiency
             <= Umin
-            <= stock.max_generating[week]
+            <= stock.max_weekly_turb[week]
         ):
-            state_fut = level_i - Umin + stock.inflow[week, scenario]
+            state_fut = level_i - Umin + stock.weekly_inflow[week, scenario]
             penalty = pen(state_fut)
             if (reward_fn(Umin) + V_fut(state_fut) + penalty) > Vu:
                 Vu = reward_fn(Umin) + V_fut(state_fut) + penalty
                 xf = state_fut
                 control = Umin
 
-        Umax = level_i + stock.inflow[week, scenario] - stock.upper_rule_curve[week]
+        Umax = level_i + stock.weekly_inflow[week, scenario] - stock.weekly_upper_rule_curve[week]
         if (
-            -stock.max_pumping[week] * stock.efficiency
+            -stock.max_weekly_pump[week] * stock.efficiency
             <= Umax
-            <= stock.max_generating[week]
+            <= stock.max_weekly_turb[week]
         ):
-            state_fut = level_i - Umax + stock.inflow[week, scenario]
+            state_fut = level_i - Umax + stock.weekly_inflow[week, scenario]
             penalty = pen(state_fut)
             if (reward_fn(Umax) + V_fut(state_fut) + penalty) > Vu:
                 Vu = reward_fn(Umax) + V_fut(state_fut) + penalty
@@ -338,8 +338,8 @@ class BellmanValueCalculation:
                 control = Umax
 
         control = min(
-            -(xf - level_i - stock.inflow[week, scenario]),
-            stock.max_generating[week],
+            -(xf - level_i - stock.weekly_inflow[week, scenario]),
+            stock.max_weekly_turb[week],
         )
         return (Vu, xf, control)
 

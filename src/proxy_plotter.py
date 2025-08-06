@@ -208,7 +208,7 @@ class Plotter:
             raise ValueError("export_dir must be a non-empty string before saving the plot.")
         html_path = os.path.join(self.bv.export_dir, "trajectories_plot.html")
         fig.write_html(html_path)
-        print(f"Interactive plot saved at: {html_path}")
+        # print(f"Interactive plot saved at: {html_path}")
 
     def plot_all_trajectories_pyplot(self) -> None:
         """

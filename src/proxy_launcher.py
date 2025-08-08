@@ -45,6 +45,7 @@ Arguments:
       - undo_modifications
   --area_target     (str)    : Target area for modifications; if None, uses current area (default: None, only usefull por STEP use case)
   --fictive         (bool)   : Use a fictive node for the reservoir (default: False, only usefull por STEP use case)
+  --h               (int)    : Margin factor for rule curves. Number of hour of generating at max power. (default: 0)
 
 Note:
 - When using 'undo_modifications' as the only action, no export directory is created.
@@ -61,8 +62,10 @@ class Launch:
                  MC_years: int, 
                  alpha: float, 
                  enable_logging: bool,
-                 fictive: bool, 
-                 global_export_dir: str | None = None):
+                 fictive: bool,
+                 h : int, 
+                 global_export_dir: str | None = None,
+                ):
         """
         Initialize the Launch class with study directory, area, target area, Monte-Carlo years,
         cost function parameter alpha, logging flag, fictive node flag, and global export directory.
@@ -75,6 +78,7 @@ class Launch:
         self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir
         self.area_target = area_target if area_target else area  # Use area_target if provided, else use area
+        self.h = h
 
     def run(self, actions: list[str] | None = None) -> None:
         """
@@ -105,7 +109,7 @@ class Launch:
             pbar=pbar
         )
         pbar.update(1)
-        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir,pbar=pbar)
+        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir,pbar=pbar,h=self.h)
         pbar.update(1)
         self.trajectories = OptimalTrajectories(self.bv,pbar=pbar)
         pbar.update(1)
@@ -160,7 +164,8 @@ def run_for_area(area: str,
                  MC_years: int, 
                  alpha: float, 
                  enable_logging: bool,
-                 fictive: bool, 
+                 fictive: bool,
+                 h : int, 
                  actions: list[str] | None = None, 
                  global_export_dir: str | None = None) -> None:
     """
@@ -176,7 +181,8 @@ def run_for_area(area: str,
             alpha=alpha,
             enable_logging=enable_logging,
             fictive=fictive,
-            global_export_dir=None,
+            h=h,
+            global_export_dir=None
         ).run(actions=actions)
     else:
         Launch(
@@ -187,6 +193,7 @@ def run_for_area(area: str,
             alpha=alpha,
             enable_logging=enable_logging,
             fictive=fictive,
+            h=h,
             global_export_dir=global_export_dir,
         ).run(actions=actions)
 
@@ -245,6 +252,7 @@ def main() -> None:
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="List of actions to perform.")
     parser.add_argument("--area_target", type=str, required=False, default=None, help="Target area for modifications; if None uses current area.")
     parser.add_argument("--fictive", type=bool, default=False, help="Use a fictive node for the reservoir.")
+    parser.add_argument("--h", type=int,default=0, help='Margin factor for rule curves')
 
     args = parser.parse_args()
 
@@ -259,6 +267,7 @@ def main() -> None:
                 args.alpha,
                 args.enable_logging,
                 args.fictive,
+                args.h,
                 args.actions,
                 None
             )
@@ -278,6 +287,7 @@ def main() -> None:
             args.alpha,
             args.enable_logging,
             args.fictive,
+            args.h,
             args.actions,
             global_export_dir,
         )
@@ -293,6 +303,7 @@ def main() -> None:
                     args.alpha,
                     args.enable_logging,
                     args.fictive,
+                    args.h,
                     args.actions,
                     global_export_dir
                 ): area for area in args.areas

@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 
 class BellmanValuesProxy:
-    def __init__(self, proxy: Proxy, enable_logging: bool, export_dir: str, pbar : tqdm):
+    def __init__(self, proxy: Proxy, enable_logging: bool, export_dir: str, pbar : tqdm, h:int):
         """
         Initialize BellmanValuesProxy with given Proxy, logging flag, and export directory.
         Sets up cost functions, storage arrays, and logger, then computes Bellman and usage values.
@@ -18,6 +18,7 @@ class BellmanValuesProxy:
         self.scenarios = proxy.scenarios
         self.export_dir = export_dir
         self.pbar = pbar
+        self.h = h
 
         self.stage_cost_functions = self.proxy.stage_cost_functions
 
@@ -34,6 +35,7 @@ class BellmanValuesProxy:
         logger_setup = LoggerSetup(self.export_dir)
         self.logger = logger_setup.get_logger() if enable_logging else logger_setup.get_null_logger()
 
+        self.compute_rule_curve_margins()
         self.compute_bellman_values()
         self.compute_usage_values()
     
@@ -150,14 +152,12 @@ class BellmanValuesProxy:
         """
         for c_new in range(0, 101, 2):
             new_level = (c_new / 100) * self.proxy.reservoir.capacity
-            week_energy_var = current_stock - new_level
+            control = current_stock - new_level - weekly_inflow
 
-            if week_energy_var < -max_week_pump * self.proxy.reservoir.efficiency or \
-               week_energy_var > max_week_turb * self.proxy.turb_efficiency:
+            if control < -max_week_pump * self.proxy.reservoir.efficiency or \
+               control > max_week_turb * self.proxy.turb_efficiency:
                 continue
-
-            control = current_stock - new_level
-            next_stock = current_stock - control + weekly_inflow
+            next_stock = new_level
             cost = stage_cost_function(control)
             future_value = future_bellman_function(next_stock)
             penalty = penalty_function(next_stock)
@@ -251,6 +251,20 @@ class BellmanValuesProxy:
         for w in range(self.nb_weeks):
             for c in range(2, 102, 2):
                 self.usage_values[w, (c // 2) - 1] = self.mean_bv[w, c // 2] - self.mean_bv[w, (c // 2) - 1]
+
+    def compute_rule_curve_margins(self) -> None:
+        hourly_turb_day = self.proxy.reservoir.max_hourly_turb.reshape(-1, 24)[:, 0]
+        hourly_turb_day = np.concatenate([hourly_turb_day, [hourly_turb_day[-1]]])
+        self.proxy.reservoir.daily_upper_rule_curve=np.minimum(
+            self.proxy.reservoir.daily_upper_rule_curve,
+            self.proxy.reservoir.capacity-self.h*hourly_turb_day
+        )
+        self.proxy.reservoir.weekly_upper_rule_curve=self.proxy.reservoir.daily_upper_rule_curve[::7]
+        self.proxy.reservoir.daily_lower_rule_curve=np.maximum(
+            self.proxy.reservoir.daily_lower_rule_curve,
+            self.h*hourly_turb_day
+        )
+        self.proxy.reservoir.weekly_lower_rule_curve=self.proxy.reservoir.daily_lower_rule_curve[::7]
 
 
 class OptimalTrajectories:
@@ -379,6 +393,7 @@ class OptimalTrajectories:
                     stage_cost_function=cost_function,
                     future_bellman_function=future_bellman_function,
                     penalty_function=penalty_function)
+
 
                 self.logger.debug(f"=> Selected stock for week {w+1}: {final_best_stock:.2f} MWh")
 

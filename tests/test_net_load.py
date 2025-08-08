@@ -6,8 +6,7 @@ def test_net_load() -> None:
 
     net_load=NetLoad(dir_study=dir_study, name_area=area)
 
-    # check time window (1 year + 2 months = 10296 hours)
-    assert net_load.net_load.shape[0] == 10296
+    assert net_load.compute_net_load().shape[0] == 8760
     # check number of scenarios
-    assert net_load.net_load.shape[1] == 10
+    assert net_load.compute_net_load().shape[1] == 200
 

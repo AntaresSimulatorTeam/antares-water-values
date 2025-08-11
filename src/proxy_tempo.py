@@ -74,7 +74,9 @@ class BellmanValuesTempo:
                  capacity: int,
                  start_week: int,
                  end_week: int,
-                 CVar: float):
+                 CVar: float,
+                 lower_rule_curve : np.ndarray,
+                 upper_rule_curve : np.ndarray):
         """
         Initialize Bellman value calculator over a period of weeks with given capacity and CVar.
         Prepares arrays to store Bellman values, their mean with CVar risk measure, and usage values.
@@ -92,16 +94,24 @@ class BellmanValuesTempo:
         self.mean_bv = np.zeros((61, self.capacity + 1))  # CVaR aggregated values over scenarios
         self.usage_values = np.zeros((61, self.capacity))  # Marginal usage values
 
+        self.lower_rule_curve = lower_rule_curve
+        self.upper_rule_curve = upper_rule_curve
+
         self.compute_bellman_values()
         self.compute_usage_values()
 
-    def penalty(self) -> Callable:
+    def penalty(self,week : int) -> Callable:
         """
         Return a penalty function (linear interpolation) heavily penalizing states outside [0, capacity].
         """
-        penalty = interp1d([-1, 0, self.capacity, self.capacity + 1],
-                           [-1e9, 0, 0, -1e9],
-                           kind='linear', bounds_error=False, fill_value=-1e9)
+        penalty = interp1d([
+                self.lower_rule_curve[week] - 1,
+                self.lower_rule_curve[week],
+                self.upper_rule_curve[week],
+                self.upper_rule_curve[week] + 1,
+            ],
+            [-1e10, 0, 0, -1e10],
+            kind='linear', fill_value='extrapolate')
         # Alternative no penalty: penalty = lambda x: 0
         return penalty
 
@@ -112,10 +122,10 @@ class BellmanValuesTempo:
         """
         self.mean_bv[self.end_week] = np.zeros(self.capacity + 1)
         for w in reversed(range(self.start_week, self.end_week)):
+            penalty = self.penalty(w)
             for c in range(self.capacity + 1):
                 for s in range(self.nb_scenarios):
                     best_value = -np.inf
-                    penalty = self.penalty()
                     for control in range(self.max_control + 1):
                         gain = self.gain_function.gain_for_week_control_and_scenario(w + 1, control, s)
                         future_value = self.mean_bv[w + 1, c - control]
@@ -172,12 +182,12 @@ class TrajectoriesTempo:
         for s in range(self.nb_scenarios):
             self.stock_trajectories[s, :self.start_week] = self.capacity
             for w in range(self.start_week, self.end_week + 1):
+                penalty = self.bv.penalty(w)
                 if self.stock_trajectories[s, w - 1] == 0:
                     self.stock_trajectories[s, w:] = 0
                     break
                 best_value = -np.inf
                 best_control = None
-                penalty = self.bv.penalty()
                 for c in range(self.max_control + 1):
                     gain = self.bv.gain_function.gain_for_week_control_and_scenario(w, c, s)
                     future_value = self.bv.mean_bv[w, int(self.stock_trajectories[s, w - 1]) - c]
@@ -386,7 +396,9 @@ class LaunchTempo:
         df.to_csv(output_path, index=False)
         print(f"Usage values export succeeded: {output_path}")
 
-    def plot_stock_trajectories(self, trajectories_r: 'TrajectoriesTempo', trajectories_wr: 'TrajectoriesTempo') -> None:
+    def plot_stock_trajectories(self, bellman_values_r:BellmanValuesTempo,
+                                bellman_values_wr: BellmanValuesTempo,
+                                trajectories_r: 'TrajectoriesTempo', trajectories_wr: 'TrajectoriesTempo') -> None:
         """
         Plot interactive stock trajectories (red and white) for all scenarios with toggles.
         Saves an HTML interactive plot in the export directory.
@@ -395,6 +407,16 @@ class LaunchTempo:
         weeks = np.arange(1, 62)
 
         fig = go.Figure()
+
+        lower_percent = bellman_values_r.lower_rule_curve
+        fig.add_trace(go.Scatter(
+            x=weeks,
+            y=lower_percent,
+            mode='lines',
+            name='Lower rule curve',
+            line=dict(dash='dash', color='red'),
+            visible=True
+        ))
         color_palette = px.colors.qualitative.Bold
 
         # Plot red and white stock per scenario visible by default
@@ -697,9 +719,42 @@ class LaunchTempo:
         gain_function_tempo_wr = GainFunctionTempo(net_load=net_load, max_control=6)
 
         bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo_r, capacity=22,
-                                              start_week=18, end_week=38, CVar=self.CVar)
+                                              start_week=18, end_week=38, CVar=self.CVar,
+                                              lower_rule_curve=
+                                              np.array([22,22,22,22,22,22,22,22,22,22,
+                                               22,22,22,22,22,22,22,22,21,20,
+                                               19,18,17,16,15,14,13,12,11,10,
+                                                9, 8, 7, 6, 5, 4, 3, 2, 0, 0,
+                                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                                0]),
+                                              upper_rule_curve=
+                                              np.array([22,22,22,22,22,22,22,22,22,22,
+                                               22,22,22,22,22,22,22,22,22,22,
+                                               22,22,22,22,22,22,22,22,22,22,
+                                               22,22,22,22,22,22,22,22,22,22,
+                                               22,22,22,22,22,22,22,22,22,22,
+                                               22,22,22,22,22,22,22,22,22,22,
+                                               22]))
+        
         bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo_wr, capacity=65,
-                                               start_week=9, end_week=60, CVar=self.CVar)
+                                               start_week=9, end_week=60, CVar=self.CVar,
+                                              lower_rule_curve=
+                                              np.array([22,22,22,22,22,22,22,22,22,22,
+                                               22,22,22,22,22,22,22,22,21,20,
+                                               19,18,17,16,15,14,13,12,11,10,
+                                                9, 8, 7, 6, 5, 4, 3, 2, 0, 0,
+                                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+                                                0]),
+                                              upper_rule_curve=
+                                              np.array([65,65,65,65,65,65,65,65,65,65,
+                                               65,65,65,65,65,65,65,65,65,65,
+                                               65,65,65,65,65,65,65,65,65,65,
+                                               65,65,65,65,65,65,65,65,65,65,
+                                               65,65,65,65,65,65,65,65,65,65,
+                                               65,65,65,65,65,65,65,65,65,65,
+                                               65]))
 
         trajectories_r = TrajectoriesTempo(bv=bellman_values_r)
         trajectories_white_and_red = TrajectoriesTempo(bv=bellman_values_wr, stock_trajectories_red=trajectories_r.stock_trajectories)
@@ -717,7 +772,8 @@ class LaunchTempo:
             elif action == "export_usage_values":
                 self.export_usage_values(bv_r=bellman_values_r, bv_wr=bellman_values_wr)
             elif action == "plot_trajectories":
-                self.plot_stock_trajectories(trajectories_r=trajectories_r, trajectories_wr=trajectories_white_and_red)
+                self.plot_stock_trajectories(trajectories_r=trajectories_r, trajectories_wr=trajectories_white_and_red,
+                                             bellman_values_r=bellman_values_r,bellman_values_wr=bellman_values_wr)
             elif action == "plot_usage_values_red":
                 self.plot_usage_values(bv=bellman_values_r)
             elif action == "plot_usage_values_wr":

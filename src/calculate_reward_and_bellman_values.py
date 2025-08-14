@@ -157,6 +157,8 @@ class BellmanValueCalculation:
                         TimeScenarioIndex(week=week, scenario=scenario)
                     ].reward_function()
                 )
+        for week in range(self.time_scenario_param.len_week + 1):
+            for scenario in range(self.time_scenario_param.len_scenario):
                 self.penalty_fn[TimeScenarioIndex(week=week, scenario=scenario)] = (
                     self.reservoir_management.get_penalty(
                         week=week, len_week=param.len_week

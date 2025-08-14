@@ -90,8 +90,8 @@ class Reservoir:
             rule_curves[0, 0] == rule_curves[0, 1]
         ), "Initial level is not correctly defined by bottom and upper rule curves"
         self.initial_level = rule_curves[0, 0]
-        bottom_rule_curve = rule_curves[7::7, 0]
-        upper_rule_curve = rule_curves[7::7, 1]
+        bottom_rule_curve = rule_curves[0::7, 0]
+        upper_rule_curve = rule_curves[0::7, 1]
         self.bottom_rule_curve = bottom_rule_curve
         self.upper_rule_curve = upper_rule_curve
 

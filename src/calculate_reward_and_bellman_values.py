@@ -58,7 +58,7 @@ class ReservoirManagement:
         -------
 
         """
-        if week == len_week - 1 and self.final_level:
+        if week == len_week and self.final_level:
             pen = interp1d(
                 [
                     0,
@@ -193,6 +193,7 @@ class BellmanValueCalculation:
         Vu = float("-inf")
         stock = self.reservoir_management.reservoir
         pen = self.penalty_fn[TimeScenarioIndex(week=week, scenario=scenario)]
+        penalty = pen(level_i)
         reward_fn = self.reward_fn[TimeScenarioIndex(week=week, scenario=scenario)]
         points = self.reward_approximation[
             TimeScenarioIndex(week=week, scenario=scenario)
@@ -208,7 +209,6 @@ class BellmanValueCalculation:
                 ):
                     u = min(u, stock.max_generating[week])
                     G = reward_fn(u)
-                    penalty = pen(X[i_fut])
                     if (G + V_fut(X[i_fut]) + penalty) > Vu:
                         Vu = G + V_fut(X[i_fut]) + penalty
                         xf = X[i_fut]
@@ -217,7 +217,6 @@ class BellmanValueCalculation:
         for u in range(len(points)):
             state_fut = level_i - points[u] + stock.inflow[week, scenario]
             if 0 <= state_fut <= stock.capacity:
-                penalty = pen(state_fut)
                 G = reward_fn(points[u])
                 if (G + V_fut(state_fut) + penalty) > Vu:
                     Vu = G + V_fut(state_fut) + penalty
@@ -238,7 +237,6 @@ class BellmanValueCalculation:
                 <= stock.max_generating[week]
             ):
                 state_fut = level_i - Ufinal + stock.inflow[week, scenario]
-                penalty = pen(state_fut)
                 if (reward_fn(Ufinal) + V_fut(state_fut) + penalty) > Vu:
                     Vu = reward_fn(Ufinal) + V_fut(state_fut) + penalty
                     xf = state_fut
@@ -253,7 +251,6 @@ class BellmanValueCalculation:
                 <= stock.max_generating[week]
             ):
                 state_fut = level_i - Umin + stock.inflow[week, scenario]
-                penalty = pen(state_fut)
                 if (reward_fn(Umin) + V_fut(state_fut) + penalty) > Vu:
                     Vu = reward_fn(Umin) + V_fut(state_fut) + penalty
                     xf = state_fut
@@ -266,7 +263,6 @@ class BellmanValueCalculation:
                 <= stock.max_generating[week]
             ):
                 state_fut = level_i - Umax + stock.inflow[week, scenario]
-                penalty = pen(state_fut)
                 if (reward_fn(Umax) + V_fut(state_fut) + penalty) > Vu:
                     Vu = reward_fn(Umax) + V_fut(state_fut) + penalty
                     xf = state_fut
@@ -303,6 +299,15 @@ class BellmanValueCalculation:
         if len(final_values) == len(X):
             for scenario in range(self.time_scenario_param.len_scenario):
                 V[:, self.time_scenario_param.len_week, scenario] = final_values
+        else:
+            for scenario in range(self.time_scenario_param.len_scenario):
+                pen = self.penalty_fn[
+                    TimeScenarioIndex(
+                        week=self.time_scenario_param.len_week, scenario=scenario
+                    )
+                ]
+                for i in range(len(X)):
+                    V[i, self.time_scenario_param.len_week, scenario] = pen(X[i])
 
         for week in range(self.time_scenario_param.len_week - 1, -1, -1):
 

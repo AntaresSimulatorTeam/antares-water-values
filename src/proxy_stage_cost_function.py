@@ -3,7 +3,6 @@ from read_antares_data import Reservoir,NetLoad
 import numpy as np
 from scipy.interpolate import interp1d
 import matplotlib.pyplot as plt
-from scipy.ndimage import binary_dilation
 from tqdm import tqdm
 
 
@@ -32,7 +31,7 @@ class Proxy:
         self.alpha=alpha
 
         self.nb_weeks=52
-        self.scenarios=range(MC_years)
+        self.scenarios=range(self.reservoir.nb_scenarios)[:MC_years]
         
         self.weighted_net_load = self.compute_weighted_net_load()
         self.stage_cost_functions = self.compute_stage_cost_functions()
@@ -43,11 +42,12 @@ class Proxy:
         Compute the weighted net load across all areas using the allocation weights.
 
         Returns:
-            np.ndarray: A (8760, 200) array of hourly weighted net load for each scenario.
+            np.ndarray: A (8760, nb_scenarios) array of hourly weighted net load for each scenario.
         """
-        weighted_net_load = np.zeros((365 * 24, 200))
+        weighted_net_load = np.zeros((365 * 24, len(self.scenarios)))
         for key, value in self.reservoir.allocation_dict.items():
-            weighted_net_load += value * NetLoad(self.dir_study, key).compute_net_load()
+            net_load = NetLoad(self.reservoir,self.dir_study, key).compute_net_load()
+            weighted_net_load += value * net_load[:,:len(self.scenarios)]
 
         return weighted_net_load
     
@@ -59,7 +59,7 @@ class Proxy:
                                               null_pump : bool) -> tuple:
         """
         Compute weekly turbine and pump energy, control, and cost for given thresholds 
-        of net load above which turbining is profitable.
+        of net load.
 
         Returns:
             tuple: (hourly_turb, hourly_pump, weekly_control, costs)
@@ -119,13 +119,11 @@ class Proxy:
         max_hourly_pump = self.reservoir.max_hourly_pump[(week)*168:(week+1)*168]
         null_pump = np.allclose(self.reservoir.max_hourly_pump, 0)
         
-        turb_thresholds = np.quantile(
-            np.linspace(
-                np.min(weekly_net_load - max_hourly_turb),
-                np.max(weekly_net_load + max_hourly_pump) * (self.turb_efficiency / self.reservoir.efficiency) ** (1 / (self.alpha - 1))
-            ),
-            np.linspace(0, 1, 25)
-        )
+        low = np.min(weekly_net_load - max_hourly_turb)
+        raw_high = np.max(weekly_net_load + max_hourly_pump) * (self.turb_efficiency / self.reservoir.efficiency) ** (1 / (self.alpha - 1))
+        high = np.max(weekly_net_load) if null_pump else raw_high
+
+        turb_thresholds = np.linspace(low, high, 25)
 
         hourly_turb, hourly_pump, weekly_control, costs = self.compute_turb_and_pump_with_thresholds(
             turb_thresholds=turb_thresholds,
@@ -175,7 +173,7 @@ class Proxy:
 
         This upper bound is based on the maximum absolute net load value
         across all scenarios for the specified week, raised to the power alpha
-        and scaled by the number of hours in a week (168).
+        and scaled by the number of hours in a week (168) and numbers of week ahead (52-week).
 
         The resulting bound is used to calculate penalties related to
         guide curves and final stock constraints.
@@ -186,7 +184,7 @@ class Proxy:
         Returns:
             float: Upper bound cost for the given week.
         """
-        return 168 * (
+        return (52-week)*168 * (
             max(
                 np.abs(self.weighted_net_load[week * 168:(week + 1) * 168, scenario]).max()
                 for scenario in self.scenarios

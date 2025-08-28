@@ -45,7 +45,6 @@ class Exporter:
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
-        # print(f"Control trajectories export succeeded : {output_path}")
 
     def export_bellman_values(self, filename: str = "bellman_values.csv") -> None:
         """
@@ -68,7 +67,6 @@ class Exporter:
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
-        # print(f"Bellman values export succeeded: {output_path}")
 
     def export_trajectories(self, filename: str = "trajectories.csv") -> None:
         """
@@ -90,8 +88,6 @@ class Exporter:
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
-        # print(f"Stock trajectories export succeeded : {output_path}")
-
     
 
 class ModifyAntaresStudy:
@@ -107,31 +103,22 @@ class ModifyAntaresStudy:
         self.name_area = bv.proxy.name_area
         self.area_target = area_target
 
-    def overwrite_inflows(self) -> None:
+    def overwrite_pmax(self) -> None:
         """
-        Replace the inflows file (mod.txt) with a file where all values are zero,
+        Replace the pmax file (maxpower_{area}.txt) with a file where all values are zero,
         backing up the original file first.
         """
-        inflow_path = os.path.join(self.dir_study, "input", "hydro", "series", self.name_area, "mod.txt")
-        inflow_backup_path = inflow_path.replace(".txt", "_old.txt")
+        pmax_path = os.path.join(self.dir_study, "input", "hydro", "common", "capacity",f"maxpower_{self.name_area}.txt")
+        pmax_backup_path = pmax_path.replace(".txt", "_old.txt")
 
-        if os.path.exists(inflow_path):
-            os.rename(inflow_path, inflow_backup_path)
+        if os.path.exists(pmax_path):
+            os.rename(pmax_path, pmax_backup_path)
 
-        inflows = np.loadtxt(inflow_backup_path)
-        inflows[:, :] = 0
+        pmax = np.loadtxt(pmax_backup_path)
+        pmax[:, 0] = 0
+        pmax[:, 2] = 0
 
-        np.savetxt(inflow_path, inflows, fmt="%.6f", delimiter="\t")
-
-    def overwrite_hydro_ini_file(self) -> None:
-        """
-        Create a flag file indicating that the area should be disabled in hydro.ini.
-        """
-        flag_dir = os.path.join(self.dir_study, "tmp", "hydro_flags")
-        os.makedirs(flag_dir, exist_ok=True)
-        flag_path = os.path.join(flag_dir, f"{self.name_area}.flag")
-        with open(flag_path, "w") as f:
-            f.write("false\n")
+        np.savetxt(pmax_path, pmax, fmt="%.6f", delimiter="\t")
 
     def create_st_cluster(self) -> None:
         """
@@ -216,7 +203,7 @@ enabled = true
 
         lines = []
         for mc in range(nbyears):
-            trajectory = (mc % self.bv.proxy.weighted_net_load.shape[1]) + 1
+            trajectory = (mc % self.bv.proxy.reservoir.nb_scenarios) + 1
             lines.append(f"sts,{self.area_target},{mc},lt_stock_proxy_{self.area_target}={trajectory}")
 
         sb_dir = os.path.join(self.dir_study, "tmp", "scenariobuilder_lines")
@@ -258,8 +245,10 @@ enabled = true
                 else:
                     hlevel_start = self.trajectories.trajectories[s, w - 1]
                 hlevel_end = self.trajectories.trajectories[s, w]
+                
                 balance[hour_start, s] = hlevel_start - self.bv.proxy.reservoir.capacity / 2
                 balance[hour_start + 167, s] = self.bv.proxy.reservoir.capacity / 2 - hlevel_end
+
                 hourly_inflow = self.bv.proxy.reservoir.hourly_inflow[hour_start:hour_start + 168, s]
                 balance[hour_start:hour_start + 168, s] += hourly_inflow
 
@@ -313,16 +302,13 @@ enabled = true
                 os.rename(miscgen_path, miscgen_backup_path)
             else:
                 os.remove(miscgen_path)
-        else:
-            raise FileNotFoundError(f"miscgen file not found: {miscgen_path}")
+
 
         if os.path.exists(load_path):
             if not os.path.exists(load_backup_path):
                 os.rename(load_path, load_backup_path)
             else:
                 os.remove(load_path)
-        else:
-            raise FileNotFoundError(f"load file not found: {load_path}")
 
         try:
             miscgen_data = np.loadtxt(miscgen_backup_path)
@@ -334,14 +320,17 @@ enabled = true
         try:
             load_data = np.loadtxt(load_backup_path)
             if load_data.size == 0:
-                load_data = np.zeros((8760, 200))
-            if load_data.ndim == 1:
-                load_data = np.repeat(load_data[:, np.newaxis], 200, axis=1)
+                load_data = np.zeros((8760, len(self.scenarios)))
         except Exception:
-            load_data = np.zeros((8760, 200))
+            load_data = np.zeros((8760, len(self.scenarios)))
 
-        if miscgen_data.shape[0] != 8760 or load_data.shape[0] != 8760:
-            raise ValueError("Files must contain exactly 8760 lines (hourly data).")
+        
+        negatives = np.minimum(load_data, 0.0)
+        transfer = -negatives
+        load_data = load_data - negatives
+
+        transfer_hourly = transfer.sum(axis=1)
+        miscgen_data[:, 5] += transfer_hourly
 
         hourly_turb = self.bv.proxy.reservoir.max_hourly_turb
         hourly_pump = self.bv.proxy.reservoir.max_hourly_pump
@@ -353,20 +342,19 @@ enabled = true
 
         np.savetxt(miscgen_path, miscgen_data, fmt="%.20f", delimiter="\t")
         np.savetxt(load_path, load_data, fmt="%.20f", delimiter="\t")
+    
 
     def apply_all(self) -> None:
         """
         Execute all the steps to modify the Antares study in order.
         """
-        self.overwrite_inflows()
-        self.overwrite_hydro_ini_file()
+        self.overwrite_pmax()
         self.create_st_cluster()
         self.create_pmax_file()
         self.create_rule_curve_file()
         self.modify_scenario_builder()
         self.create_inflows_sts()
         self.adjust_to_spillage_constraint()
-        # print(f"✅ Antares study modified for area '{self.area_target if self.area_target else self.name_area}'\n")
 
 
 
@@ -380,38 +368,19 @@ class UndoAntaresModifications:
         self.area = area
         self.area_target = area_target
 
-    def restore_inflows(self) -> None:
+    def restore_pmax(self) -> None:
         """
-        Restore the inflows file (mod.txt) by replacing the current version
+        Restore the pmax file (maxpower_area.txt) by replacing the current version
         with the backup (_old.txt) if it exists.
         """
-        inflow_path = os.path.join(
-            self.dir_study, "input", "hydro", "series", self.area, "mod.txt"
+        pmax_path = os.path.join(
+            self.dir_study, "input", "hydro", "common", "capacity", f"maxpower_{self.area}.txt"
         )
-        inflow_backup_path = inflow_path.replace(".txt", "_old.txt")
-        if os.path.exists(inflow_backup_path):
-            if os.path.exists(inflow_path):
-                os.remove(inflow_path)
-            os.rename(inflow_backup_path, inflow_path)
-            # print("✔ inflows restored.")
-        # else:
-            # print("⚠ inflow backup not found. Nothing restored.")
-
-    def restore_hydro_ini(self) -> None:
-        """
-        Modify hydro.ini to reactivate the area in the [reservoir] section
-        by setting its value to "true".
-        """
-        path = os.path.join(self.dir_study, "input", "hydro", "hydro.ini")
-        config = ConfigParser()
-        config.read(path)
-        if "reservoir" in config and f"{self.area}" in config["reservoir"]:
-            config["reservoir"][f"{self.area}"] = "true"
-            with open(path, "w") as configfile:
-                config.write(configfile)
-            # print("✔ hydro.ini restored.")
-        # else:
-            # print(f"⚠ hydro.ini unchanged: missing [reservoir]/{self.area} section.")
+        pmax_backup_path = pmax_path.replace(".txt", "_old.txt")
+        if os.path.exists(pmax_backup_path):
+            if os.path.exists(pmax_path):
+                os.remove(pmax_path)
+            os.rename(pmax_backup_path, pmax_path)
 
     def remove_st_cluster_section(self) -> None:
         """
@@ -422,7 +391,6 @@ class UndoAntaresModifications:
             self.dir_study, "input", "st-storage", "clusters", self.area_target, "list.ini"
         )
         if not os.path.exists(list_ini_path):
-            # print("⚠ list.ini not found.")
             return
 
         with open(list_ini_path, "r") as f:
@@ -442,7 +410,6 @@ class UndoAntaresModifications:
         with open(list_ini_path, "w") as f:
             f.writelines(new_lines)
 
-        # print("✔ st-cluster section removed.")
 
     def remove_st_series_folder(self) -> None:
         """
@@ -454,9 +421,7 @@ class UndoAntaresModifications:
         )
         if os.path.exists(folder):
             shutil.rmtree(folder)
-            # print("✔ st-series folder removed.")
-        # else:
-            # print("⚠ st-series folder not found.")
+
 
     def clean_scenariobuilder(self) -> None:
         """
@@ -465,7 +430,6 @@ class UndoAntaresModifications:
         """
         path = os.path.join(self.dir_study, "settings", "scenariobuilder.dat")
         if not os.path.exists(path):
-            # print("⚠ scenariobuilder.dat not found.")
             return
 
         with open(path, "r") as f:
@@ -478,14 +442,11 @@ class UndoAntaresModifications:
         with open(path, "w") as f:
             f.writelines(filtered)
 
-        # print("✔ scenariobuilder cleaned.")
-
     def restore_miscgen_and_load(self) -> None:
         """
         Restore miscgen and load files by replacing them with their _old.txt
         backups, if they exist.
         """
-        # Restore miscgen
         miscgen_path = os.path.join(
             self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt"
         )
@@ -495,11 +456,7 @@ class UndoAntaresModifications:
             if os.path.exists(miscgen_path):
                 os.remove(miscgen_path)
             os.rename(miscgen_backup_path, miscgen_path)
-            # print("✔ miscgen restored.")
-        # else:
-            # print("⚠ miscgen backup not found. Nothing restored.")
 
-        # Restore load
         load_path = os.path.join(
             self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt"
         )
@@ -509,22 +466,14 @@ class UndoAntaresModifications:
             if os.path.exists(load_path):
                 os.remove(load_path)
             os.rename(load_backup_path, load_path)
-            # print("✔ load restored.")
-        # else:
-            # print("⚠ load backup not found. Nothing restored.")
+
 
     def undo_all(self) -> None:
         """
         Perform the full restoration of the Antares study for the original area.
         """
-        # print(f"\n🔁 Restoring Antares study for area: {self.area}")
-        self.restore_inflows()
-        self.restore_hydro_ini()
+        self.restore_pmax()
         self.remove_st_cluster_section()
         self.remove_st_series_folder()
         self.clean_scenariobuilder()
         self.restore_miscgen_and_load()
-        # print(f"✅ Restoration complete for area '{self.area}'\n")
-
-
-

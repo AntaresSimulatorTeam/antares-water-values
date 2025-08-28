@@ -72,7 +72,7 @@ class Launch:
         """
         self.dir_study = dir_study
         self.name_area = area
-        self.nb_scenarios = MC_years
+        self.MC_years = MC_years
         self.alpha = alpha
         self.fictive = fictive
         self.enable_logging = enable_logging
@@ -85,7 +85,6 @@ class Launch:
         Execute requested actions including generating trajectories, exporting data, plotting,
         modifying or undoing Antares study data.
         """
-        # If the only action is undo_modifications, skip creating export directories or unnecessary objects
         if actions is not None and len(actions) == 1 and actions[0] == "undo_modifications":
             UndoAntaresModifications(self.dir_study, self.name_area, self.area_target).undo_all()
             return
@@ -96,13 +95,13 @@ class Launch:
         export_dir = os.path.join(self.global_export_dir, self.name_area)
         os.makedirs(export_dir, exist_ok=True)
         steps = ["Init Proxy", "Bellman values", "Trajectories", "Setup export/modif"]
-        pbar = tqdm(total=len(steps)+52*self.nb_scenarios+51*self.nb_scenarios*51+52*self.nb_scenarios,
-                     desc=f"Zone {self.name_area}", unit="step")
+        pbar = tqdm(total=len(steps)+52*self.MC_years+51*self.MC_years*51+52*self.MC_years,
+                    unit="step")
 
         self.proxy = Proxy(
             dir_study=self.dir_study,
             name_area=self.name_area,
-            MC_years=self.nb_scenarios,
+            MC_years=self.MC_years,
             alpha=self.alpha,
             area_target=self.area_target,
             fictive=self.fictive,
@@ -203,21 +202,6 @@ def post_process_shared_files(dir_study: str, areas: list[str], area_target: str
     Post-process shared study files (hydro.ini and scenariobuilder.dat)
     after all parallel computations to ensure consistency.
     """
-    # Modify hydro.ini to disable reservoirs for flagged areas
-    hydro_ini_path = os.path.join(dir_study, "input", "hydro", "hydro.ini")
-    config = ConfigParser()
-    config.read(hydro_ini_path)
-
-    for area in areas:
-        flag_path = os.path.join(dir_study, "tmp", "hydro_flags", f"{area}.flag")
-        if os.path.exists(flag_path):
-            if "reservoir" not in config:
-                config["reservoir"] = {}
-            config["reservoir"][area] = "false"
-
-    with open(hydro_ini_path, "w") as configfile:
-        config.write(configfile)
-
     # Modify scenariobuilder.dat by appending lines from temporary files
     sb_lines = []
     if area_target is None:
@@ -316,7 +300,6 @@ def main() -> None:
                     print(f"❌ Error for area {area}: {e}")
                     traceback.print_exc()
 
-    # Post-process the shared files after parallel runs
     post_process_shared_files(args.dir_study, args.areas, args.area_target)
 
 

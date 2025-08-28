@@ -107,14 +107,14 @@ class Reservoir:
 
         self.daily_inflow = daily_inflow[: self.days_in_year]
 
-        # try:
+        if daily_inflow.ndim==1:
+            self.nb_scenarios = 1
+        else:
+            self.nb_scenarios = daily_inflow.shape[1]
+
         self.weekly_inflow = self.daily_inflow.reshape(
-            (self.weeks_in_year, self.days_in_week, 200)
+            (self.weeks_in_year, self.days_in_week, self.nb_scenarios)
         ).sum(axis=1)
-        # except Exception:
-        #     self.weekly_inflow = self.daily_inflow.reshape(
-        #         (self.weeks_in_year, self.days_in_week, self.daily_inflow.shape[1])
-        #     ).sum(axis=1)
 
         self.hourly_inflow = np.repeat(self.daily_inflow/24.0,24,axis=0)
 
@@ -200,10 +200,10 @@ def change_hydro_management_to_heuristic(dir_study: str) -> None:
 @dataclass
 class NetLoad:
 
-    def __init__(self, dir_study: str, name_area: str) -> None:
+    def __init__(self, reservoir : Reservoir,dir_study: str, name_area: str) -> None:
         self.area = name_area
         self.dir_study = dir_study
-        self.nb_scenarios = 200
+        self.nb_scenarios = reservoir.nb_scenarios
         
 
     def read_load(self) -> np.ndarray:
@@ -213,8 +213,7 @@ class NetLoad:
             if load.size==0:
                 load = np.zeros((8760, self.nb_scenarios))
 
-        if load.ndim == 1:
-            load = np.repeat(load[:, np.newaxis], self.nb_scenarios, axis=1)
+        assert load.shape[1]==self.nb_scenarios
 
         return load
 
@@ -225,14 +224,9 @@ class NetLoad:
         if not os.path.exists(ror_path) or os.path.getsize(ror_path) == 0:
             return np.zeros((8760, self.nb_scenarios))
 
-        try:
-            data = np.loadtxt(ror_path)
-            if len(data.shape) == 1:
-                data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
-            return data
-        except Exception:
-            return np.zeros((8760, self.nb_scenarios))
-
+        data = np.loadtxt(ror_path)
+        assert data.shape[1]==self.nb_scenarios
+        return data
 
     def compute_renewables(self) -> np.ndarray:
 
@@ -261,8 +255,7 @@ class NetLoad:
 
                 try:
                     data = np.loadtxt(series_file)
-                    if len(data.shape) == 1:
-                        data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
+                    assert data.shape[1]==self.nb_scenarios
                     total_renewable += data * capacity
                     found_cluster = True
                 except Exception:
@@ -278,8 +271,7 @@ class NetLoad:
                 if os.path.exists(fallback_file) and os.path.getsize(fallback_file) > 0:
                     try:
                         data = np.loadtxt(fallback_file)
-                        if len(data.shape) == 1:
-                            data = np.repeat(data[:, np.newaxis], self.nb_scenarios, axis=1)
+                        assert data.shape[1]==self.nb_scenarios
                         total_renewable += data 
                     except Exception:
                         continue
@@ -298,15 +290,9 @@ class NetLoad:
 
         data = np.loadtxt(file_path)
 
-
-        if data.size == 0:
-            return np.zeros((8760, 1))  # fichier vide ou sans données exploitables
-
         if data.ndim == 1:
             data = data[:, np.newaxis]  # conversion (8760,) → (8760, 1)
 
-        if data.shape[0] != 8760:
-            return np.zeros((8760, 1))  # on ne soulève pas l'erreur ici, on renvoie zéro
 
         misc_gen = np.sum(data, axis=1)  # shape: (8760,)
         return misc_gen[:, np.newaxis]   # shape: (8760, 1)

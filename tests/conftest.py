@@ -47,6 +47,20 @@ def multi_stock_management_one_node(
 
 
 @pytest.fixture
+def multi_stock_management_one_node_force_final_level(
+    reservoir_one_node: Reservoir,
+) -> MultiStockManagement:
+    reservoir_management = ReservoirManagement(
+        reservoir=reservoir_one_node,
+        penalty_bottom_rule_curve=3000,
+        penalty_upper_rule_curve=3000,
+        penalty_final_level=3000,
+        force_final_level=True,
+    )
+    return MultiStockManagement([reservoir_management])
+
+
+@pytest.fixture
 def discretization_one_node(reservoir_one_node: Reservoir) -> Dict[AreaIndex, Array1D]:
     X = np.linspace(0, reservoir_one_node.capacity, num=20)
     return {AreaIndex("area"): X}

@@ -38,9 +38,9 @@ class BellmanValuesProxy:
         # Uncomment to compute margins on rule curves with parameter h (default only avoids extreme controls)
         # self.compute_rule_curve_margins()
 
+        self.compute_bellman_values()
         # Useless to compute optimal trajectories, uncomment if plot needed
-        # self.compute_bellman_values()
-        self.compute_usage_values()
+        # self.compute_usage_values()
     
     def penalty_final_stock(self) -> Callable:
         """

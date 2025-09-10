@@ -73,7 +73,7 @@ class Plotter:
         """
         fig, ax = plt.subplots(figsize=(14, 6))
 
-        norm = colors.Normalize(np.min(self.bv.usage_values[:-1]), np.max(self.bv.usage_values[:-1]))
+        norm = colors.Normalize(-3e10,0)
 
         im = ax.imshow(
             self.bv.usage_values[:-1].T,
@@ -85,7 +85,7 @@ class Plotter:
             interpolation='bilinear'  # smoothing
         )
 
-        cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(np.min(self.bv.usage_values[:-1]), np.max(self.bv.usage_values[:-1]), 10))
+        cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(-3e10, 0,10))
         cbar.set_label("Usage Value")
 
         ax.set_xlabel("Week")

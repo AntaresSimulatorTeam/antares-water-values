@@ -2,7 +2,6 @@ from tracemalloc import start
 from read_antares_data import Reservoir,NetLoad
 import numpy as np
 from scipy.interpolate import interp1d
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 
 
@@ -169,24 +168,27 @@ class Proxy:
 
     def upper_bound_cost(self, week: int) -> float:
         """
-        Compute an upper bound on the stage cost for a given week.
+        Compute a conservative upper bound on the stage cost for a given week.
 
-        This upper bound is based on the maximum absolute net load value
-        across all scenarios for the specified week, raised to the power alpha
-        and scaled by the number of hours in a week (168) and numbers of week ahead (52-week).
+        For each scenario at the given week, this inspects the interpolated
+        stage-cost function c_w^s(u) at the two extreme control values available
+        in its grid (controls[0] and controls[-1]), and returns the maximum over
+        both extremes and all scenarios:
 
-        The resulting bound is used to calculate penalties related to
-        guide curves and final stock constraints.
+            ub_cost = max_s  max( c_w^s(u_min), c_w^s(u_max) )
 
         Args:
-            week (int): Index of the week.
+            week (int): Week index.
 
         Returns:
-            float: Upper bound cost for the given week.
+            float: Upper bound of the stage cost for the given week across scenarios.
         """
-        return (52-week)*168 * (
-            max(
-                np.abs(self.weighted_net_load[week * 168:(week + 1) * 168, scenario]).max()
-                for scenario in self.scenarios
-            ) ** self.alpha
-        )
+        ub_cost=0
+        for s in self.scenarios:
+            stage_cost_function = self.stage_cost_functions[week,s][0]
+            controls = stage_cost_function.x
+            max_cost_turb = stage_cost_function(controls[-1])
+            max_cost_pump = stage_cost_function(controls[0])
+            ub_cost_new = max(max_cost_turb,max_cost_pump)
+            ub_cost=max(ub_cost,ub_cost_new)
+        return ub_cost

@@ -212,6 +212,8 @@ class NetLoad:
             load = np.loadtxt(path_load)
             if load.size==0:
                 load = np.zeros((8760, self.nb_scenarios))
+        else:
+            load = np.zeros((8760, self.nb_scenarios))
 
         assert load.shape[1]==self.nb_scenarios
 

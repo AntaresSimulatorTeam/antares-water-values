@@ -35,16 +35,17 @@ class BellmanValuesProxy:
         logger_setup = LoggerSetup(self.export_dir)
         self.logger = logger_setup.get_logger() if enable_logging else logger_setup.get_null_logger()
 
-        self.compute_rule_curve_margins()
+        # self.compute_rule_curve_margins()
         self.compute_bellman_values()
         self.compute_usage_values()
     
     def penalty_final_stock(self) -> Callable:
         """
         Returns a penalty function based on deviation from initial reservoir level at final week.
-        The penalty scales with the upper bound cost and relative deviation percentage (1%).
+        The penalty scales with the upper bound cost and relative negative deviation percentage (1%).
         """
-        penalty = lambda x: abs(x - self.proxy.reservoir.initial_level) / self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks - 1)
+        penalty = lambda x: abs(min(x - self.proxy.reservoir.initial_level,0)) / self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
+        # penalty = lambda x:0
         return penalty
     
     def penalty_rule_curves(self, week_idx: int) -> Callable:
@@ -113,8 +114,9 @@ class BellmanValuesProxy:
         and updates best control if a lower total value is found.
         """
         for control in controls:
-            if control > current_stock + weekly_inflow:
-                continue
+            # Hard constraints can be enforced here if needed
+            # if control > current_stock + weekly_inflow or current_stock - control + weekly_inflow > self.proxy.reservoir.capacity:
+            #     continue
             next_stock = current_stock - control + weekly_inflow
             
             cost = stage_cost_function(control)
@@ -158,8 +160,9 @@ class BellmanValuesProxy:
             control = current_stock - new_level + weekly_inflow
 
             if control < -max_week_pump * self.proxy.reservoir.efficiency or \
-               control > max_week_turb * self.proxy.turb_efficiency or control > max_control:
+               control > max_week_turb * self.proxy.turb_efficiency or control > max_control :
                 continue
+
             next_stock = current_stock - control + weekly_inflow
             cost = stage_cost_function(control)
             future_value = future_bellman_function(next_stock)
@@ -215,7 +218,7 @@ class BellmanValuesProxy:
                     best_value_init = np.inf
                     best_stock = None
                     best_control = None
-                    self.logger.debug(f"\n[Week {w + 1} | Scenario {s + 1} | Stock {current_stock:.2f} MWh]")
+                    self.logger.debug(f"\n[Week {w + 1} | Scenario {s + 1} | Stock {current_stock:.2f} MWh] | Weekly inflow: {weekly_inflow:.2f} MWh")
 
                     best_value, best_stock, best_control = self.iterate_over_controls(
                         best_value=best_value_init,
@@ -228,7 +231,7 @@ class BellmanValuesProxy:
                         future_bellman_function=future_bellman_function,
                         penalty_function=penalty_function)
 
-                    final_best_value, final_best_stock, final_best_control = self.iterate_over_stock_levels(
+                    final_best_value, _,_ = self.iterate_over_stock_levels(
                         best_value=best_value,
                         best_stock=best_stock,
                         best_control=best_control,
@@ -361,8 +364,10 @@ class OptimalTrajectories:
                 weekly_inflow = self.bellman_values.proxy.reservoir.weekly_inflow[w, s]
                 hourly_inflow = self.bellman_values.proxy.reservoir.hourly_inflow[w * 168:(w + 1) * 168, s]
                 self.logger.debug(f"Inflow: {weekly_inflow:.2f} MWh")
+                self.logger.debug(f"Net load : {self.bellman_values.proxy.weighted_net_load[w*168:(w+1)*168,s]}")
                 cost_function = self.bellman_values.cost_functions[w, s]
                 penalty_function = self.bellman_values.penalty_rule_curves(w)
+                # penalty_function = lambda x:0
                 controls = cost_function.x
 
                 future_bellman_function = self.bellman_values.bellman_function(w)
@@ -375,11 +380,24 @@ class OptimalTrajectories:
                 best_control = None
 
                 max_control = self.adjust_hourly_inflow_overflow(scenario=s, week=w, stock_init=current_stock, inflow=hourly_inflow)                
-                if max_control != controls[-1]  :
-                    controls = controls[controls <= max_control]
+                if max_control < controls[-1]  :
+                    controls = controls[controls < max_control]
                     controls = np.concatenate([controls, [max_control]])
 
+                max_control_pump,_,max_control_turb = self.avoid_extreme_controls(week=w, scenario=s)
+                if max_control > max_control_turb:
+                    controls = controls[controls < max_control_turb]
+                    controls = np.concatenate([controls, [max_control_turb]])
+                
+                if max_control_pump > controls[0]:
+                    controls = controls[controls > max_control_pump]
+                    controls = np.concatenate([[max_control_pump],controls])  
+
+
                 weekly_inflow -= np.sum(self.inflow_adjust_overflow[w, s])
+
+                # if current_stock-controls[-1]+weekly_inflow==self.bellman_values.proxy.reservoir.capacity:
+                #     controls=np.array((controls[-1]))
 
 
                 best_value, best_stock, best_control = self.bellman_values.iterate_over_controls(
@@ -393,7 +411,7 @@ class OptimalTrajectories:
                     future_bellman_function=future_bellman_function,
                     penalty_function=penalty_function)
 
-                final_best_value, final_best_stock, final_best_control = self.bellman_values.iterate_over_stock_levels(
+                __, final_best_stock, final_best_control = self.bellman_values.iterate_over_stock_levels(
                     best_value=best_value,
                     best_stock=best_stock,
                     best_control=best_control,
@@ -404,7 +422,7 @@ class OptimalTrajectories:
                     stage_cost_function=cost_function,
                     future_bellman_function=future_bellman_function,
                     penalty_function=penalty_function,
-                    max_control=max_control)
+                    max_control=controls[-1])
 
 
                 self.logger.debug(f"=> Selected stock for week {w+1}: {final_best_stock:.2f} MWh")
@@ -415,7 +433,59 @@ class OptimalTrajectories:
                 self.optimal_pump[s, w] = self.bellman_values.pump_functions[w, s](final_best_control)
                 current_stock = final_best_stock
                 
+        for s in self.scenarios:
+            self.logger.debug(f"\nOptimal trajectory for scenario {s+1}: {self.trajectories[s]}")
+                
         self.write_warnings()
+
+    def avoid_extreme_controls(self, week: int, scenario: int) -> tuple:
+        """
+        Computes lower/upper bounds on the weekly control to avoid extreme values.
+
+        Returns:
+            (min_control, max_control_strict, max_control_relaxed)
+            - min_control:   lower bound (negative, pumping)
+            - max_control_strict: upper bound (strict) for turbining
+            - max_control_relaxed: upper bound (relaxed w/ inflow)
+        Notes:
+            - Bounds are expressed in the 'control' space used elsewhere:
+            positive = turbinage (MWh), negative = pompage (MWh).
+            - Efficiencies are applied to convert power*hours caps to 'control'.
+        """
+
+        PMAX_turb = self.bellman_values.proxy.reservoir.max_weekly_turb[week]
+        PMAX_pump = self.bellman_values.proxy.reservoir.max_weekly_pump[week]
+
+        strict_turb_cap_MWh = (168-self.bellman_values.h)/168 * PMAX_turb
+        strict_pump_cap_MWh = (168-self.bellman_values.h)/168 * PMAX_pump
+
+        inflow = self.bellman_values.proxy.reservoir.weekly_inflow[week, scenario]
+
+        relaxed_turb_cap_MWh = min(
+            PMAX_turb,
+            max(strict_turb_cap_MWh, inflow)
+        )
+
+        max_control_strict = strict_turb_cap_MWh * self.bellman_values.proxy.turb_efficiency
+        max_control_relaxed = relaxed_turb_cap_MWh * self.bellman_values.proxy.turb_efficiency
+
+        min_control = - strict_pump_cap_MWh * self.bellman_values.proxy.reservoir.efficiency
+        # max_control_strict = strict_turb_cap_MWh
+        # max_control_relaxed = relaxed_turb_cap_MWh
+        # min_control = - strict_pump_cap_MWh
+
+        self.logger.debug(
+            f"[avoid_extreme_controls] week={week+1}, scen={scenario+1}, h={self.bellman_values.h} "
+            f"PMAX_turb={PMAX_turb:.2f} MW, PMAX_pump={PMAX_pump:.2f} MW, "
+            f"strict_turb_cap={strict_turb_cap_MWh:.2f} MWh, strict_pump_cap={strict_pump_cap_MWh:.2f} MWh, "
+            f"inflow={inflow:.2f} MWh -> "
+            f"min_control={min_control:.2f}, "
+            f"max_control_strict={max_control_strict:.2f}, "
+            f"max_control_relaxed={max_control_relaxed:.2f}"
+        )
+
+        return min_control, max_control_strict, max_control_relaxed
+
 
     def adjust_hourly_inflow_overflow(self,
                                       scenario: int,

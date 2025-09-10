@@ -179,15 +179,8 @@ enabled = true
             self.dir_study, "input", "st-storage", "series", self.area_target, f"lt_stock_proxy_{self.area_target}"
         )
         os.makedirs(folder_path, exist_ok=True)
-        if hasattr(self.trajectories, "final_lower_rule_curve") and hasattr(self.trajectories, "final_upper_rule_curve"):
-            lower_arr = np.clip(self.trajectories.final_lower_rule_curve / self.bv.proxy.reservoir.capacity, 0, 1)
-            lower_arr = np.floor(lower_arr * 1e6) / 1e6
-
-            upper_arr = np.clip(self.trajectories.final_upper_rule_curve / self.bv.proxy.reservoir.capacity, 0, 1)
-            upper_arr = np.ceil(upper_arr * 1e6) / 1e6
-        else:
-            lower_arr = np.zeros(8760)
-            upper_arr = np.ones(8760)
+        lower_arr = np.zeros(8760)
+        upper_arr = np.ones(8760)
 
         np.savetxt(os.path.join(folder_path, "lower-rule-curve.txt"), lower_arr, fmt="%.6f")
         np.savetxt(os.path.join(folder_path, "upper-rule-curve.txt"), upper_arr, fmt="%.6f")
@@ -246,14 +239,18 @@ enabled = true
                     hlevel_start = self.trajectories.trajectories[s, w - 1]
                 hlevel_end = self.trajectories.trajectories[s, w]
                 
+                # This computes optimal control over the week : balance[hour_start, s] + balance[hour_start + 167, s] = hlevel_start - hlevel_end
                 balance[hour_start, s] = hlevel_start - self.bv.proxy.reservoir.capacity / 2
                 balance[hour_start + 167, s] = self.bv.proxy.reservoir.capacity / 2 - hlevel_end
-
+                
+                # Add hourly inflow to amount to be balanced
                 hourly_inflow = self.bv.proxy.reservoir.hourly_inflow[hour_start:hour_start + 168, s]
                 balance[hour_start:hour_start + 168, s] += hourly_inflow
 
-                # balance[hour_start:hour_start + 168, s] -= self.trajectories.inflow_adjust_rule_curves[w, s, :]
+                # Adjust inflows to respect reservoir cosntraints (no overflow and no negative stock)
                 balance[hour_start:hour_start + 168, s] -= self.trajectories.inflow_adjust_overflow[w, s, :]
+
+                # Adjust inflows to respect pmax constraints (round errors)
                 balance[hour_start:hour_start + 168, s] = self.adjust_inflow_pmax_withdrawal_constraint(
                     balance[hour_start:hour_start + 168, s], w
                 )
@@ -261,6 +258,7 @@ enabled = true
                     balance[hour_start:hour_start + 168, s], w
                 )
 
+                #Final check
                 if (
                     np.sum(balance[hour_start:hour_start + 168, s])
                     > self.bv.proxy.reservoir.max_weekly_turb[w] * self.bv.proxy.turb_efficiency
@@ -355,8 +353,6 @@ enabled = true
         self.modify_scenario_builder()
         self.create_inflows_sts()
         self.adjust_to_spillage_constraint()
-
-
 
 
 class UndoAntaresModifications:

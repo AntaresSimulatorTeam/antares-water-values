@@ -4,7 +4,6 @@ from proxy_exporter import Exporter, ModifyAntaresStudy, UndoAntaresModification
 from proxy_plotter import Plotter
 import os, argparse, traceback
 from datetime import datetime
-from configparser import ConfigParser
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 
@@ -39,13 +38,11 @@ Arguments:
       - plot_trajectories
       - plot_usage_values
       - plot_usage_values_heatmap
-      - plot_all_trajectories_pyplot
-      - plot_adjusted_rule_curves
       - modify_antares_data
       - undo_modifications
   --area_target     (str)    : Target area for modifications; if None, uses current area (default: None, only usefull por STEP use case)
   --fictive         (bool)   : Use a fictive node for the reservoir (default: False, only usefull por STEP use case)
-  --h               (int)    : Margin factor for rule curves. Number of hour of generating at max power. (default: 0)
+  --h               (int)    : Margin factor for rule curves and maximum control. Number of hour of generating at max power. (default: 0)
 
 Note:
 - When using 'undo_modifications' as the only action, no export directory is created.
@@ -145,10 +142,6 @@ class Launch:
                 self.plotter.plot_usage_values()
             elif action == "plot_usage_values_heatmap":
                 self.plotter.plot_usage_values_heatmap()
-            elif action == "plot_all_trajectories_pyplot":
-                self.plotter.plot_all_trajectories_pyplot()
-            elif action == "plot_adjusted_rule_curves":
-                self.plotter.plot_adjusted_rule_curves()
             elif action == "modify_antares_data":
                 self.modifier.apply_all()
             elif action == "undo_modifications":

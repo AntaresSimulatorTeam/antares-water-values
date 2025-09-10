@@ -35,8 +35,11 @@ class BellmanValuesProxy:
         logger_setup = LoggerSetup(self.export_dir)
         self.logger = logger_setup.get_logger() if enable_logging else logger_setup.get_null_logger()
 
+        # Uncomment to compute margins on rule curves with parameter h (default only avoids extreme controls)
         # self.compute_rule_curve_margins()
-        self.compute_bellman_values()
+
+        # Useless to compute optimal trajectories, uncomment if plot needed
+        # self.compute_bellman_values()
         self.compute_usage_values()
     
     def penalty_final_stock(self) -> Callable:
@@ -45,7 +48,6 @@ class BellmanValuesProxy:
         The penalty scales with the upper bound cost and relative negative deviation percentage (1%).
         """
         penalty = lambda x: abs(min(x - self.proxy.reservoir.initial_level,0)) / self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
-        # penalty = lambda x:0
         return penalty
     
     def penalty_rule_curves(self, week_idx: int) -> Callable:
@@ -114,7 +116,7 @@ class BellmanValuesProxy:
         and updates best control if a lower total value is found.
         """
         for control in controls:
-            # Hard constraints can be enforced here if needed
+            # Hard constraints can be enforced here if needed (normally penalty functions + inflows modifications handle this)
             # if control > current_stock + weekly_inflow or current_stock - control + weekly_inflow > self.proxy.reservoir.capacity:
             #     continue
             next_stock = current_stock - control + weekly_inflow
@@ -185,7 +187,7 @@ class BellmanValuesProxy:
 
     def compute_bellman_values(self) -> None:
         """
-        Computes Bellman values by backward induction over weeks and scenarios.
+        Computes Bellman values at end of each week by backward induction over weeks and scenarios.
         Applies penalties and selects optimal controls to minimize cost-to-go.
         """
         self.init_log_bellman()
@@ -203,8 +205,8 @@ class BellmanValuesProxy:
             penalty_function = self.penalty_rule_curves(w + 1)
             future_bellman_function = self.bellman_function(w + 1)
 
-            max_week_turb = self.proxy.reservoir.max_weekly_turb[w]
-            max_week_pump = self.proxy.reservoir.max_weekly_pump[w]
+            max_week_turb = self.proxy.reservoir.max_weekly_turb[w+1]
+            max_week_pump = self.proxy.reservoir.max_weekly_pump[w+1]
 
             for c in range(0, 101, 2):
                 current_stock = (c / 100) * self.proxy.reservoir.capacity
@@ -262,6 +264,7 @@ class BellmanValuesProxy:
     def compute_rule_curve_margins(self) -> None:
         """
         Modifies daily and weekly rule curves by applying margins based on max hourly turbining and margin parameter h.
+        Allows to build more cautious trajectories.
         """
         hourly_turb_day = self.proxy.reservoir.max_hourly_turb.reshape(-1, 24)[:, 0]
         hourly_turb_day = np.concatenate([hourly_turb_day, [hourly_turb_day[-1]]])
@@ -293,9 +296,7 @@ class OptimalTrajectories:
         
         self.mean_bv=bellman_values.mean_bv
         self.compute_trajectories()
-        
-        # self.new_lower_rule_curve()
-        # self.new_upper_rule_curve()
+
 
     def init_log_trajectories(self) -> None:
         """
@@ -343,8 +344,8 @@ class OptimalTrajectories:
     def compute_trajectories(self) -> None:
         """
         Compute optimal reservoir trajectories, controls, turbining and pumping schedules
-        for all scenarios and weeks using Bellman values and penalties.
-        Adjusts hourly inflows to avoid overflow or negative stock.
+        for all scenarios and weeks using Bellman values, penalties and inflows.
+        Adjusts hourly inflows to avoid overflow or negative stock with external method.
         """
         self.init_log_trajectories()
         self.pbar.set_postfix_str("Optimal trajectories computing") 
@@ -361,13 +362,16 @@ class OptimalTrajectories:
             for w in range(self.nb_weeks):
                 self.pbar.update(1)
                 self.logger.debug(f"\n[Week {w+1} | Scenario {s+1} | Previous stock: {current_stock:.2f} MWh]")
+
                 weekly_inflow = self.bellman_values.proxy.reservoir.weekly_inflow[w, s]
                 hourly_inflow = self.bellman_values.proxy.reservoir.hourly_inflow[w * 168:(w + 1) * 168, s]
+
                 self.logger.debug(f"Inflow: {weekly_inflow:.2f} MWh")
                 self.logger.debug(f"Net load : {self.bellman_values.proxy.weighted_net_load[w*168:(w+1)*168,s]}")
+
                 cost_function = self.bellman_values.cost_functions[w, s]
                 penalty_function = self.bellman_values.penalty_rule_curves(w)
-                # penalty_function = lambda x:0
+
                 controls = cost_function.x
 
                 future_bellman_function = self.bellman_values.bellman_function(w)
@@ -379,7 +383,10 @@ class OptimalTrajectories:
                 best_stock = None
                 best_control = None
 
-                max_control = self.adjust_hourly_inflow_overflow(scenario=s, week=w, stock_init=current_stock, inflow=hourly_inflow)                
+                max_control = self.adjust_hourly_inflow_overflow(scenario=s, 
+                                                                 week=w, 
+                                                                 stock_init=current_stock, 
+                                                                 inflow=hourly_inflow)                
                 if max_control < controls[-1]  :
                     controls = controls[controls < max_control]
                     controls = np.concatenate([controls, [max_control]])
@@ -396,9 +403,9 @@ class OptimalTrajectories:
 
                 weekly_inflow -= np.sum(self.inflow_adjust_overflow[w, s])
 
+                # Hard constraints can be enforced here if needed (normally penalty functions + inflows modifications handle this)
                 # if current_stock-controls[-1]+weekly_inflow==self.bellman_values.proxy.reservoir.capacity:
                 #     controls=np.array((controls[-1]))
-
 
                 best_value, best_stock, best_control = self.bellman_values.iterate_over_controls(
                     best_value=best_value,
@@ -470,9 +477,6 @@ class OptimalTrajectories:
         max_control_relaxed = relaxed_turb_cap_MWh * self.bellman_values.proxy.turb_efficiency
 
         min_control = - strict_pump_cap_MWh * self.bellman_values.proxy.reservoir.efficiency
-        # max_control_strict = strict_turb_cap_MWh
-        # max_control_relaxed = relaxed_turb_cap_MWh
-        # min_control = - strict_pump_cap_MWh
 
         self.logger.debug(
             f"[avoid_extreme_controls] week={week+1}, scen={scenario+1}, h={self.bellman_values.h} "
@@ -494,6 +498,7 @@ class OptimalTrajectories:
                                       inflow: np.ndarray) -> float:
         """
         Adjust hourly inflow to mitigate overflow or negative stock by detecting violations and recording adjustments.
+        Returns the maximum feasible control (turbining) for the week after adjustments and taking in account potential overflow or negative stock during the week.
         """
         turb = self.bellman_values.proxy.reservoir.max_hourly_turb[week * 168: (week + 1) * 168]
         net_hourly_turb = inflow - turb * self.bellman_values.proxy.turb_efficiency
@@ -535,10 +540,12 @@ class OptimalTrajectories:
         """
         stock = stock_init + np.cumsum(net_hourly[:hour+1])
         if stock[hour] > self.bellman_values.proxy.reservoir.capacity:
+            
             self.logger.debug(
                 f"⚠️ Overflow detected for scenario {scenario+1}, week {week+1}, hour {hour+1}: "
                 f"{stock[hour]:.2f} MWh > capacity {self.bellman_values.proxy.reservoir.capacity:.2f} MWh"
             )
+            
             return stock[hour] - self.bellman_values.proxy.reservoir.capacity
         return None
     
@@ -559,124 +566,3 @@ class OptimalTrajectories:
             )
             return stock[hour]
         return None
-    
-    def daily_to_hourly_curve(self, daily_curve: np.ndarray) -> np.ndarray:
-        """
-        Interpolate daily curve to hourly resolution and extend with linear interpolation to initial reservoir level.
-        """
-        n_days = len(daily_curve)
-        n_hours = (n_days - 1) * 24 + 1
-        hourly_curve = np.interp(
-            np.arange(n_hours),
-            np.arange(0, n_days) * 24,
-            daily_curve
-        )
-        last_val = daily_curve[-1]
-        final_interp = np.linspace(last_val, self.bellman_values.proxy.reservoir.initial_level, 25)[1:-1]
-        hourly_curve = np.concatenate([hourly_curve, final_interp])
-        return hourly_curve
-
-    def compute_upper_enveloppe(self) -> np.ndarray:
-        """
-        Compute upper envelope curve as the minimum across scenarios of hourly upper feasible stock levels.
-        """
-        upper_curves = np.zeros((len(self.scenarios), self.nb_weeks, 168))
-        for s in self.scenarios:
-            for w in range(self.nb_weeks):
-                stock_init = self.trajectories[s, w-1] if w > 0 else self.bellman_values.proxy.reservoir.initial_level
-                stock_final = self.trajectories[s, w]
-
-                max_hour_pump = self.bellman_values.proxy.reservoir.max_hourly_pump[w*168:(w+1)*168]
-                max_hour_turb = self.bellman_values.proxy.reservoir.max_hourly_turb[w*168:(w+1)*168]
-
-                hourly_inflow = self.bellman_values.proxy.reservoir.hourly_inflow[w*168:(w+1)*168, s]
-
-                cumsum_pump = np.concatenate([[0],
-                                             np.cumsum(
-                                                 max_hour_pump * self.bellman_values.proxy.reservoir.efficiency + hourly_inflow - self.inflow_adjust_overflow[w, s])
-                                            ])[:-1] + stock_init
-                cumsum_turb = stock_final - np.cumsum(
-                    -self.bellman_values.proxy.turb_efficiency * max_hour_turb[::-1] + (hourly_inflow - self.inflow_adjust_overflow[w, s])[::-1])[::-1]
-
-                hourly_curve = np.minimum(cumsum_pump, cumsum_turb)
-                upper_curves[s, w] = hourly_curve
-
-        weekly_envelope = np.min(upper_curves, axis=0)
-        hourly_upper_envelope = weekly_envelope.flatten()
-        hourly_upper_envelope = np.concatenate([hourly_upper_envelope, hourly_upper_envelope[-24:]])
-        return hourly_upper_envelope
-
-    def compute_lower_enveloppe(self) -> np.ndarray:
-        """
-        Compute lower envelope curve as the maximum across scenarios of hourly lower feasible stock levels.
-        """
-        lower_curves = np.zeros((len(self.scenarios), self.nb_weeks, 168))
-        for s in self.scenarios:
-            for w in range(self.nb_weeks):
-                stock_init = self.trajectories[s, w-1] if w > 0 else self.bellman_values.proxy.reservoir.initial_level
-                stock_final = self.trajectories[s, w]
-
-                max_hour_pump = self.bellman_values.proxy.reservoir.max_hourly_pump[w*168:(w+1)*168]
-                max_hour_turb = self.bellman_values.proxy.reservoir.max_hourly_turb[w*168:(w+1)*168]
-
-                hourly_inflow = self.bellman_values.proxy.reservoir.hourly_inflow[w*168:(w+1)*168, s]
-                
-                cumsum_turb = np.concatenate(
-                    [[0],
-                     np.cumsum(-self.bellman_values.proxy.turb_efficiency * max_hour_turb + hourly_inflow - self.inflow_adjust_overflow[w, s])])[:-1] + stock_init
-                cumsum_pump = stock_final - np.cumsum(
-                    self.bellman_values.proxy.reservoir.efficiency * max_hour_pump[::-1] + (hourly_inflow + self.inflow_adjust_overflow[w, s])[::-1])[::-1]
-
-                hourly_curve = np.maximum(cumsum_pump, cumsum_turb)
-                lower_curves[s, w] = hourly_curve
-
-        weekly_envelope = np.max(lower_curves, axis=0)
-        hourly_lower_envelope = weekly_envelope.flatten()
-        hourly_lower_envelope = np.concatenate([hourly_lower_envelope, hourly_lower_envelope[-24:]])
-        return hourly_lower_envelope
-
-    def new_lower_rule_curve(self) -> None:
-        """
-        Compute adjusted lower hourly rule curve as minimum between interpolated daily lower rule curve and upper envelope.
-        Log hours where adjusted curve deviates significantly from interpolated curve.
-        """
-        self.init_log_lower_rule_curves()
-        hourly_upper_envelope = self.compute_upper_enveloppe()
-        self.hourly_lower_rule_curve = self.daily_to_hourly_curve(self.bellman_values.proxy.reservoir.daily_lower_rule_curve)
-        final_lower_rule_curve = np.minimum(hourly_upper_envelope, self.hourly_lower_rule_curve)
-        self.final_lower_rule_curve = np.concatenate([final_lower_rule_curve[1:], [self.bellman_values.proxy.reservoir.initial_level]])
-
-        difference = np.abs(self.final_lower_rule_curve - self.hourly_lower_rule_curve)
-        threshold = 1e-3
-        hours_with_diff = np.where(difference > threshold)[0]
-
-        if hours_with_diff.size > 0:
-            self.logger.debug(
-                f"{len(hours_with_diff)} hour(s) with difference > {threshold} between adjusted and interpolated lower rule curve."
-            )
-            for hour in hours_with_diff:
-                diff_value = difference[hour]
-                self.logger.debug(f"Hour {hour}: difference = {diff_value:.6f}")
-
-    def new_upper_rule_curve(self) -> None:
-        """
-        Compute adjusted upper hourly rule curve as maximum between interpolated daily upper rule curve and lower envelope.
-        Log hours where adjusted curve deviates significantly from interpolated curve.
-        """
-        self.init_log_upper_rule_curves()
-        hourly_lower_envelope = self.compute_lower_enveloppe()
-        self.hourly_upper_rule_curve = self.daily_to_hourly_curve(self.bellman_values.proxy.reservoir.daily_upper_rule_curve)
-        final_upper_rule_curve = np.maximum(hourly_lower_envelope, self.hourly_upper_rule_curve)
-        self.final_upper_rule_curve = np.concatenate([final_upper_rule_curve[1:], [self.bellman_values.proxy.reservoir.initial_level]])
-
-        difference = np.abs(self.final_upper_rule_curve - self.hourly_upper_rule_curve)
-        threshold = 1e-3
-        hours_with_diff = np.where(difference > threshold)[0]
-
-        if hours_with_diff.size > 0:
-            self.logger.debug(
-                f"{len(hours_with_diff)} hour(s) with difference > {threshold} between adjusted and interpolated upper rule curve."
-            )
-            for hour in hours_with_diff:
-                diff_value = difference[hour]
-                self.logger.debug(f"Hour {hour}: difference = {diff_value:.6f}")

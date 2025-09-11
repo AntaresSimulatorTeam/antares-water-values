@@ -94,6 +94,7 @@ class Reservoir:
         upper_rule_curve = rule_curves[0::7, 1]
         self.bottom_rule_curve = bottom_rule_curve
         self.upper_rule_curve = upper_rule_curve
+        # rule_curve[week] : at the beginning of the week
 
     def get_hydro_ini_file(self, dir_study: str) -> ConfigParser:
         hydro_ini_file = ConfigParser()

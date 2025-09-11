@@ -59,6 +59,7 @@ class ReservoirManagement:
 
         """
         if week == len_week and self.final_level:
+            # penalty at the beginning of week len_week = penalty at the end og week len_week-1 which is the last week
             pen = interp1d(
                 [
                     0,
@@ -73,6 +74,7 @@ class ReservoirManagement:
                 ],
             )
         else:
+            # penalty at the beginning of the week
             pen = interp1d(
                 [
                     0,

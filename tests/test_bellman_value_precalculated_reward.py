@@ -15,7 +15,7 @@ from simple_bellman_value_calculation import (
 def test_bellman_value_precalculated_reward() -> None:
 
     param = TimeScenarioParameter(len_week=5, len_scenario=1)
-    reservoir = Reservoir("test_data/one_node", "area",False,None)
+    reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
         penalty_bottom_rule_curve=3000,

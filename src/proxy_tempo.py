@@ -37,7 +37,7 @@ python tempo.py --dir_study "/path/to/study" --area "MyArea" --actions export_tr
 """
 
 # modify the lower rule curve for Tempo Red below : lower stock level at end of the week
-lower_rule_curve = np.array([21,20,19,18,17,16,15,14,13,12,11,10,9, 8, 7, 6, 5, 4, 3, 2, 0])
+lower_rule_curve = np.array([20,19,18,17,16,15,14,13,12,11,10,9,8, 7, 6, 5,4, 3, 2, 1, 0])
 
 
 class GainFunctionTempo:
@@ -77,8 +77,8 @@ class BellmanValuesTempo:
                  start_week: int,
                  end_week: int,
                  CVar: float,
-                 lower_rule_curve : np.ndarray,
-                 upper_rule_curve : np.ndarray):
+                 lower_rule_curve : np.ndarray = np.repeat(0,61),
+                 upper_rule_curve : np.ndarray|None = None ):
         """
         Initialize Bellman value calculator over a period of weeks with given capacity and CVar.
         Prepares arrays to store Bellman values, their mean with CVar risk measure, and usage values.
@@ -96,7 +96,7 @@ class BellmanValuesTempo:
         self.mean_bv = np.zeros((61, self.capacity + 1))  # CVaR aggregated values over scenarios
         self.usage_values = np.zeros((61, self.capacity))
         self.lower_rule_curve = lower_rule_curve
-        self.upper_rule_curve = upper_rule_curve
+        self.upper_rule_curve = upper_rule_curve if upper_rule_curve is not None else np.repeat(self.capacity,61)
 
         self.compute_bellman_values()
         self.compute_usage_values()
@@ -547,11 +547,12 @@ class LaunchTempo:
         """
         Run the specified list of actions, including calculation, export, and plotting.
         """
+        if actions is None:
+            raise ValueError("Actions must be provided")
+        
         start = time.time()
         net_load = NetLoad(reservoir=Reservoir(dir_study=self.dir_study,
-                                               name_area=self.area,
-                                               fictive=False,
-                                               area_target=None),
+                                               name_area=self.area),
                             dir_study=self.dir_study,
                             name_area=self.area)
 
@@ -561,24 +562,19 @@ class LaunchTempo:
         bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo_r, capacity=22,
                                               start_week=18, end_week=38, CVar=self.CVar,
                                               lower_rule_curve=
-                                              np.concatenate([np.repeat(22,18),lower_rule_curve,np.repeat(0,22)]),
-                                              upper_rule_curve=
-                                              np.repeat(22,61))
+                                              np.concatenate([np.repeat(22,18),lower_rule_curve,np.repeat(0,22)]))
         
         bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo_wr, capacity=65,
                                                start_week=9, end_week=60, CVar=self.CVar,
                                               lower_rule_curve=
-                                              np.concatenate([np.repeat(22,18),lower_rule_curve,np.repeat(0,22)]),
-                                              upper_rule_curve=
-                                              np.repeat(65,61))
+                                              np.concatenate([np.repeat(22,18),lower_rule_curve,np.repeat(0,22)]))
 
         trajectories_r = TrajectoriesTempo(bv=bellman_values_r)
         trajectories_white_and_red = TrajectoriesTempo(bv=bellman_values_wr, stock_trajectories_red=trajectories_r.stock_trajectories)
         end = time.time()
         print(f"Execution time: {end - start:.2f} seconds")
 
-        if actions is None:
-            raise ValueError("Actions must be provided")
+
 
         for action in actions:
             if action == "export_trajectories":

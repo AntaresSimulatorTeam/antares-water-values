@@ -16,7 +16,7 @@ import ortools.linear_solver.pywraplp as pywraplp
 def test_upper_bound() -> None:
     problem = AntaresProblem(scenario=0, week=0, path="test_data/one_node", itr=1)
     param = TimeScenarioParameter(len_week=1, len_scenario=1)
-    reservoir = Reservoir("test_data/one_node", "area",False,None)
+    reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
         penalty_bottom_rule_curve=0,
@@ -92,7 +92,7 @@ def test_upper_bound_with_xpress() -> None:
             name_solver="XPRESS_LP",
         )
         param = TimeScenarioParameter(len_week=1, len_scenario=1)
-        reservoir = Reservoir("test_data/one_node", "area",False,None)
+        reservoir = Reservoir("test_data/one_node", "area")
         reservoir_management = ReservoirManagement(
             reservoir=reservoir,
             penalty_bottom_rule_curve=0,

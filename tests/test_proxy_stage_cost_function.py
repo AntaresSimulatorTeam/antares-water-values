@@ -1,26 +1,22 @@
 import pytest
-from proxy_stage_cost_function import Proxy
+from proxy_stage_cost_function import ProxyStageCostFunction
 from tqdm import tqdm
 import numpy as np
 
 dir_study = "test_data/two_nodes"
 area1="area1"
 pbar = tqdm(total=0, disable=True)
-proxy1 = Proxy(dir_study=dir_study,
+proxy1 = ProxyStageCostFunction(dir_study=dir_study,
               name_area=area1,
               MC_years=10,
               alpha=2,
-              area_target=None,
-              fictive=False,
               pbar=pbar)
 
 area="area"
-proxy2 = Proxy(dir_study = dir_study,
+proxy2 = ProxyStageCostFunction(dir_study = dir_study,
                name_area=area,
                MC_years=10,
                alpha=2,
-               area_target=None,
-               fictive=False,
                pbar=pbar)
 
 def test_net_load_shape()->None:    

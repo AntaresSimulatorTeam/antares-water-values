@@ -1,4 +1,4 @@
-from proxy_stage_cost_function import Proxy
+from proxy_stage_cost_function import ProxyStageCostFunction
 from proxy_bellman_trajectories import BellmanValuesProxy, OptimalTrajectories
 import numpy as np
 import pandas as pd
@@ -8,7 +8,7 @@ import os
 
 
 class Exporter:
-    def __init__(self, proxy: Proxy, bv: BellmanValuesProxy, trajectories: OptimalTrajectories):
+    def __init__(self, proxy: ProxyStageCostFunction, bv: BellmanValuesProxy, trajectories: OptimalTrajectories):
         """
         Initialize Exporter with Proxy, BellmanValuesProxy, and OptimalTrajectories instances.
         Sets export directory, number of weeks, and scenarios.
@@ -284,29 +284,29 @@ enabled = true
         np.savetxt(path, balance, fmt="%.20f", delimiter="\t")
 
     def adjust_to_spillage_constraint(self) -> None:
-        """
-        Adjust misc-gen and load files to include the spillage constraint.
-        Adds max(hourly_turb, hourly_pump) to the 6th column of misc-gen
-        and to every column of the load file.
-        """
         miscgen_path = os.path.join(self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt")
         load_path = os.path.join(self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt")
+        solar_path = os.path.join(self.dir_study, "input", "solar", "series", f"solar_{self.area_target}.txt")
 
         miscgen_backup_path = miscgen_path.replace(".txt", "_old.txt")
         load_backup_path = load_path.replace(".txt", "_old.txt")
+        solar_backup_path = solar_path.replace(".txt", "_old.txt")
 
         if os.path.exists(miscgen_path):
             if not os.path.exists(miscgen_backup_path):
                 os.rename(miscgen_path, miscgen_backup_path)
             else:
                 os.remove(miscgen_path)
-
-
         if os.path.exists(load_path):
             if not os.path.exists(load_backup_path):
                 os.rename(load_path, load_backup_path)
             else:
                 os.remove(load_path)
+        if os.path.exists(solar_path):
+            if not os.path.exists(solar_backup_path):
+                os.rename(solar_path, solar_backup_path)
+            else:
+                os.remove(solar_path)
 
         try:
             miscgen_data = np.loadtxt(miscgen_backup_path)
@@ -314,32 +314,51 @@ enabled = true
                 miscgen_data = np.zeros((8760, 8))
         except Exception:
             miscgen_data = np.zeros((8760, 8))
-
         try:
             load_data = np.loadtxt(load_backup_path)
             if load_data.size == 0:
                 load_data = np.zeros((8760, len(self.scenarios)))
         except Exception:
             load_data = np.zeros((8760, len(self.scenarios)))
+        if miscgen_data.ndim == 1:
+            miscgen_data = np.zeros((8760, 8))
+        if load_data.ndim == 1:
+            load_data = load_data.reshape(-1, 1)
 
-        
+        S = len(self.scenarios)
+        try:
+            solar_data = np.loadtxt(solar_backup_path)
+            if solar_data.size == 0:
+                solar_data = np.zeros((8760, S))
+        except Exception:
+            solar_data = np.zeros((8760, S))
+        if solar_data.ndim == 1:
+            solar_data = solar_data.reshape(-1, 1)
+        if solar_data.shape[0] != 8760:
+            solar_data = np.zeros((8760, S))
+        if solar_data.shape[1] != S:
+            if solar_data.shape[1] == 1 and S > 1:
+                solar_data = np.tile(solar_data, (1, S))
+            else:
+                solar_data = np.zeros((8760, S))
+
         negatives = np.minimum(load_data, 0.0)
         transfer = -negatives
         load_data = load_data - negatives
-
-        transfer_hourly = transfer.sum(axis=1)
-        miscgen_data[:, 5] += transfer_hourly
+        solar_data = solar_data + transfer
 
         hourly_turb = self.bv.proxy.reservoir.max_hourly_turb
         hourly_pump = self.bv.proxy.reservoir.max_hourly_pump
         spill_constraint = np.maximum(hourly_turb, hourly_pump)
         spill_constraint = np.concatenate([spill_constraint, spill_constraint[-24:]])
 
-        miscgen_data[:, 5] += spill_constraint
-        load_data += spill_constraint[:, np.newaxis]
+        miscgen_data[:, 5] += spill_constraint[:8760]
+        load_data = load_data + spill_constraint[:8760, np.newaxis]
 
         np.savetxt(miscgen_path, miscgen_data, fmt="%.20f", delimiter="\t")
         np.savetxt(load_path, load_data, fmt="%.20f", delimiter="\t")
+        np.savetxt(solar_path, solar_data, fmt="%.20f", delimiter="\t")
+
     
 
     def apply_all(self) -> None:
@@ -440,28 +459,36 @@ class UndoAntaresModifications:
 
     def restore_miscgen_and_load(self) -> None:
         """
-        Restore miscgen and load files by replacing them with their _old.txt
-        backups, if they exist.
+        Restore study inputs to their pre-modification state:
+        - Restore miscgen-{area}.txt from miscgen-{area}_old.txt if it exists.
+        - Restore load_{area}.txt    from load_{area}_old.txt    if it exists.
+        - Restore solar_{area}.txt   from solar_{area}_old.txt   if it exists; otherwise remove solar_{area}.txt
+        (this file may have been created when negative load was transferred to solar per scenario).
+        Missing backups are ignored; existing current files are overwritten or removed as needed.
         """
-        miscgen_path = os.path.join(
-            self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt"
-        )
+        miscgen_path = os.path.join(self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt")
         miscgen_backup_path = miscgen_path.replace(".txt", "_old.txt")
-
         if os.path.exists(miscgen_backup_path):
             if os.path.exists(miscgen_path):
                 os.remove(miscgen_path)
             os.rename(miscgen_backup_path, miscgen_path)
 
-        load_path = os.path.join(
-            self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt"
-        )
+        load_path = os.path.join(self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt")
         load_backup_path = load_path.replace(".txt", "_old.txt")
-
         if os.path.exists(load_backup_path):
             if os.path.exists(load_path):
                 os.remove(load_path)
             os.rename(load_backup_path, load_path)
+
+        solar_path = os.path.join(self.dir_study, "input", "solar", "series", f"solar_{self.area_target}.txt")
+        solar_backup_path = solar_path.replace(".txt", "_old.txt")
+        if os.path.exists(solar_backup_path):
+            if os.path.exists(solar_path):
+                os.remove(solar_path)
+            os.rename(solar_backup_path, solar_path)
+        else:
+            if os.path.exists(solar_path):
+                os.remove(solar_path)
 
 
     def undo_all(self) -> None:

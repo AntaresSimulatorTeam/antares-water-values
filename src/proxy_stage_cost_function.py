@@ -6,8 +6,8 @@ from tqdm import tqdm
 
 
 
-class Proxy:
-    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float, area_target:str|None, fictive:bool, pbar:tqdm) -> None:
+class ProxyStageCostFunction:
+    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float,pbar:tqdm, area_target:str|None=None) -> None:
         """
         Initialize the object with study directory, area, number of Monte-Carlo scenarios,
         cost exponent alpha, target area and fictive node boolean (last two arguments are specific to one use-case).
@@ -18,11 +18,10 @@ class Proxy:
             MC_years (int): Number of Monte-Carlo scenarios.
             alpha (float): Exponent for cost function.
             area_target (str | None): Target area for modifications, or None to use current area.
-            fictive (bool): Whether to use a fictive reservoir (Clement Bernerd use case).
         """
         self.dir_study = dir_study
         self.name_area = name_area
-        self.reservoir = Reservoir(dir_study, name_area, fictive=fictive, area_target=area_target)
+        self.reservoir = Reservoir(dir_study, name_area,  area_target=area_target)
         self.pbar = pbar
         
 
@@ -159,7 +158,7 @@ class Proxy:
         if hasattr(self, "pbar"):
             self.pbar.set_postfix_str("Stage cost functions computing")        
         for w in range(self.nb_weeks):
-            for s in range(len(self.scenarios)):
+            for s in self.scenarios:
                 if hasattr(self,"pbar"):
                     self.pbar.update(1)
                 cost_functions[w,s]=self.stage_cost_function(w,s)

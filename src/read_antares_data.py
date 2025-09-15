@@ -35,8 +35,7 @@ class Reservoir:
         self,
         dir_study: str,
         name_area: str,
-        fictive :bool,
-        area_target : str|None
+        area_target : str|None=None
         # If fictive is True, max pump and max turb are read in the link data between real node and ficitive node (real node is target area)
     ) -> None:
         """
@@ -61,11 +60,11 @@ class Reservoir:
         self.read_efficiency(hydro_ini_file=hydro_ini_file)
         self.read_rule_curves(dir_study)
         self.read_inflow(dir_study)
-        self.read_max_power(dir_study, fictive=fictive, area_target=area_target)
+        self.read_max_power(dir_study, area_target=area_target)
         self.read_allocation_matrix(dir_study)
 
-    def read_max_power(self, dir_study: str, fictive:bool,area_target:str|None) -> None:
-        if fictive and area_target is not None:
+    def read_max_power(self, dir_study: str, area_target:str|None) -> None:
+        if area_target is not None and area_target!=self.area:
             # Read max power from the link data between real node and fictive node
             turb_file = os.path.join(dir_study, "input", "links", f"{area_target}","capacities",f"{self.area}_indirect.txt")
             pump_file = os.path.join(dir_study, "input", "links", f"{area_target}","capacities",f"{self.area}_direct.txt")
@@ -83,24 +82,24 @@ class Reservoir:
             self.max_weekly_pump = np.sum(self.max_daily_pump.reshape((self.weeks_in_year, self.days_in_week)), axis=1)
             return
 
-        
-        max_power_data = np.loadtxt(
-            f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
-        )
-        hourly_energy = max_power_data[ : self.days_in_year]
-        daily_energy = hourly_energy * self.hours_in_day
-        weekly_energy = daily_energy.reshape(
-            (self.weeks_in_year, self.days_in_week, 4)
-        ).sum(axis=1)
+        else:
+            max_power_data = np.loadtxt(
+                f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
+            )
+            hourly_energy = max_power_data[ : self.days_in_year]
+            daily_energy = hourly_energy * self.hours_in_day
+            weekly_energy = daily_energy.reshape(
+                (self.weeks_in_year, self.days_in_week, 4)
+            ).sum(axis=1)
 
-        self.max_hourly_turb = np.repeat(hourly_energy[:, 0],24)
-        self.max_hourly_pump = np.repeat(hourly_energy[:, 2],24)
+            self.max_hourly_turb = np.repeat(hourly_energy[:, 0],24)
+            self.max_hourly_pump = np.repeat(hourly_energy[:, 2],24)
 
-        self.max_daily_turb = daily_energy[:, 0]
-        self.max_daily_pump = daily_energy[:, 2]
+            self.max_daily_turb = daily_energy[:, 0]
+            self.max_daily_pump = daily_energy[:, 2]
 
-        self.max_weekly_turb = weekly_energy[:, 0]
-        self.max_weekly_pump = weekly_energy[:, 2]
+            self.max_weekly_turb = weekly_energy[:, 0]
+            self.max_weekly_pump = weekly_energy[:, 2]
         
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")

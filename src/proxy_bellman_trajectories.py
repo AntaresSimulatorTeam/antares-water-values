@@ -1,4 +1,5 @@
-from proxy_stage_cost_function import Proxy
+from fileinput import filelineno
+from proxy_stage_cost_function import ProxyStageCostFunction
 import numpy as np
 from proxy_logger import LoggerSetup
 import os
@@ -8,9 +9,9 @@ from tqdm import tqdm
 
 
 class BellmanValuesProxy:
-    def __init__(self, proxy: Proxy, enable_logging: bool, export_dir: str, pbar : tqdm, h:int):
+    def __init__(self, proxy: ProxyStageCostFunction, enable_logging: bool, export_dir: str, pbar : tqdm):
         """
-        Initialize BellmanValuesProxy with given Proxy, logging flag, export directory and margin parameter h.
+        Initialize BellmanValuesProxy with given Proxy, logging flag and export directory.
         Sets up cost functions, storage arrays, and logger, then computes Bellman and usage values.
         """
         self.proxy = proxy
@@ -18,7 +19,6 @@ class BellmanValuesProxy:
         self.scenarios = proxy.scenarios
         self.export_dir = export_dir
         self.pbar = pbar
-        self.h = h
 
         self.stage_cost_functions = self.proxy.stage_cost_functions
 
@@ -35,9 +35,6 @@ class BellmanValuesProxy:
         logger_setup = LoggerSetup(self.export_dir)
         self.logger = logger_setup.get_logger() if enable_logging else logger_setup.get_null_logger()
 
-        # Uncomment to compute margins on rule curves with parameter h (default only avoids extreme controls)
-        # self.compute_rule_curve_margins()
-
         self.compute_bellman_values()
         # Useless to compute optimal trajectories, uncomment if plot needed
         # self.compute_usage_values()
@@ -47,7 +44,8 @@ class BellmanValuesProxy:
         Returns a penalty function based on deviation from initial reservoir level at final week.
         The penalty scales with the upper bound cost and relative negative deviation percentage (1%).
         """
-        penalty = lambda x: abs(min(x - self.proxy.reservoir.initial_level,0)) / self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
+        # penalty = lambda x: abs(min(x - self.proxy.reservoir.initial_level,0)) / self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
+        penalty = lambda x:abs(min(x-self.proxy.reservoir.initial_level,0))/self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
         return penalty
     
     def penalty_rule_curves(self, week_idx: int) -> Callable:
@@ -261,24 +259,6 @@ class BellmanValuesProxy:
             for c in range(2, 102, 2):
                 self.usage_values[w, (c // 2) - 1] = self.mean_bv[w, c // 2] - self.mean_bv[w, (c // 2) - 1]
 
-    def compute_rule_curve_margins(self) -> None:
-        """
-        Modifies daily and weekly rule curves by applying margins based on max hourly turbining and margin parameter h.
-        Allows to build more cautious trajectories.
-        """
-        hourly_turb_day = self.proxy.reservoir.max_hourly_turb.reshape(-1, 24)[:, 0]
-        hourly_turb_day = np.concatenate([hourly_turb_day, [hourly_turb_day[-1]]])
-        self.proxy.reservoir.daily_upper_rule_curve=np.minimum(
-            self.proxy.reservoir.daily_upper_rule_curve,
-            self.proxy.reservoir.capacity-self.h*hourly_turb_day
-        )
-        self.proxy.reservoir.weekly_upper_rule_curve=self.proxy.reservoir.daily_upper_rule_curve[::7]
-        self.proxy.reservoir.daily_lower_rule_curve=np.maximum(
-            self.proxy.reservoir.daily_lower_rule_curve,
-            self.h*hourly_turb_day
-        )
-        self.proxy.reservoir.weekly_lower_rule_curve=self.proxy.reservoir.daily_lower_rule_curve[::7]
-
 class OptimalTrajectories:
     def __init__(self,
                  bellman_values : BellmanValuesProxy,
@@ -391,16 +371,6 @@ class OptimalTrajectories:
                     controls = controls[controls < max_control]
                     controls = np.concatenate([controls, [max_control]])
 
-                max_control_pump,_,max_control_turb = self.avoid_extreme_controls(week=w, scenario=s)
-                if max_control > max_control_turb:
-                    controls = controls[controls < max_control_turb]
-                    controls = np.concatenate([controls, [max_control_turb]])
-                
-                if max_control_pump > controls[0]:
-                    controls = controls[controls > max_control_pump]
-                    controls = np.concatenate([[max_control_pump],controls])  
-
-
                 weekly_inflow -= np.sum(self.inflow_adjust_overflow[w, s])
 
                 # Hard constraints can be enforced here if needed (normally penalty functions + inflows modifications handle this)
@@ -444,52 +414,6 @@ class OptimalTrajectories:
             self.logger.debug(f"\nOptimal trajectory for scenario {s+1}: {self.trajectories[s]}")
                 
         self.write_warnings()
-
-    def avoid_extreme_controls(self, week: int, scenario: int) -> tuple:
-        """
-        Computes lower/upper bounds on the weekly control to avoid extreme values.
-
-        Returns:
-            (min_control, max_control_strict, max_control_relaxed)
-            - min_control:   lower bound (negative, pumping)
-            - max_control_strict: upper bound (strict) for turbining
-            - max_control_relaxed: upper bound (relaxed w/ inflow)
-        Notes:
-            - Bounds are expressed in the 'control' space used elsewhere:
-            positive = turbinage (MWh), negative = pompage (MWh).
-            - Efficiencies are applied to convert power*hours caps to 'control'.
-        """
-
-        PMAX_turb = self.bellman_values.proxy.reservoir.max_weekly_turb[week]
-        PMAX_pump = self.bellman_values.proxy.reservoir.max_weekly_pump[week]
-
-        strict_turb_cap_MWh = (168-self.bellman_values.h)/168 * PMAX_turb
-        strict_pump_cap_MWh = (168-self.bellman_values.h)/168 * PMAX_pump
-
-        inflow = self.bellman_values.proxy.reservoir.weekly_inflow[week, scenario]
-
-        relaxed_turb_cap_MWh = min(
-            PMAX_turb,
-            max(strict_turb_cap_MWh, inflow)
-        )
-
-        max_control_strict = strict_turb_cap_MWh * self.bellman_values.proxy.turb_efficiency
-        max_control_relaxed = relaxed_turb_cap_MWh * self.bellman_values.proxy.turb_efficiency
-
-        min_control = - strict_pump_cap_MWh * self.bellman_values.proxy.reservoir.efficiency
-
-        self.logger.debug(
-            f"[avoid_extreme_controls] week={week+1}, scen={scenario+1}, h={self.bellman_values.h} "
-            f"PMAX_turb={PMAX_turb:.2f} MW, PMAX_pump={PMAX_pump:.2f} MW, "
-            f"strict_turb_cap={strict_turb_cap_MWh:.2f} MWh, strict_pump_cap={strict_pump_cap_MWh:.2f} MWh, "
-            f"inflow={inflow:.2f} MWh -> "
-            f"min_control={min_control:.2f}, "
-            f"max_control_strict={max_control_strict:.2f}, "
-            f"max_control_relaxed={max_control_relaxed:.2f}"
-        )
-
-        return min_control, max_control_strict, max_control_relaxed
-
 
     def adjust_hourly_inflow_overflow(self,
                                       scenario: int,

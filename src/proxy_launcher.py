@@ -1,4 +1,4 @@
-from proxy_stage_cost_function import Proxy
+from proxy_stage_cost_function import ProxyStageCostFunction
 from proxy_bellman_trajectories import BellmanValuesProxy, OptimalTrajectories
 from proxy_exporter import Exporter, ModifyAntaresStudy, UndoAntaresModifications
 from proxy_plotter import Plotter
@@ -40,9 +40,7 @@ Arguments:
       - plot_usage_values_heatmap
       - modify_antares_data
       - undo_modifications
-  --area_target     (str)    : Target area for modifications; if None, uses current area (default: None, only usefull por STEP use case)
-  --fictive         (bool)   : Use a fictive node for the reservoir (default: False, only usefull por STEP use case)
-  --h               (int)    : Margin factor for rule curves and maximum control. Number of hour of generating at max power. (default: 0)
+  --area_target     (str)    : Target area for modifications; if None, uses current area (default: None, only usefull por STEP use case, default=None)
 
 Note:
 - When using 'undo_modifications' as the only action, no export directory is created.
@@ -55,13 +53,11 @@ class Launch:
     def __init__(self, 
                  dir_study: str, 
                  area: str,
-                 area_target: str | None, 
                  MC_years: int, 
                  alpha: float, 
                  enable_logging: bool,
-                 fictive: bool,
-                 h : int, 
                  global_export_dir: str | None = None,
+                 area_target: str | None=None
                 ):
         """
         Initialize the Launch class with study directory, area, target area, Monte-Carlo years,
@@ -71,11 +67,9 @@ class Launch:
         self.name_area = area
         self.MC_years = MC_years
         self.alpha = alpha
-        self.fictive = fictive
         self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir
         self.area_target = area_target if area_target else area  # Use area_target if provided, else use area
-        self.h = h
 
     def run(self, actions: list[str] | None = None) -> None:
         """
@@ -95,17 +89,16 @@ class Launch:
         pbar = tqdm(total=len(steps)+52*self.MC_years+51*self.MC_years*51+52*self.MC_years,
                     unit="step")
 
-        self.proxy = Proxy(
+        self.proxy = ProxyStageCostFunction(
             dir_study=self.dir_study,
             name_area=self.name_area,
             MC_years=self.MC_years,
             alpha=self.alpha,
             area_target=self.area_target,
-            fictive=self.fictive,
             pbar=pbar
         )
         pbar.update(1)
-        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir,pbar=pbar,h=self.h)
+        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir,pbar=pbar)
         pbar.update(1)
         self.trajectories = OptimalTrajectories(self.bv,pbar=pbar)
         pbar.update(1)
@@ -156,8 +149,6 @@ def run_for_area(area: str,
                  MC_years: int, 
                  alpha: float, 
                  enable_logging: bool,
-                 fictive: bool,
-                 h : int, 
                  actions: list[str] | None = None, 
                  global_export_dir: str | None = None) -> None:
     """
@@ -172,8 +163,6 @@ def run_for_area(area: str,
             MC_years=MC_years,
             alpha=alpha,
             enable_logging=enable_logging,
-            fictive=fictive,
-            h=h,
             global_export_dir=None
         ).run(actions=actions)
     else:
@@ -184,13 +173,11 @@ def run_for_area(area: str,
             MC_years=MC_years,
             alpha=alpha,
             enable_logging=enable_logging,
-            fictive=fictive,
-            h=h,
             global_export_dir=global_export_dir,
         ).run(actions=actions)
 
 
-def post_process_shared_files(dir_study: str, areas: list[str], area_target: str | None) -> None:
+def post_process_shared_files(dir_study: str, areas: list[str], area_target: str | None=None) -> None:
     """
     Post-process shared study files (hydro.ini and scenariobuilder.dat)
     after all parallel computations to ensure consistency.
@@ -228,8 +215,6 @@ def main() -> None:
     parser.add_argument("--enable_logging", type=bool, default=False, help="Enable logging.")
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="List of actions to perform.")
     parser.add_argument("--area_target", type=str, required=False, default=None, help="Target area for modifications; if None uses current area.")
-    parser.add_argument("--fictive", type=bool, default=False, help="Use a fictive node for the reservoir.")
-    parser.add_argument("--h", type=int,default=0, help='Margin factor for rule curves')
 
     args = parser.parse_args()
 
@@ -243,8 +228,6 @@ def main() -> None:
                 args.MC_years,
                 args.alpha,
                 args.enable_logging,
-                args.fictive,
-                args.h,
                 args.actions,
                 None
             )
@@ -252,7 +235,7 @@ def main() -> None:
 
     # Otherwise, create a global export directory with timestamp
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    global_export_dir = os.path.join(args.dir_study, f"exports_LT_storage_trajectories_{date_str}")
+    global_export_dir = os.path.join(args.dir_study, f"LT_storage_trajectories_{date_str}")
     os.makedirs(global_export_dir, exist_ok=True)
 
     if len(args.areas) == 1:
@@ -263,8 +246,6 @@ def main() -> None:
             args.MC_years,
             args.alpha,
             args.enable_logging,
-            args.fictive,
-            args.h,
             args.actions,
             global_export_dir,
         )
@@ -279,8 +260,6 @@ def main() -> None:
                     args.MC_years,
                     args.alpha,
                     args.enable_logging,
-                    args.fictive,
-                    args.h,
                     args.actions,
                     global_export_dir
                 ): area for area in args.areas

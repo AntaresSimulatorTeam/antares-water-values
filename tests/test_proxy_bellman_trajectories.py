@@ -1,6 +1,5 @@
-from pyparsing import Opt
 import pytest
-from proxy_stage_cost_function import Proxy
+from proxy_stage_cost_function import ProxyStageCostFunction
 from proxy_bellman_trajectories import BellmanValuesProxy,OptimalTrajectories
 from tqdm import tqdm
 import numpy as np
@@ -8,19 +7,16 @@ import numpy as np
 dir_study = "test_data/two_nodes"
 area1="area1"
 pbar = tqdm(total=0, disable=True)
-proxy = Proxy(dir_study=dir_study,
+proxy = ProxyStageCostFunction(dir_study=dir_study,
               name_area=area1,
               MC_years=10,
               alpha=2,
-              area_target=None,
-              fictive=False,
               pbar=pbar)
 
 bellman_values = BellmanValuesProxy(proxy=proxy,
                                     enable_logging=False,
                                     export_dir="tests",
-                                    pbar=pbar,
-                                    h=0)
+                                    pbar=pbar)
 
 def test_bellman_value()->None:
     expected_final_bellman_value = np.array([

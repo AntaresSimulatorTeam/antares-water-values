@@ -179,7 +179,7 @@ expected_vb = np.array(
 def test_itr_control() -> None:
 
     param = TimeScenarioParameter(len_week=5, len_scenario=1)
-    reservoir = Reservoir("test_data/one_node", "area",False,None)
+    reservoir = Reservoir("test_data/one_node", "area")
     reservoir_management = ReservoirManagement(
         reservoir=reservoir,
         penalty_bottom_rule_curve=3000,
@@ -248,7 +248,7 @@ def test_itr_control_with_xpress() -> None:
     if solver:
 
         param = TimeScenarioParameter(len_week=5, len_scenario=1)
-        reservoir = Reservoir("test_data/one_node", "area",False,None)
+        reservoir = Reservoir("test_data/one_node", "area")
         reservoir_management = ReservoirManagement(
             reservoir=reservoir,
             penalty_bottom_rule_curve=3000,

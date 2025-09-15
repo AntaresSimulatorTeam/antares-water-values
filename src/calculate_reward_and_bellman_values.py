@@ -122,7 +122,7 @@ class RewardApproximation:
         """Return a function to evaluate reward at any point based on the current approximation."""
         return lambda x: min(
             [
-                self.duals[i] * (x - self.controls[i]) + self.costs[i]
+                -self.duals[i] * (x - self.controls[i]) + self.costs[i]
                 for i in range(len(self.controls))
             ]
         )

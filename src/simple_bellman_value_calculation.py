@@ -137,8 +137,7 @@ def calculate_reward_for_one_scenario(
                     dict_basis[TimeScenarioIndex(week, scenario=scenario)] = basis_0
 
             reward[TimeScenarioIndex(week, scenario)].update_reward_approximation(
-                new_control=[float(u)],
-                new_cost=[-beta],
+                new_control=[float(u)], new_cost=[-beta], new_dual=[lamb]
             )
             perf[week, j] = (computation_time, itr)
         end = time()

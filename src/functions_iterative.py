@@ -196,6 +196,7 @@ def calculate_reward(
             G[TimeScenarioIndex(week, scenario)].update_reward_approximation(
                 new_control=[float(controls[week][scenario])],
                 new_cost=[-beta],
+                new_dual=[lamb],
             )
 
             current_itr[week, scenario] = (itr, computation_time)

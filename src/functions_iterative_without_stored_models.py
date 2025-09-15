@@ -95,6 +95,9 @@ def calculate_reward(
                 new_cost=scenario_reward[scenario][0][
                     TimeScenarioIndex(week, scenario)
                 ].costs,
+                new_dual=scenario_reward[scenario][0][
+                    TimeScenarioIndex(week, scenario)
+                ].duals,
             )
             tot_t[week][scenario] = scenario_reward[scenario][1][week]
             perf[week][scenario] = scenario_reward[scenario][2][week]

@@ -116,13 +116,19 @@ class RewardApproximation:
         """
         self.controls: List[float] = []
         self.costs: List[float] = []
+        self.duals: List[float] = []
 
     def reward_function(self) -> Callable:
         """Return a function to evaluate reward at any point based on the current approximation."""
-        return interp1d(self.controls, self.costs)
+        return lambda x: min(
+            [
+                self.duals[i] * (x - self.controls[i]) + self.costs[i]
+                for i in range(len(self.controls))
+            ]
+        )
 
     def update_reward_approximation(
-        self, new_control: List[float], new_cost: List[float]
+        self, new_control: List[float], new_cost: List[float], new_dual: List[float]
     ) -> None:
         """
         Update reward approximation by adding a new cut
@@ -134,6 +140,7 @@ class RewardApproximation:
 
         self.controls = self.controls + new_control
         self.costs = self.costs + new_cost
+        self.duals = self.duals + new_dual
 
 
 class BellmanValueCalculation:

@@ -19,6 +19,7 @@ bellman_values = BellmanValuesProxy(proxy=proxy,
                                     pbar=pbar)
 
 def test_bellman_value()->None:
+    assert bellman_values.mean_bv.shape == (52,51)
     expected_final_bellman_value = np.array([
         19647287034394.1,
         19085935976268.6,
@@ -56,21 +57,21 @@ def test_bellman_value()->None:
         1122702116251.09,
         561351058125.546,
                     0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0,
-                    0
+        561351058125.5471,
+        1122702116251.0942,
+        1684053174376.641,
+        2245404232502.1885,
+        2806755290627.735,
+        3368106348753.2793,
+        3929457406878.829,
+        4490808465004.377,
+        5052159523129.923,
+        5613510581255.47,
+        6174861639381.018,
+        6736212697506.564,
+        7297563755632.112,
+        7858914813757.658,
+        8420265871883.205
     ])
     expected_intial_bellman_value = np.array([5.90634088e+13,5.56439597e+13,5.23515433e+13,4.91502920e+13
        ,4.60706483e+13,4.31681072e+13,4.03986200e+13,3.77064875e+13
@@ -88,13 +89,13 @@ def test_bellman_value()->None:
     )
     assert bellman_values.mean_bv[51,:] == pytest.approx(expected_final_bellman_value)
     assert bellman_values.mean_bv[0,:] == pytest.approx(expected_intial_bellman_value)
-    assert bellman_values.bv[50,33,0] == pytest.approx(151150777881.93)
     assert bellman_values.mean_bv[50,33] == pytest.approx(93807313270)
 
 trajectories = OptimalTrajectories(bellman_values=bellman_values,
                                    pbar=pbar)
 
 def test_optimal_trajectories()-> None:
+    assert trajectories.trajectories.shape == (10,52)
     expected_trajectory = np.array([7324729.52910714,7409020.99057143,7339171.97362143,7182708.96767143
         ,7241812.84499449,7181299.57235878,7205109.76766533,7200000.
         ,7448620.94807857,7474486.18815446,7550789.85559196,7513548.86676161

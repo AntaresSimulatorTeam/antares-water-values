@@ -10,6 +10,7 @@ from scipy.interpolate import interp1d
 import os
 import argparse
 import matplotlib.pyplot as plt
+from datetime import datetime
 from matplotlib import rcParams
 rcParams['font.family'] = 'Cambria'
 
@@ -17,7 +18,7 @@ rcParams['font.family'] = 'Cambria'
 """
 To run the calculations, export daily control trajectories, stock trajectories, and generate plots, use:
 
-python "path/to/tempo.py" --dir_study "path_to_study" --area "area_name" --actions <list_of_actions> [--cvar <float>]
+python "path/to/script.py" --dir_study "path_to_study" --area "area_name" --actions <list_of_actions> [--cvar <float>]
 
 - --dir_study : Path to the Antares study directory (required).
 - --area      : Name of the area to process (required).
@@ -35,10 +36,6 @@ Example:
 
 python tempo.py --dir_study "/path/to/study" --area "MyArea" --actions export_trajectories plot_trajectories --cvar 1.5
 """
-
-# modify the lower rule curve for Tempo Red below : lower stock level at end of the week
-lower_rule_curve = np.array([20,19,18,17,16,15,14,13,12,11,10,9,8, 7, 6, 5,4, 3, 2, 1, 0])
-
 
 class GainFunctionTempo:
     def __init__(self, net_load: NetLoad, max_control: int):
@@ -59,7 +56,7 @@ class GainFunctionTempo:
         Gains are sum of the top 'control' daily net loads in the considered week,
         limited by max_control.
         """
-        week_start = week_index * 7 + 2  # Offset for alignment
+        week_start = week_index * 7 + 2  #If year begins on monday 1st July
         week_end = week_start + 7
 
         daily_load_week = self.daily_net_load[week_start:week_end, scenario]
@@ -92,7 +89,10 @@ class BellmanValuesTempo:
         self.nb_scenarios = self.gain_function.nb_scenarios
         self.CVar = CVar
 
-        self.bv = np.zeros((61, self.capacity + 1, self.nb_scenarios))  # Bellman values: weeks x capacity x scenarios
+        # 61 = time horizon of Tempo calendar :
+        # Tempo Red : 1st November -> 31st March
+        # Tempo White : 1st September -> 31st August
+        # Time horizon for resolution : 1st July (start of year in Antares) -> 30 June (61 weeks)
         self.mean_bv = np.zeros((61, self.capacity + 1))  # CVaR aggregated values over scenarios
         self.usage_values = np.zeros((61, self.capacity))
         self.lower_rule_curve = lower_rule_curve
@@ -125,18 +125,21 @@ class BellmanValuesTempo:
         for w in reversed(range(self.start_week, self.end_week)):
             penalty = self.penalty(w+1)
             for c in range(self.capacity + 1):
+                bv = []
                 for s in range(self.nb_scenarios):
                     best_value = -np.inf
                     for control in range(self.max_control + 1):
+
+                        # Week W+1 selected because Bellman values are computed at end of week w
                         gain = self.gain_function.gain_for_week_control_and_scenario(w + 1, control, s)
                         future_value = self.mean_bv[w + 1, c - control]
                         total_value = gain + future_value + penalty(c - control)
                         if total_value > best_value:
                             best_value = total_value
-                    self.bv[w, c, s] = best_value
+                    bv.append(best_value)
 
                 alpha = self.CVar
-                bellman_values = self.bv[w, c]
+                bellman_values = bv
                 sorted_bv = np.sort(bellman_values)
                 cutoff_index = int((1 - alpha) * len(sorted_bv))
                 self.mean_bv[w, c] = np.mean(sorted_bv[cutoff_index:])
@@ -184,7 +187,7 @@ class TrajectoriesTempo:
             self.stock_trajectories[s, :self.start_week] = self.capacity
             for w in range(self.start_week, self.end_week + 1):
                 penalty = self.bv.penalty(w)
-                if self.stock_trajectories[s, w - 1] == 0:
+                if self.start_week>0 and self.stock_trajectories[s, w - 1] == 0:
                     self.stock_trajectories[s, w:] = 0
                     break
                 best_value = -np.inf
@@ -258,7 +261,7 @@ class TrajectoriesTempo:
 
 
 class LaunchTempo:
-    def __init__(self, dir_study: str, area: str, CVar: float):
+    def __init__(self, dir_study: str, area: str, CVar: float, lower_rc:list):
         """
         Initialize the launcher with study directory, area name, and CVaR parameter.
         Automatically creates a unique export directory.
@@ -266,25 +269,21 @@ class LaunchTempo:
         self.dir_study = dir_study
         self.area = area
         self.CVar = CVar
+        self.lower_rc = np.array(lower_rc)
         self.export_dir = self.make_unique_export_dir()
 
     def make_unique_export_dir(self) -> str:
         """
-        Create a unique export directory under the study path.
+        Create a unique export directory under the study path,
+        named with the current date and time.
         Returns the path of the created directory.
         """
-        base_path = os.path.join(self.dir_study, "exports_tempo")
-        if not os.path.exists(base_path):
-            os.makedirs(base_path)
-            return base_path
-
-        i = 1
-        while True:
-            new_path = f"{base_path}_{i}"
-            if not os.path.exists(new_path):
-                os.makedirs(new_path)
-                return new_path
-            i += 1
+        date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        export_dir = os.path.join(
+            self.dir_study, "user", f"exports_tempo_{date_str}"
+        )
+        os.makedirs(export_dir, exist_ok=True)
+        return export_dir
 
     def export_stock_trajectories(self, trajectories_r: 'TrajectoriesTempo',
                                  trajectories_wr: 'TrajectoriesTempo',
@@ -562,12 +561,12 @@ class LaunchTempo:
         bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo_r, capacity=22,
                                               start_week=18, end_week=38, CVar=self.CVar,
                                               lower_rule_curve=
-                                              np.concatenate([np.repeat(22,18),lower_rule_curve,np.repeat(0,22)]))
+                                              np.concatenate([np.repeat(22,18),self.lower_rc,np.repeat(0,22)]))
         
         bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo_wr, capacity=65,
                                                start_week=9, end_week=60, CVar=self.CVar,
                                               lower_rule_curve=
-                                              np.concatenate([np.repeat(22,18),lower_rule_curve,np.repeat(0,22)]))
+                                              np.concatenate([np.repeat(22,18),self.lower_rc,np.repeat(0,22)]))
 
         trajectories_r = TrajectoriesTempo(bv=bellman_values_r)
         trajectories_white_and_red = TrajectoriesTempo(bv=bellman_values_wr, stock_trajectories_red=trajectories_r.stock_trajectories)
@@ -600,11 +599,12 @@ def main() -> None:
     parser.add_argument("--dir_study", type=str, required=True, help="Input directory containing the data.")
     parser.add_argument("--area", type=str, required=True, help="Study area name.")
     parser.add_argument("--actions", type=str, nargs='*', required=True, help="List of commands to execute.")
+    parser.add_argument("--lower_rc_red", type=int,nargs=21,required=False,default=[0]*21, help="Lower rule curve for red days (21 values).")
     parser.add_argument("--cvar", type=float, default=1.0, help="CVaR parameter for trajectory generation.")
 
     args = parser.parse_args()
 
-    launcher = LaunchTempo(dir_study=args.dir_study, area=args.area, CVar=args.cvar)
+    launcher = LaunchTempo(dir_study=args.dir_study, area=args.area, CVar=args.cvar,lower_rc=args.lower_rc_red)
     launcher.run(args.actions)
 
 

@@ -2,10 +2,7 @@ import subprocess
 from configparser import ConfigParser
 from dataclasses import dataclass, field
 import os
-
 import numpy as np
-from scipy import misc
-
 
 @dataclass
 class TimeScenarioParameter:
@@ -34,9 +31,7 @@ class Reservoir:
     def __init__(
         self,
         dir_study: str,
-        name_area: str,
-        area_target : str|None=None
-        # If fictive is True, max pump and max turb are read in the link data between real node and ficitive node (real node is target area)
+        name_area: str
     ) -> None:
         """
         Create a new reservoir.
@@ -60,62 +55,43 @@ class Reservoir:
         self.read_efficiency(hydro_ini_file=hydro_ini_file)
         self.read_rule_curves(dir_study)
         self.read_inflow(dir_study)
-        self.read_max_power(dir_study, area_target=area_target)
+        self.read_max_power(dir_study)
         self.read_allocation_matrix(dir_study)
 
-    def read_max_power(self, dir_study: str, area_target:str|None) -> None:
-        if area_target is not None and area_target!=self.area:
-            # Read max power from the link data between real node and fictive node
-            turb_file = os.path.join(dir_study, "input", "links", f"{area_target}","capacities",f"{self.area}_indirect.txt")
-            pump_file = os.path.join(dir_study, "input", "links", f"{area_target}","capacities",f"{self.area}_direct.txt")
-            if not os.path.exists(turb_file):
-                raise FileNotFoundError(f"Turbine link file {turb_file} does not exist.")
-            if not os.path.exists(pump_file):
-                raise FileNotFoundError(f"Pump link file {pump_file} does not exist.")
-            self.max_hourly_turb = np.loadtxt(turb_file)[:self.days_in_year*self.hours_in_day]
-            self.max_hourly_pump = np.loadtxt(pump_file)[:self.days_in_year*self.hours_in_day]
-            
-            self.max_daily_turb = np.sum(self.max_hourly_turb.reshape((self.days_in_year, self.hours_in_day)), axis=1)
-            self.max_daily_pump = np.sum(self.max_hourly_pump.reshape((self.days_in_year, self.hours_in_day)), axis=1) 
+    def read_max_power(self, dir_study: str) -> None:
+        max_power_data = np.loadtxt(
+            f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
+        )
+        hourly_energy = max_power_data[ : self.days_in_year]
+        daily_energy = hourly_energy * self.hours_in_day
+        weekly_energy = daily_energy.reshape(
+            (self.weeks_in_year, self.days_in_week, 4)
+        ).sum(axis=1)
 
-            self.max_weekly_turb = np.sum(self.max_daily_turb.reshape((self.weeks_in_year, self.days_in_week)), axis=1) 
-            self.max_weekly_pump = np.sum(self.max_daily_pump.reshape((self.weeks_in_year, self.days_in_week)), axis=1)
-            return
+        self.max_hourly_turb = np.repeat(hourly_energy[:, 0],24)
+        self.max_hourly_pump = np.repeat(hourly_energy[:, 2],24)
 
-        else:
-            max_power_data = np.loadtxt(
-                f"{dir_study}/input/hydro/common/capacity/maxpower_{self.area}.txt"
-            )
-            hourly_energy = max_power_data[ : self.days_in_year]
-            daily_energy = hourly_energy * self.hours_in_day
-            weekly_energy = daily_energy.reshape(
-                (self.weeks_in_year, self.days_in_week, 4)
-            ).sum(axis=1)
+        self.max_daily_turb = daily_energy[:, 0]
+        self.max_daily_pump = daily_energy[:, 2]
 
-            self.max_hourly_turb = np.repeat(hourly_energy[:, 0],24)
-            self.max_hourly_pump = np.repeat(hourly_energy[:, 2],24)
-
-            self.max_daily_turb = daily_energy[:, 0]
-            self.max_daily_pump = daily_energy[:, 2]
-
-            self.max_weekly_turb = weekly_energy[:, 0]
-            self.max_weekly_pump = weekly_energy[:, 2]
+        self.max_weekly_turb = weekly_energy[:, 0]
+        self.max_weekly_pump = weekly_energy[:, 2]
         
     def read_inflow(self, dir_study: str) -> None:
         daily_inflow = np.loadtxt(f"{dir_study}/input/hydro/series/{self.area}/mod.txt")
 
-        self.daily_inflow = daily_inflow[: self.days_in_year]
+        daily_inflow = daily_inflow[: self.days_in_year]
 
         if daily_inflow.ndim==1:
             self.nb_scenarios = 1
         else:
             self.nb_scenarios = daily_inflow.shape[1]
 
-        self.weekly_inflow = self.daily_inflow.reshape(
+        self.weekly_inflow = daily_inflow.reshape(
             (self.weeks_in_year, self.days_in_week, self.nb_scenarios)
         ).sum(axis=1)
 
-        self.hourly_inflow = np.repeat(self.daily_inflow/24.0,24,axis=0)
+        self.hourly_inflow = np.repeat(daily_inflow/24.0,24,axis=0)
 
 
     def read_rule_curves(self, dir_study: str) -> None:
@@ -125,8 +101,6 @@ class Reservoir:
             )[:, [0, 2]]
             * self.capacity
         )
-        rule_curves = rule_curves
-
         self.initial_level = np.mean([rule_curves[0, 0], rule_curves[0, 1]])
 
         self.daily_lower_rule_curve = rule_curves[:,0]
@@ -203,6 +177,7 @@ class NetLoad:
         self.area = name_area
         self.dir_study = dir_study
         self.nb_scenarios = reservoir.nb_scenarios
+        self.net_load=self.compute_net_load()
         
 
     def read_load(self) -> np.ndarray:

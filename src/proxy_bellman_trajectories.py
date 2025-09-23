@@ -1,4 +1,3 @@
-from fileinput import filelineno
 from proxy_stage_cost_function import ProxyStageCostFunction
 import numpy as np
 from proxy_logger import LoggerSetup
@@ -9,7 +8,7 @@ from tqdm import tqdm
 
 
 class BellmanValuesProxy:
-    def __init__(self, proxy: ProxyStageCostFunction, enable_logging: bool, export_dir: str, pbar : tqdm):
+    def __init__(self, proxy: ProxyStageCostFunction,enable_logging: bool, export_dir: str, pbar : tqdm,TS_selection:list[int]|None=None)->None:
         """
         Initialize BellmanValuesProxy with given Proxy, logging flag and export directory.
         Sets up cost functions, storage arrays, and logger, then computes Bellman and usage values.
@@ -17,6 +16,7 @@ class BellmanValuesProxy:
         self.proxy = proxy
         self.nb_weeks = proxy.nb_weeks
         self.scenarios = proxy.scenarios
+        self.TS_selection=TS_selection if TS_selection is not None else self.scenarios
         self.export_dir = export_dir
         self.pbar = pbar
 
@@ -26,7 +26,6 @@ class BellmanValuesProxy:
         self.turb_functions = self.stage_cost_functions[:, :, 1]
         self.pump_functions = self.stage_cost_functions[:, :, 2]
 
-        self.bv = np.zeros((self.nb_weeks, 51, len(self.scenarios)))
         self.mean_bv = np.zeros((self.nb_weeks, 51))
 
         if not isinstance(export_dir, str) or not export_dir:
@@ -44,8 +43,8 @@ class BellmanValuesProxy:
         Returns a penalty function based on deviation from initial reservoir level at final week.
         The penalty scales with the upper bound cost and relative negative deviation percentage (1%).
         """
-        # penalty = lambda x: abs(min(x - self.proxy.reservoir.initial_level,0)) / self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
-        penalty = lambda x:abs(min(x-self.proxy.reservoir.initial_level,0))/self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
+        penalty = lambda x:abs(x-self.proxy.reservoir.initial_level)/self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
+
         return penalty
     
     def penalty_rule_curves(self, week_idx: int) -> Callable:
@@ -208,8 +207,9 @@ class BellmanValuesProxy:
 
             for c in range(0, 101, 2):
                 current_stock = (c / 100) * self.proxy.reservoir.capacity
+                bv=np.zeros((len(self.TS_selection)))
+                for i,s in enumerate(self.TS_selection):
 
-                for s in self.scenarios:
                     self.pbar.update(1)
                     weekly_inflow = self.proxy.reservoir.weekly_inflow[w + 1, s]
                     cost_function = self.cost_functions[w + 1, s]
@@ -244,10 +244,10 @@ class BellmanValuesProxy:
                         penalty_function=penalty_function,
                         max_control=controls[-1])
 
-                    self.bv[w, c // 2, s] = final_best_value
+                    bv[i] = final_best_value
                     self.logger.debug(f"Bellman value stored for stock {current_stock:.2f} MWh : {final_best_value:.2f}")
 
-                self.mean_bv[w, c // 2] = np.mean(self.bv[w, c // 2, self.scenarios])
+                self.mean_bv[w, c // 2] = np.mean(bv)
             self.logger.debug(f"Average Bellman values for week {w + 1} : {self.mean_bv[w]}")
 
     def compute_usage_values(self) -> None:

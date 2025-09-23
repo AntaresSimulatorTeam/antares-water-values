@@ -22,7 +22,6 @@ Usage example:
 
 python launch_long_term_storage.py --dir_study "/path/to/antares/study" --areas Area1 Area2 \
     --MC_years 200 --alpha 2 --enable_logging False --actions export_trajectories plot_usage_values \
-    --area_target AreaTarget --fictive False
 
 Arguments:
   --dir_study       (str)    : Path to the Antares study directory (required)
@@ -40,7 +39,6 @@ Arguments:
       - plot_usage_values_heatmap
       - modify_antares_data
       - undo_modifications
-  --area_target     (str)    : Target area for modifications; if None, uses current area (default: None, only usefull por STEP use case, default=None)
 
 Note:
 - When using 'undo_modifications' as the only action, no export directory is created.
@@ -54,10 +52,10 @@ class Launch:
                  dir_study: str, 
                  area: str,
                  MC_years: int, 
-                 alpha: float, 
+                 alpha: float,
                  enable_logging: bool,
+                 TS_selection: list[int] | None,
                  global_export_dir: str | None = None,
-                 area_target: str | None=None
                 ):
         """
         Initialize the Launch class with study directory, area, target area, Monte-Carlo years,
@@ -66,27 +64,27 @@ class Launch:
         self.dir_study = dir_study
         self.name_area = area
         self.MC_years = MC_years
+        self.TS_selection = TS_selection if TS_selection is not None else list(range(MC_years))
         self.alpha = alpha
         self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir
-        self.area_target = area_target if area_target else area  # Use area_target if provided, else use area
 
-    def run(self, actions: list[str] | None = None) -> None:
+    def run(self, actions: list[str]|None=None) -> None:
         """
         Execute requested actions including generating trajectories, exporting data, plotting,
         modifying or undoing Antares study data.
         """
         if actions is not None and len(actions) == 1 and actions[0] == "undo_modifications":
-            UndoAntaresModifications(self.dir_study, self.name_area, self.area_target).undo_all()
+            UndoAntaresModifications(self.dir_study, self.name_area).undo_all()
             return
-
+        
         if self.global_export_dir is None:
-            raise ValueError("A per-area export_dir must be provided via global_export_dir in all cases except undo_modifications.")
+            raise ValueError("Global export directory must be provided unless only undo_modifications action is requested.")
         
         export_dir = os.path.join(self.global_export_dir, self.name_area)
         os.makedirs(export_dir, exist_ok=True)
         steps = ["Init Proxy", "Bellman values", "Trajectories", "Setup export/modif"]
-        pbar = tqdm(total=len(steps)+52*self.MC_years+51*self.MC_years*51+52*self.MC_years,
+        pbar = tqdm(total=len(steps)+52*self.MC_years+51*len(self.TS_selection)*51+52*self.MC_years,
                     unit="step")
 
         self.proxy = ProxyStageCostFunction(
@@ -94,18 +92,17 @@ class Launch:
             name_area=self.name_area,
             MC_years=self.MC_years,
             alpha=self.alpha,
-            area_target=self.area_target,
             pbar=pbar
         )
         pbar.update(1)
-        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir,pbar=pbar)
+        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir,pbar=pbar,TS_selection=self.TS_selection)
         pbar.update(1)
         self.trajectories = OptimalTrajectories(self.bv,pbar=pbar)
         pbar.update(1)
 
         self.plotter = Plotter(self.bv, self.trajectories)
         self.exporter = Exporter(self.proxy, self.bv, self.trajectories)
-        self.modifier = ModifyAntaresStudy(self.bv, self.trajectories, self.area_target)
+        self.modifier = ModifyAntaresStudy(self.bv, self.trajectories)
 
         if actions is None:
             actions = ["modify_antares_data"]
@@ -138,15 +135,15 @@ class Launch:
             elif action == "modify_antares_data":
                 self.modifier.apply_all()
             elif action == "undo_modifications":
-                UndoAntaresModifications(self.dir_study, self.name_area, self.area_target).undo_all()
+                UndoAntaresModifications(self.dir_study, self.name_area).undo_all()
             else:
                 print(f"Unknown action: {action}")
         pbar.update(1)
 
 def run_for_area(area: str,
-                 area_target: str | None, 
                  dir_study: str, 
-                 MC_years: int, 
+                 MC_years: int,
+                 TS_selection: list[int] | None, 
                  alpha: float, 
                  enable_logging: bool,
                  actions: list[str] | None = None, 
@@ -159,8 +156,8 @@ def run_for_area(area: str,
         Launch(
             dir_study=dir_study,
             area=area,
-            area_target=area_target,
             MC_years=MC_years,
+            TS_selection=TS_selection,
             alpha=alpha,
             enable_logging=enable_logging,
             global_export_dir=None
@@ -169,29 +166,23 @@ def run_for_area(area: str,
         Launch(
             dir_study=dir_study,
             area=area,
-            area_target=area_target,
             MC_years=MC_years,
+            TS_selection=TS_selection,
             alpha=alpha,
             enable_logging=enable_logging,
             global_export_dir=global_export_dir,
         ).run(actions=actions)
 
 
-def post_process_shared_files(dir_study: str, areas: list[str], area_target: str | None=None) -> None:
+def post_process_shared_files(dir_study: str, areas: list[str]) -> None:
     """
     Post-process shared study files (hydro.ini and scenariobuilder.dat)
     after all parallel computations to ensure consistency.
     """
     # Modify scenariobuilder.dat by appending lines from temporary files
     sb_lines = []
-    if area_target is None:
-        for area in areas:
-            file_path = os.path.join(dir_study, "tmp", "scenariobuilder_lines", f"{area}.txt")
-            if os.path.exists(file_path):
-                with open(file_path, "r") as f:
-                    sb_lines.extend(f.readlines())
-    else:
-        file_path = os.path.join(dir_study, "tmp", "scenariobuilder_lines", f"{area_target}.txt")
+    for area in areas:
+        file_path = os.path.join(dir_study,"user", "tmp", "scenariobuilder_lines", f"{area}.txt")
         if os.path.exists(file_path):
             with open(file_path, "r") as f:
                 sb_lines.extend(f.readlines())
@@ -211,10 +202,11 @@ def main() -> None:
     parser.add_argument("--dir_study", type=str, required=True, help="Antares study directory.")
     parser.add_argument("--areas", type=str, nargs='+', required=True, help="List of study areas (space-separated).")
     parser.add_argument("--MC_years", type=int, required=False, default=200, help="Number of Monte-Carlo years to simulate.")
+    parser.add_argument("--TS_selection", type=int, nargs='+', default=None, help="List of TS to consider when calculating Bellman values. Default is all TS.")
     parser.add_argument("--alpha", type=float, required=False, default=2, help="Cost function alpha parameter, default is 2.")
     parser.add_argument("--enable_logging", type=bool, default=False, help="Enable logging.")
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="List of actions to perform.")
-    parser.add_argument("--area_target", type=str, required=False, default=None, help="Target area for modifications; if None uses current area.")
+
 
     args = parser.parse_args()
 
@@ -223,9 +215,9 @@ def main() -> None:
         for area in args.areas:
             run_for_area(
                 area,
-                args.area_target,
                 args.dir_study,
                 args.MC_years,
+                args.TS_selection,
                 args.alpha,
                 args.enable_logging,
                 args.actions,
@@ -235,15 +227,15 @@ def main() -> None:
 
     # Otherwise, create a global export directory with timestamp
     date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    global_export_dir = os.path.join(args.dir_study, f"LT_storage_trajectories_{date_str}")
+    global_export_dir = os.path.join(args.dir_study,"user", f"LT_storage_trajectories_{date_str}")
     os.makedirs(global_export_dir, exist_ok=True)
 
     if len(args.areas) == 1:
         run_for_area(
             args.areas[0],
-            args.area_target,
             args.dir_study,
             args.MC_years,
+            args.TS_selection,
             args.alpha,
             args.enable_logging,
             args.actions,
@@ -255,9 +247,9 @@ def main() -> None:
                 executor.submit(
                     run_for_area,
                     area,
-                    args.area_target,
                     args.dir_study,
                     args.MC_years,
+                    args.TS_selection,
                     args.alpha,
                     args.enable_logging,
                     args.actions,
@@ -272,7 +264,7 @@ def main() -> None:
                     print(f"❌ Error for area {area}: {e}")
                     traceback.print_exc()
 
-    post_process_shared_files(args.dir_study, args.areas, args.area_target)
+    post_process_shared_files(args.dir_study, args.areas)
 
 
 if __name__ == "__main__":

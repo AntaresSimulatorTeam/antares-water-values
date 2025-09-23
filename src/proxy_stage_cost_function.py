@@ -7,21 +7,20 @@ from tqdm import tqdm
 
 
 class ProxyStageCostFunction:
-    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float,pbar:tqdm, area_target:str|None=None) -> None:
+    def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float,pbar:tqdm) -> None:
         """
         Initialize the object with study directory, area, number of Monte-Carlo scenarios,
-        cost exponent alpha, target area and fictive node boolean (last two arguments are specific to one use-case).
+        cost exponent alpha.
 
         Args:
             dir_study (str): Path to study directory.
             name_area (str): Name of the area.
             MC_years (int): Number of Monte-Carlo scenarios.
             alpha (float): Exponent for cost function.
-            area_target (str | None): Target area for modifications, or None to use current area.
         """
         self.dir_study = dir_study
         self.name_area = name_area
-        self.reservoir = Reservoir(dir_study, name_area,  area_target=area_target)
+        self.reservoir = Reservoir(dir_study, name_area)
         self.pbar = pbar
         
 
@@ -44,7 +43,7 @@ class ProxyStageCostFunction:
         """
         weighted_net_load = np.zeros((365 * 24, len(self.scenarios)))
         for key, value in self.reservoir.allocation_dict.items():
-            net_load = NetLoad(self.reservoir,self.dir_study, key).compute_net_load()
+            net_load = NetLoad(self.reservoir,self.dir_study, key).net_load
             weighted_net_load += value * net_load[:,:len(self.scenarios)]
 
         return weighted_net_load

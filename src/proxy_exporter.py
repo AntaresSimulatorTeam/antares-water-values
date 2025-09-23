@@ -48,21 +48,19 @@ class Exporter:
 
     def export_bellman_values(self, filename: str = "bellman_values.csv") -> None:
         """
-        Export Bellman values for each stock percentage, week, and scenario
+        Export Bellman values in expectation for each stock percentage, week.
         to a CSV file.
         """
         data = []
         for w in range(self.nb_weeks):
             for c_index, c in enumerate(range(0, 101, 2)):
                 stock_percent = c  # stock expressed in %
-                for s in self.scenarios:
-                    value = self.bv.bv[w, c_index, s]
-                    data.append({
-                        "week": w + 1,
-                        "stock_percent": stock_percent,
-                        "mcYear": s + 1,
-                        "bellman_value": value
-                    })
+                value = self.bv.mean_bv[w, c_index]
+                data.append({
+                    "week": w + 1,
+                    "stock_percent": stock_percent,
+                    "bellman_value": value
+                })
 
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
@@ -91,7 +89,7 @@ class Exporter:
     
 
 class ModifyAntaresStudy:
-    def __init__(self, bv: BellmanValuesProxy, trajectories: OptimalTrajectories, area_target: str):
+    def __init__(self, bv: BellmanValuesProxy, trajectories: OptimalTrajectories):
         """
         Initialize the class with BellmanValuesProxy, optimal trajectories, and the target area.
         """
@@ -101,7 +99,6 @@ class ModifyAntaresStudy:
         self.scenarios = bv.scenarios
         self.dir_study = bv.proxy.dir_study
         self.name_area = bv.proxy.name_area
-        self.area_target = area_target
 
     def overwrite_pmax(self) -> None:
         """
@@ -125,8 +122,8 @@ class ModifyAntaresStudy:
         Append a section to the list.ini file defining an ST storage cluster,
         including its capacities and efficiencies.
         """
-        content = f"""[lt_stock_proxy_{self.area_target}]
-name = lt_stock_proxy_{self.area_target}
+        content = f"""[lt_stock_proxy_{self.name_area}]
+name = lt_stock_proxy_{self.name_area}
 group = PSP_open
 reservoircapacity = {self.bv.proxy.reservoir.capacity}
 initiallevel = 0.500000
@@ -137,7 +134,7 @@ efficiencywithdrawal = {self.bv.proxy.turb_efficiency}
 initialleveloptim = false
 enabled = true
 """
-        list_ini_path = os.path.join(self.dir_study, "input", "st-storage", "clusters", self.area_target, "list.ini")
+        list_ini_path = os.path.join(self.dir_study, "input", "st-storage", "clusters", self.name_area, "list.ini")
         os.makedirs(os.path.dirname(list_ini_path), exist_ok=True)
         with open(list_ini_path, "a") as f:
             f.write(content)
@@ -164,7 +161,7 @@ enabled = true
         modulation_withdrawal = np.concatenate([modulation_withdrawal, np.full(24, modulation_withdrawal[-1])])
 
         folder_path = os.path.join(
-            self.dir_study, "input", "st-storage", "series", self.area_target, f"lt_stock_proxy_{self.area_target}"
+            self.dir_study, "input", "st-storage", "series", self.name_area, f"lt_stock_proxy_{self.name_area}"
         )
         os.makedirs(folder_path, exist_ok=True)
         np.savetxt(os.path.join(folder_path, "PMAX-injection.txt"), modulation_injection, fmt="%.20f")
@@ -173,10 +170,10 @@ enabled = true
     def create_rule_curve_file(self) -> None:
         """
         Create the adjusted hourly lower-rule-curve.txt and upper-rule-curve.txt files
-        based on adjusted trajectories, or default values if absent.
+        based default values.
         """
         folder_path = os.path.join(
-            self.dir_study, "input", "st-storage", "series", self.area_target, f"lt_stock_proxy_{self.area_target}"
+            self.dir_study, "input", "st-storage", "series", self.name_area, f"lt_stock_proxy_{self.name_area}"
         )
         os.makedirs(folder_path, exist_ok=True)
         lower_arr = np.zeros(8760)
@@ -187,8 +184,8 @@ enabled = true
 
     def modify_scenario_builder(self) -> None:
         """
-        Create a text file in tmp/scenariobuilder_lines listing
-        the lines needed to assign ST clusters to MC scenarios.
+        Create a text file in user/tmp/scenariobuilder_lines listing
+        the lines needed to assign ST clusters and stock proxy to MC scenarios.
         """
         config = ConfigParser(strict=False)
         config.read(os.path.join(self.dir_study, "settings", "generaldata.ini"))
@@ -197,11 +194,12 @@ enabled = true
         lines = []
         for mc in range(nbyears):
             trajectory = (mc % self.bv.proxy.reservoir.nb_scenarios) + 1
-            lines.append(f"sts,{self.area_target},{mc},lt_stock_proxy_{self.area_target}={trajectory}")
+            lines.append(f"sts,{self.name_area},{mc},lt_stock_proxy_{self.name_area}={trajectory}")
+            lines.append(f"s,{self.name_area},{mc},lt_stock_proxy_{self.name_area}={trajectory}")
 
-        sb_dir = os.path.join(self.dir_study, "tmp", "scenariobuilder_lines")
+        sb_dir = os.path.join(self.dir_study, "user","tmp", "scenariobuilder_lines")
         os.makedirs(sb_dir, exist_ok=True)
-        with open(os.path.join(sb_dir, f"{self.area_target}.txt"), "w") as f:
+        with open(os.path.join(sb_dir, f"{self.name_area}.txt"), "w") as f:
             f.write("\n".join(lines) + "\n")
 
     def adjust_inflow_pmax_withdrawal_constraint(self, balance: np.ndarray, week: int) -> np.ndarray:
@@ -247,7 +245,7 @@ enabled = true
                 hourly_inflow = self.bv.proxy.reservoir.hourly_inflow[hour_start:hour_start + 168, s]
                 balance[hour_start:hour_start + 168, s] += hourly_inflow
 
-                # Adjust inflows to respect reservoir cosntraints (no overflow and no negative stock)
+                # Adjust inflows to respect st storage constraints (no overflow and no negative stock)
                 balance[hour_start:hour_start + 168, s] -= self.trajectories.inflow_adjust_overflow[w, s, :]
 
                 # Adjust inflows to respect pmax constraints (round errors)
@@ -277,70 +275,50 @@ enabled = true
             "input",
             "st-storage",
             "series",
-            self.area_target,
-            f"lt_stock_proxy_{self.area_target}",
+            self.name_area,
+            f"lt_stock_proxy_{self.name_area}",
             "inflows.txt",
         )
         np.savetxt(path, balance, fmt="%.20f", delimiter="\t")
 
     def adjust_to_spillage_constraint(self) -> None:
-        miscgen_path = os.path.join(self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt")
-        load_path = os.path.join(self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt")
-        solar_path = os.path.join(self.dir_study, "input", "solar", "series", f"solar_{self.area_target}.txt")
+        miscgen_path = os.path.join(self.dir_study, "input", "misc-gen", f"miscgen-{self.name_area}.txt")
+        load_path = os.path.join(self.dir_study, "input", "load", "series", f"load_{self.name_area}.txt")
+        solar_path = os.path.join(self.dir_study, "input", "solar", "series", f"solar_{self.name_area}.txt")
 
         miscgen_backup_path = miscgen_path.replace(".txt", "_old.txt")
         load_backup_path = load_path.replace(".txt", "_old.txt")
         solar_backup_path = solar_path.replace(".txt", "_old.txt")
 
+        S = self.bv.proxy.reservoir.nb_scenarios
+
         if os.path.exists(miscgen_path):
             if not os.path.exists(miscgen_backup_path):
                 os.rename(miscgen_path, miscgen_backup_path)
-            else:
-                os.remove(miscgen_path)
+        
         if os.path.exists(load_path):
             if not os.path.exists(load_backup_path):
                 os.rename(load_path, load_backup_path)
-            else:
-                os.remove(load_path)
+
         if os.path.exists(solar_path):
             if not os.path.exists(solar_backup_path):
                 os.rename(solar_path, solar_backup_path)
-            else:
-                os.remove(solar_path)
 
-        try:
+        if os.path.exists(miscgen_backup_path) and os.path.getsize(miscgen_backup_path)!=0:
             miscgen_data = np.loadtxt(miscgen_backup_path)
-            if miscgen_data.size == 0:
-                miscgen_data = np.zeros((8760, 8))
-        except Exception:
+        else:
             miscgen_data = np.zeros((8760, 8))
-        try:
+            
+        if os.path.exists(load_backup_path) and os.path.getsize(load_backup_path)!=0:
             load_data = np.loadtxt(load_backup_path)
-            if load_data.size == 0:
-                load_data = np.zeros((8760, len(self.scenarios)))
-        except Exception:
-            load_data = np.zeros((8760, len(self.scenarios)))
-        if miscgen_data.ndim == 1:
-            miscgen_data = np.zeros((8760, 8))
-        if load_data.ndim == 1:
-            load_data = load_data.reshape(-1, 1)
+        else:
+            load_data = np.zeros((8760, S))
+    
 
-        S = len(self.scenarios)
-        try:
+        if os.path.exists(solar_backup_path) and os.path.getsize(solar_backup_path)!=0:
             solar_data = np.loadtxt(solar_backup_path)
-            if solar_data.size == 0:
-                solar_data = np.zeros((8760, S))
-        except Exception:
+        else:
             solar_data = np.zeros((8760, S))
-        if solar_data.ndim == 1:
-            solar_data = solar_data.reshape(-1, 1)
-        if solar_data.shape[0] != 8760:
-            solar_data = np.zeros((8760, S))
-        if solar_data.shape[1] != S:
-            if solar_data.shape[1] == 1 and S > 1:
-                solar_data = np.tile(solar_data, (1, S))
-            else:
-                solar_data = np.zeros((8760, S))
 
         negatives = np.minimum(load_data, 0.0)
         transfer = -negatives
@@ -375,13 +353,12 @@ enabled = true
 
 
 class UndoAntaresModifications:
-    def __init__(self, dir_study: str, area: str, area_target: str):
+    def __init__(self, dir_study: str, area: str):
         """
-        Initialize with study directory path, original area, and target area.
+        Initialize with study directory path, original area.
         """
         self.dir_study = dir_study
         self.area = area
-        self.area_target = area_target
 
     def restore_pmax(self) -> None:
         """
@@ -400,10 +377,10 @@ class UndoAntaresModifications:
     def remove_st_cluster_section(self) -> None:
         """
         Remove the ST proxy section from the storage cluster list.ini file
-        for the target area.
+        for the area.
         """
         list_ini_path = os.path.join(
-            self.dir_study, "input", "st-storage", "clusters", self.area_target, "list.ini"
+            self.dir_study, "input", "st-storage", "clusters", self.area, "list.ini"
         )
         if not os.path.exists(list_ini_path):
             return
@@ -414,7 +391,7 @@ class UndoAntaresModifications:
         new_lines = []
         skip = False
         for line in lines:
-            if line.strip().startswith(f"[lt_stock_proxy_{self.area_target}]"):
+            if line.strip().startswith(f"[lt_stock_proxy_{self.area}]"):
                 skip = True
                 continue
             elif skip and line.strip().startswith("["):
@@ -428,11 +405,11 @@ class UndoAntaresModifications:
 
     def remove_st_series_folder(self) -> None:
         """
-        Remove the folder containing ST proxy series for the target area.
+        Remove the folder containing ST proxy series for the area.
         """
         folder = os.path.join(
-            self.dir_study, "input", "st-storage", "series", self.area_target,
-            f"lt_stock_proxy_{self.area_target}"
+            self.dir_study, "input", "st-storage", "series", self.area,
+            f"lt_stock_proxy_{self.area}"
         )
         if os.path.exists(folder):
             shutil.rmtree(folder)
@@ -441,7 +418,7 @@ class UndoAntaresModifications:
     def clean_scenariobuilder(self) -> None:
         """
         Clean the scenariobuilder.dat file by removing lines associated with
-        the ST proxy for the target area.
+        the ST proxy for the area (both 'sts' and 's' entries).
         """
         path = os.path.join(self.dir_study, "settings", "scenariobuilder.dat")
         if not os.path.exists(path):
@@ -449,15 +426,21 @@ class UndoAntaresModifications:
 
         with open(path, "r") as f:
             lines = f.readlines()
-        if self.area_target is not None:
-            filtered = [line for line in lines if not line.startswith(f"sts,{self.area_target},")]
+
+        if self.area is not None:
+            filtered = [
+                line for line in lines
+                if not line.startswith(f"sts,{self.area},")
+                and not line.startswith(f"s,{self.area},")
+            ]
         else:
             filtered = [line for line in lines if f"lt_stock_proxy_{self.area}" not in line]
 
         with open(path, "w") as f:
             f.writelines(filtered)
 
-    def restore_miscgen_and_load(self) -> None:
+
+    def restore_miscgen_load_and_solar(self) -> None:
         """
         Restore study inputs to their pre-modification state:
         - Restore miscgen-{area}.txt from miscgen-{area}_old.txt if it exists.
@@ -466,29 +449,26 @@ class UndoAntaresModifications:
         (this file may have been created when negative load was transferred to solar per scenario).
         Missing backups are ignored; existing current files are overwritten or removed as needed.
         """
-        miscgen_path = os.path.join(self.dir_study, "input", "misc-gen", f"miscgen-{self.area_target}.txt")
+        miscgen_path = os.path.join(self.dir_study, "input", "misc-gen", f"miscgen-{self.area}.txt")
         miscgen_backup_path = miscgen_path.replace(".txt", "_old.txt")
         if os.path.exists(miscgen_backup_path):
             if os.path.exists(miscgen_path):
                 os.remove(miscgen_path)
             os.rename(miscgen_backup_path, miscgen_path)
 
-        load_path = os.path.join(self.dir_study, "input", "load", "series", f"load_{self.area_target}.txt")
+        load_path = os.path.join(self.dir_study, "input", "load", "series", f"load_{self.area}.txt")
         load_backup_path = load_path.replace(".txt", "_old.txt")
         if os.path.exists(load_backup_path):
             if os.path.exists(load_path):
                 os.remove(load_path)
             os.rename(load_backup_path, load_path)
 
-        solar_path = os.path.join(self.dir_study, "input", "solar", "series", f"solar_{self.area_target}.txt")
+        solar_path = os.path.join(self.dir_study, "input", "solar", "series", f"solar_{self.area}.txt")
         solar_backup_path = solar_path.replace(".txt", "_old.txt")
         if os.path.exists(solar_backup_path):
             if os.path.exists(solar_path):
                 os.remove(solar_path)
             os.rename(solar_backup_path, solar_path)
-        else:
-            if os.path.exists(solar_path):
-                os.remove(solar_path)
 
 
     def undo_all(self) -> None:
@@ -499,4 +479,4 @@ class UndoAntaresModifications:
         self.remove_st_cluster_section()
         self.remove_st_series_folder()
         self.clean_scenariobuilder()
-        self.restore_miscgen_and_load()
+        self.restore_miscgen_load_and_solar()

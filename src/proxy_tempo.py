@@ -18,7 +18,7 @@ rcParams['font.family'] = 'Cambria'
 """
 To run the calculations, export daily control trajectories, stock trajectories, and generate plots, use:
 
-python "path/to/script.py" --dir_study "path_to_study" --area "area_name" --actions <list_of_actions> [--cvar <float>]
+python "path/to/script.py" --dir_study "path_to_study" --area "area_name" --actions <list_of_actions> [--cvar <float>] [--lower_rc_red <list_of_21_integers>]
 
 - --dir_study : Path to the Antares study directory (required).
 - --area      : Name of the area to process (required).
@@ -31,14 +31,17 @@ python "path/to/script.py" --dir_study "path_to_study" --area "area_name" --acti
     * plot_usage_values_wr    : Plot usage values for white+red day stocks.
 
 - --cvar      : (Optional) CVaR parameter controlling risk aversion (default=1.0).
+- --lower_rc_red : (Optionnal) Lower rule curve for red stock (list of 21 integers, default=0*21, space-separated).
 
-Example:
+Examples:
 
-python tempo.py --dir_study "/path/to/study" --area "MyArea" --actions export_trajectories plot_trajectories --cvar 1.5
+python proxy_tempo.py --dir_study "/path/to/study" --area "MyArea" --actions export_trajectories plot_trajectories --cvar 1.5
+python proxy_tempo.py --dir_study "/path/to/study" --area "MyArea" --actions plot_trajectories \
+    --lower_rc_red 20 19 18 17 16 15 14 13 12 11 10 9 8 7 6 5 4 3 2 1 0
 """
 
 class GainFunctionTempo:
-    def __init__(self, net_load: NetLoad, max_control: int):
+    def __init__(self, net_load: NetLoad):
         """
         Initialize gain function with net load data and maximum weekly control.
         Extends net_load data by repeating July-August period for continuity.
@@ -48,9 +51,8 @@ class GainFunctionTempo:
         self.net_load = np.concatenate((self.net_load, july_august), axis=0)
         self.nb_scenarios = net_load.nb_scenarios
         self.daily_net_load = self.net_load.reshape(365 + 64, 24, self.nb_scenarios).sum(axis=1)  # Sum hourly to daily load
-        self.max_control = max_control
 
-    def gain_for_week_control_and_scenario(self, week_index: int, control: int, scenario: int) -> float:
+    def gain_for_week_control_and_scenario(self, week_index: int, control: int, scenario: int, max_control:int) -> float:
         """
         Compute gain for a given week index, control level, and scenario.
         Gains are sum of the top 'control' daily net loads in the considered week,
@@ -61,7 +63,7 @@ class GainFunctionTempo:
 
         daily_load_week = self.daily_net_load[week_start:week_end, scenario]
         # Sort and take top 'max_control' values in descending order
-        daily_load_week = np.sort(daily_load_week[:self.max_control])[::-1]
+        daily_load_week = np.sort(daily_load_week[:max_control])[::-1]
 
         gain = np.sum(daily_load_week[:control])
         return gain
@@ -73,14 +75,15 @@ class BellmanValuesTempo:
                  capacity: int,
                  start_week: int,
                  end_week: int,
-                 CVar: float,
+                 max_control:int,
+                 CVar: float=1.0,
                  lower_rule_curve : np.ndarray = np.repeat(0,61),
                  upper_rule_curve : np.ndarray|None = None ):
         """
         Initialize Bellman value calculator over a period of weeks with given capacity and CVar.
         Prepares arrays to store Bellman values, their mean with CVar risk measure, and usage values.
         """
-        self.max_control = gain_function.max_control
+        self.max_control = max_control
         self.gain_function = gain_function
         self.start_week = start_week
         self.end_week = end_week
@@ -131,7 +134,7 @@ class BellmanValuesTempo:
                     for control in range(self.max_control + 1):
 
                         # Week W+1 selected because Bellman values are computed at end of week w
-                        gain = self.gain_function.gain_for_week_control_and_scenario(w + 1, control, s)
+                        gain = self.gain_function.gain_for_week_control_and_scenario(w + 1, control, s,self.max_control)
                         future_value = self.mean_bv[w + 1, c - control]
                         total_value = gain + future_value + penalty(c - control)
                         if total_value > best_value:
@@ -162,72 +165,73 @@ class TrajectoriesTempo:
         optionally constrained by 'red' stock trajectories.
         """
         self.bv = bv
-        self.usage_values = bv.usage_values
-        self.net_load = self.bv.gain_function.net_load
         self.capacity = self.bv.capacity
         self.nb_scenarios = self.bv.nb_scenarios
         self.start_week = self.bv.start_week
         self.end_week = self.bv.end_week
         self.max_control = self.bv.max_control
 
-        self.control_trajectories = np.zeros((self.nb_scenarios, 61))
-        self.stock_trajectories = np.zeros((self.nb_scenarios, 61))
-
         self.stock_trajectories_red = stock_trajectories_red
 
-        self.compute_trajectories()
-        self.compute_trajectories_white()
+        self.control_trajectories,self.stock_trajectories=self.compute_trajectories()
+        self.control_trajectories_white,self.stock_trajectories_white=self.compute_trajectories_white()
 
-    def compute_trajectories(self) -> None:
+    def compute_trajectories(self) -> tuple:
         """
         Compute stock and control trajectories over all scenarios and weeks,
         considering possible constraints from reduced stock trajectories.
         """
+        control_trajectories = np.zeros((self.nb_scenarios, 61))
+        stock_trajectories = np.zeros((self.nb_scenarios, 61))
+
         for s in range(self.nb_scenarios):
-            self.stock_trajectories[s, :self.start_week] = self.capacity
+            stock_trajectories[s, :self.start_week] = self.capacity
             for w in range(self.start_week, self.end_week + 1):
                 penalty = self.bv.penalty(w)
-                if self.start_week>0 and self.stock_trajectories[s, w - 1] == 0:
-                    self.stock_trajectories[s, w:] = 0
+                if self.start_week>0 and stock_trajectories[s, w - 1] == 0:
+                    stock_trajectories[s, w:] = 0
                     break
                 best_value = -np.inf
                 best_control = None
                 for c in range(self.max_control + 1):
-                    gain = self.bv.gain_function.gain_for_week_control_and_scenario(w, c, s)
-                    future_value = self.bv.mean_bv[w, int(self.stock_trajectories[s, w - 1]) - c]
-                    total_value = gain + future_value + penalty(int(self.stock_trajectories[s, w - 1]) - c)
+                    gain = self.bv.gain_function.gain_for_week_control_and_scenario(w, c, s,self.max_control)
+                    future_value = self.bv.mean_bv[w, int(stock_trajectories[s, w - 1]) - c]
+                    total_value = gain + future_value + penalty(int(stock_trajectories[s, w - 1]) - c)
                     if total_value > best_value:
                         best_control = c
                         best_value = total_value
                 if self.stock_trajectories_red is not None and best_control is not None:
                     # Do not allow negative stocks below red stocks
-                    if self.stock_trajectories[s, w - 1] - best_control < self.stock_trajectories_red[s, w]:
-                        best_control = self.stock_trajectories[s, w - 1] - self.stock_trajectories_red[s, w]
+                    if stock_trajectories[s, w - 1] - best_control < self.stock_trajectories_red[s, w]:
+                        best_control = stock_trajectories[s, w - 1] - self.stock_trajectories_red[s, w]
                     # Do not allow negative controls below red controls
                     if best_control < self.stock_trajectories_red[s, w - 1] - self.stock_trajectories_red[s, w]:
                         best_control = self.stock_trajectories_red[s, w - 1] - self.stock_trajectories_red[s, w]
 
                 if best_control is not None:
-                    self.stock_trajectories[s, w] = self.stock_trajectories[s, w - 1] - best_control
-                    self.control_trajectories[s, w] = best_control
+                    stock_trajectories[s, w] = stock_trajectories[s, w - 1] - best_control
+                    control_trajectories[s, w] = best_control
                 else:
-                    self.stock_trajectories[s, w] = np.nan
-                    self.control_trajectories[s, w] = np.nan
+                    stock_trajectories[s, w] = np.nan
+                    control_trajectories[s, w] = np.nan
 
-    def compute_trajectories_white(self) -> None:
+        return control_trajectories, stock_trajectories
+
+    def compute_trajectories_white(self) -> tuple:
         """
         Compute the 'white' stock and control trajectories as residuals after
         subtracting the 'red' stock trajectories, if provided.
         """
+        stock_trajectories_white = np.zeros((self.nb_scenarios, 61))
+        control_trajectories_white = np.zeros((self.nb_scenarios, 61))
+
         if self.stock_trajectories_red is not None:
-            self.stock_trajectories_white = self.stock_trajectories - self.stock_trajectories_red
-        else:
-            self.stock_trajectories_white = np.array([[]])
-        self.control_trajectories_white = np.zeros((self.nb_scenarios, 61))
-        if self.stock_trajectories_red is not None:
+            stock_trajectories_white = self.stock_trajectories - self.stock_trajectories_red
             for s in range(self.nb_scenarios):
                 for w in range(1, 61):
-                    self.control_trajectories_white[s, w] = self.stock_trajectories_white[s, w - 1] - self.stock_trajectories_white[s, w]
+                    control_trajectories_white[s, w] = stock_trajectories_white[s, w - 1] - stock_trajectories_white[s, w]
+
+        return control_trajectories_white, stock_trajectories_white
 
     def control_trajectory_for_scenario(self, scenario: int) -> np.ndarray:
         """
@@ -555,16 +559,15 @@ class LaunchTempo:
                             dir_study=self.dir_study,
                             name_area=self.area)
 
-        gain_function_tempo_r = GainFunctionTempo(net_load=net_load, max_control=5)
-        gain_function_tempo_wr = GainFunctionTempo(net_load=net_load, max_control=6)
+        gain_function_tempo = GainFunctionTempo(net_load=net_load)
 
-        bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo_r, capacity=22,
-                                              start_week=18, end_week=38, CVar=self.CVar,
+        bellman_values_r = BellmanValuesTempo(gain_function=gain_function_tempo, capacity=22,
+                                              start_week=18, end_week=38, CVar=self.CVar, max_control=5,
                                               lower_rule_curve=
                                               np.concatenate([np.repeat(22,18),self.lower_rc,np.repeat(0,22)]))
         
-        bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo_wr, capacity=65,
-                                               start_week=9, end_week=60, CVar=self.CVar,
+        bellman_values_wr = BellmanValuesTempo(gain_function=gain_function_tempo, capacity=65,
+                                               start_week=9, end_week=60, CVar=self.CVar, max_control=6,
                                               lower_rule_curve=
                                               np.concatenate([np.repeat(22,18),self.lower_rc,np.repeat(0,22)]))
 

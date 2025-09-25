@@ -120,12 +120,7 @@ class RewardApproximation:
 
     def reward_function(self) -> Callable:
         """Return a function to evaluate reward at any point based on the current approximation."""
-        return lambda x: min(
-            [
-                -self.duals[i] * (x - self.controls[i]) + self.costs[i]
-                for i in range(len(self.controls))
-            ]
-        )
+        return interp1d(self.controls, self.costs)
 
     def update_reward_approximation(
         self, new_control: List[float], new_cost: List[float], new_dual: List[float]

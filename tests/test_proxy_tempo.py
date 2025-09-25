@@ -1,5 +1,3 @@
-from calendar import week
-from math import exp
 import pytest
 import numpy as np
 from read_antares_data import Reservoir,NetLoad
@@ -9,27 +7,27 @@ dir_study = "test_data/two_nodes"
 area = "area1"
 
 net_load = NetLoad(reservoir=Reservoir(dir_study=dir_study,name_area=area), dir_study=dir_study, name_area=area)
-gain_function_red = GainFunctionTempo(net_load=net_load,max_control=5)
-bellman_values_red = BellmanValuesTempo(gain_function=gain_function_red,
+gain_function = GainFunctionTempo(net_load=net_load)
+bellman_values_red = BellmanValuesTempo(gain_function=gain_function,
                                     capacity=22,
                                     start_week=18,
                                     end_week=38,
-                                    CVar=1)
+                                    max_control=5)
 trajectories_red = TrajectoriesTempo(bv=bellman_values_red)
 
-gain_function_white_and_red = GainFunctionTempo(net_load=net_load,max_control=6)
-bellman_values_white_and_red = BellmanValuesTempo(gain_function=gain_function_white_and_red,
+bellman_values_white_and_red = BellmanValuesTempo(gain_function=gain_function,
                                                   capacity=65,
                                                   start_week=9,
                                                   end_week=60,
-                                                  CVar=1)
+                                                  max_control=6)
 trajectories_white_and_red = TrajectoriesTempo(bv=bellman_values_white_and_red,
                                                stock_trajectories_red=trajectories_red.stock_trajectories)
 
-def test_gain_function_tempo_red()->None:
-    assert gain_function_red.gain_for_week_control_and_scenario(week_index=18,control=5,scenario=0)==pytest.approx(4559276.533)
-    assert gain_function_red.gain_for_week_control_and_scenario(week_index=28,control=3,scenario=5)==pytest.approx(2493107.2824999997)
-    assert gain_function_red.gain_for_week_control_and_scenario(week_index=30,control=0,scenario=9)==pytest.approx(0)
+def test_gain_function_tempo()->None:
+    assert gain_function.gain_for_week_control_and_scenario(week_index=18,control=5,scenario=0,max_control=5)==pytest.approx(4559276.533)
+    assert gain_function.gain_for_week_control_and_scenario(week_index=28,control=3,scenario=5,max_control=5)==pytest.approx(2493107.2824999997)
+    assert gain_function.gain_for_week_control_and_scenario(week_index=30,control=0,scenario=9,max_control=5)==pytest.approx(0)
+    assert gain_function.gain_for_week_control_and_scenario(week_index=10,control=6,scenario=0,max_control=6)==pytest.approx(4480186.672499999)
 
 def test_bellman_values_tempo()->None:
     assert bellman_values_red.mean_bv.shape==(61,23) 

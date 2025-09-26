@@ -97,12 +97,10 @@ class BellmanValuesTempo:
         # Tempo White : 1st September -> 31st August
         # Time horizon for resolution : 1st July (start of year in Antares) -> 30 June (61 weeks)
         self.mean_bv = np.zeros((61, self.capacity + 1))  # CVaR aggregated values over scenarios
-        self.usage_values = np.zeros((61, self.capacity))
         self.lower_rule_curve = lower_rule_curve
         self.upper_rule_curve = upper_rule_curve if upper_rule_curve is not None else np.repeat(self.capacity,61)
 
         self.compute_bellman_values()
-        self.compute_usage_values()
 
     def penalty(self,week : int) -> Callable:
         """
@@ -147,13 +145,15 @@ class BellmanValuesTempo:
                 cutoff_index = int((1 - alpha) * len(sorted_bv))
                 self.mean_bv[w, c] = np.mean(sorted_bv[cutoff_index:])
 
-    def compute_usage_values(self) -> None:
+    def compute_usage_values(self) -> np.ndarray:
         """
         Compute marginal usage values as difference of Bellman mean values between successive capacity levels.
         """
+        usage_values = np.zeros((61, self.capacity))
         for w in range(self.start_week, self.end_week + 1):
             for c in range(1, self.capacity + 1):
-                self.usage_values[w, c - 1] = self.mean_bv[w, c] - self.mean_bv[w, c - 1]
+                usage_values[w, c - 1] = self.mean_bv[w, c] - self.mean_bv[w, c - 1]
+        return usage_values
 
 
 class TrajectoriesTempo:
@@ -383,11 +383,12 @@ class LaunchTempo:
         """
         data = []
         max_capacity = max(bv_r.capacity, bv_wr.capacity)
-
+        usage_values_red = bv_r.compute_usage_values()
+        usage_values_white_and_red= bv_wr.compute_usage_values()
         for week in range(61):
             for stock in range(max_capacity):
-                val_r = bv_r.usage_values[week, stock] if (week < bv_r.usage_values.shape[0] and stock < bv_r.capacity) else np.nan
-                val_wr = bv_wr.usage_values[week, stock] if (week < bv_wr.usage_values.shape[0] and stock < bv_wr.capacity) else np.nan
+                val_r = usage_values_red[week, stock] if (week < usage_values_red.shape[0] and stock < bv_r.capacity) else np.nan
+                val_wr = usage_values_white_and_red[week, stock] if (week < usage_values_white_and_red.shape[0] and stock < bv_wr.capacity) else np.nan
                 data.append({
                     "week": week + 1,
                     "remaining_stock": stock,
@@ -524,12 +525,13 @@ class LaunchTempo:
         Plot usage values as a function of stock for each week.
         Legend is placed outside the plot for clarity.
         """
+        usage_values = bv.compute_usage_values()
         stock_levels = np.arange(1, bv.capacity + 1)
 
         fig, ax = plt.subplots(figsize=(12, 6))
 
         for w in range(bv.start_week, bv.end_week + 1):
-            ax.plot(stock_levels, bv.usage_values[w], label=f"W{w + 1}")
+            ax.plot(stock_levels, usage_values[w], label=f"W{w + 1}")
 
         ax.set_xlabel('Stock (remaining days)', fontsize=14)
         ax.set_ylabel("Usage Value (MWh/load reduction)", fontsize=14)

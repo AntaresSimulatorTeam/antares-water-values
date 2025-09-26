@@ -66,6 +66,27 @@ class Exporter:
         output_path = os.path.join(self.export_dir, filename)
         df.to_csv(output_path, index=False)
 
+    def export_usage_values(self, filename:str = "usage_values.csv") -> None:
+        """
+        Export usage values in expectation for each stock percentage, week.
+        to a CSV file.
+        """
+        usage_values=self.bv.compute_usage_values()
+        data = []
+        for w in range(self.nb_weeks):
+            for c_index, c in enumerate(range(2, 101, 2)):
+                stock_percent = c  # stock expressed in %
+                value = usage_values[w, c_index]
+                data.append({
+                    "week": w + 1,
+                    "stock_percent": stock_percent,
+                    "usage_value": value
+                })
+
+        df = pd.DataFrame(data)
+        output_path = os.path.join(self.export_dir, filename)
+        df.to_csv(output_path, index=False)
+
     def export_trajectories(self, filename: str = "trajectories.csv") -> None:
         """
         Export optimal stock trajectories for all scenarios and weeks

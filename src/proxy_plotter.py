@@ -42,13 +42,14 @@ class Plotter:
         """
         Plot usage values as a function of stock level for all weeks.
         """
+        usage_values = self.bv.compute_usage_values()
         stock_levels = np.linspace(2, 100, 50)
         plt.figure(figsize=(12, 6))
 
         for w in range(self.bv.nb_weeks):
             plt.plot(
                 stock_levels,
-                self.bv.usage_values[w],
+                usage_values[w],
                 label=f"W {w+1}"
             )
 
@@ -71,12 +72,13 @@ class Plotter:
         """
         Plot a heatmap of usage values over weeks and stock levels.
         """
+        usage_values = self.bv.compute_usage_values()
         fig, ax = plt.subplots(figsize=(14, 6))
 
         norm = colors.Normalize(-3e10,0)
 
         im = ax.imshow(
-            self.bv.usage_values[:-1].T,
+            usage_values[:-1].T,
             aspect='auto',
             origin='lower',
             cmap='nipy_spectral',
@@ -92,7 +94,7 @@ class Plotter:
         ax.set_ylabel("Stock (%)")
         area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
         area_str = f" - Area: {area}" if area else ""
-        ax.set_title(f"Usage Value Heatmap (α={self.bv.proxy.alpha}){area_str}")
+        ax.set_title(f"Usage Value Heatmap (β={self.bv.proxy.alpha}){area_str}")
 
         plt.grid(False)
         plt.tight_layout()

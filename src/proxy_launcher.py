@@ -20,20 +20,25 @@ The processing can be run for multiple areas in parallel, and shared study files
 
 Usage example:
 
-python launch_long_term_storage.py --dir_study "/path/to/antares/study" --areas Area1 Area2 \
+python proxy_launcher.py --dir_study "/path/to/antares/study" --areas Area1 Area2 \
     --MC_years 200 --alpha 2 --enable_logging False --actions export_trajectories plot_usage_values \
+    
+python proxy_launcher.py --dir_study "/path/to/antares/study" --areas Area1 Area2 \
+    --MC_years 200 --actions modify_antares_data --TS_selection 5 10 15 20 25
 
 Arguments:
   --dir_study       (str)    : Path to the Antares study directory (required)
   --areas           (list)   : List of study areas to process, space-separated (required)
   --MC_years        (int)    : Number of Monte-Carlo years to simulate (default: 200)
+  --TS_selection    (list)   : List of TS to consider when calculating Bellman values (default: =MC_years)
   --alpha           (float)  : Cost function alpha parameter (default: 2)
   --enable_logging  (bool)   : Enable detailed logging (default: False)
-  --actions         (list)   : Actions to perform (default: modify_antares_data)
+  --actions         (list)   : Actions to perform (required)
       Available actions include:
       - export_bellman_values
       - export_controls
       - export_trajectories
+      - export_usage_values
       - plot_trajectories
       - plot_usage_values
       - plot_usage_values_heatmap
@@ -42,7 +47,7 @@ Arguments:
 
 Note:
 - When using 'undo_modifications' as the only action, no export directory is created.
-- For parallel runs on multiple areas, results are saved in a timestamped directory under the study folder.
+- For parallel runs on multiple areas, results are saved in a timestamped directory under the study folder/user/.
 
 """
 
@@ -106,18 +111,6 @@ class Launch:
 
         if actions is None:
             actions = ["modify_antares_data"]
-        if actions == ["all"]:
-            actions = [
-                "export_bellman_values",
-                "export_controls",
-                "export_trajectories",
-                "plot_trajectories",
-                "plot_usage_values",
-                "plot_usage_values_heatmap",
-                "plot_all_trajectories_pyplot",
-                "plot_adjusted_rule_curves",
-                "modify_antares_data",
-            ]
 
         for action in actions:
             if action == "export_bellman_values":
@@ -126,6 +119,8 @@ class Launch:
                 self.exporter.export_controls()
             elif action == "export_trajectories":
                 self.exporter.export_trajectories()
+            elif action == "export_usage_values":
+                self.exporter.export_usage_values()
             elif action == "plot_trajectories":
                 self.plotter.plot_trajectories()
             elif action == "plot_usage_values":

@@ -35,8 +35,6 @@ class BellmanValuesProxy:
         self.logger = logger_setup.get_logger() if enable_logging else logger_setup.get_null_logger()
 
         self.compute_bellman_values()
-        # Useless to compute optimal trajectories, uncomment if plot needed
-        # self.compute_usage_values()
     
     def penalty_final_stock(self) -> Callable:
         """
@@ -250,14 +248,15 @@ class BellmanValuesProxy:
                 self.mean_bv[w, c // 2] = np.mean(bv)
             self.logger.debug(f"Average Bellman values for week {w + 1} : {self.mean_bv[w]}")
 
-    def compute_usage_values(self) -> None:
+    def compute_usage_values(self) -> np.ndarray:
         """
         Computes usage values as discrete derivatives of mean Bellman values across stock levels for each week.
         """
-        self.usage_values = np.zeros((self.nb_weeks, 50))
+        usage_values = np.zeros((self.nb_weeks, 50))
         for w in range(self.nb_weeks):
-            for c in range(2, 102, 2):
-                self.usage_values[w, (c // 2) - 1] = self.mean_bv[w, c // 2] - self.mean_bv[w, (c // 2) - 1]
+            for c in range(2, 101, 2):
+                usage_values[w, (c // 2) - 1] = self.mean_bv[w, c // 2] - self.mean_bv[w, (c // 2) - 1]
+        return usage_values
 
 class OptimalTrajectories:
     def __init__(self,

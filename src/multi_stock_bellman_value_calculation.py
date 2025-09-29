@@ -516,7 +516,6 @@ def cutting_plane_method(
     starting_pt: Dict[AreaIndex, float],
     costs_approx: LinearCostEstimator,
     costs: Dict[TimeScenarioIndex, List[float]],
-    final_bellman_values: Estimator,
     nSteps_bellman: int,
     method: str,
     correlations: np.ndarray,
@@ -590,14 +589,12 @@ def cutting_plane_method(
             param=param,
             multi_stock_management=multi_stock_management,
             costs_approx=costs_approx,
-            final_bellman_values=final_bellman_values,
             name_solver=name_solver,
             levels=levels,
             divisor=divisor,
             verbose=verbose,
             piecewiselinear=False,
         )
-        final_bellman_values = bellman_values[WeekIndex(0)]
 
         # Evaluate optimal
         trajectory, pseudo_opt_controls, _ = (
@@ -712,6 +709,7 @@ def iter_bell_vals(
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
     Dict[AreaIndex, Dict[WeekIndex, List[float]]],
+    float,
 ]:
     """
     In a similar fashion to Kelley's algorithm (1960), the idea is to approximate the (convex) cost function
@@ -776,12 +774,7 @@ def iter_bell_vals(
         controls=controls_list,
         costs=costs,
         duals=duals,
-        type_estimator="LinearDecomposer",
-    )
-
-    # Initialize our approximation on future costs
-    future_costs_approx = get_default_linear_interpolator(
-        multi_stock_management=multi_stock_management,
+        type_estimator="LinearInterpolator",
     )
 
     # Correlations matrix
@@ -800,7 +793,6 @@ def iter_bell_vals(
             costs_approx=costs_approx,
             saving_dir=saving_dir,
             costs=costs,
-            final_bellman_values=future_costs_approx,
             nSteps_bellman=nSteps_bellman,
             method=method,
             correlations=correlations,
@@ -810,6 +802,8 @@ def iter_bell_vals(
             verbose=verbose,
         )
     )
+
+    lb = future_costs_approx_l[WeekIndex(0)](multi_stock_management.get_initial_level())
 
     # Deducing usage values
     usage_values, _ = compute_usage_values_from_costs(
@@ -830,6 +824,7 @@ def iter_bell_vals(
         levels,
         optimal_trajectory,
         usage_values,
+        lb,
     )
 
 
@@ -899,7 +894,7 @@ def sddp_cutting_planes(
         normalization["euro"],
         normalization["energy"],
     )
-    jl_sddp.reinit_cuts(*formatted_data)
+    # jl_sddp.reinit_cuts(*formatted_data)
     # Body
     while iter < maxiter and (iter < 4 or (opt_gap > precision)):
         iter += 1
@@ -1046,7 +1041,7 @@ def iter_bell_vals_v2(
         controls=controls_list,
         costs=costs,
         duals=duals,
-        type_estimator="LinearDecomposer",
+        type_estimator="LinearInterpolator",
     )
     # Iterative part
     usage_values, bellman_costs, costs_approx, all_uvs, levels_uv, lower_bound = (

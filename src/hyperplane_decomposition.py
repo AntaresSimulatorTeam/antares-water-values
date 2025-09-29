@@ -22,4 +22,8 @@ def decompose_hyperplanes(
     xmids = np.tile(xmid, n_reservoirs).reshape(
         n_inps, n_reservoirs, n_reservoirs
     )  # N_inputs x R x R
-    return xmids, np.zeros(inputs.shape[:-1]), decomp_slopes
+    return (
+        xmids.swapaxes(0, 1),
+        np.zeros(inputs.shape[:-1]),
+        decomp_slopes.swapaxes(0, 1),
+    )

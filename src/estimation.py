@@ -1,30 +1,145 @@
-from typing import Any, Dict, Optional, Union
-
 import numpy as np
+from scipy.interpolate import interp1d
 
+from hyperplane_decomposition import decompose_hyperplanes
 from hyperplane_interpolation import get_interpolation
-from read_antares_data import TimeScenarioParameter
-from type_definition import Array1D
+from stock_discretization import StockDiscretization
+from type_definition import (
+    AreaIndex,
+    Array1D,
+    Dict,
+    List,
+    Optional,
+    ScenarioIndex,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    Union,
+    area_value_to_array,
+    array_to_area_value,
+)
 
 
 class Estimator:
-    """Generic class for estimators/interpolators"""
 
-    def __init__(self, param: TimeScenarioParameter) -> None: ...
+    def __init__(self) -> None:
+        raise NotImplementedError
 
-    def __getitem__(self, ws: Union[tuple[int, int], int]) -> Any: ...
+    def update(
+        self,
+        Vu: float = 0,
+        slope: Dict[str, float] = {},
+        n_scenario: int = 0,
+        idx: int = 0,
+        list_areas: List[str] = [],
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
+        interp_mode: Optional[bool] = False,
+    ) -> None:
+        raise NotImplementedError
 
-    def round(self, precision: int) -> None: ...
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
+        return NotImplemented
 
-    def remove_redundants(self, tolerance: float) -> None: ...
+    def get_costs(self) -> Array1D:
+        return NotImplemented
+
+    def get_true_inputs(self) -> Array1D:
+        return NotImplemented
+
+    def get_true_costs(self) -> Array1D:
+        return NotImplemented
+
+    def get_true_duals(self) -> Array1D:
+        return NotImplemented
 
 
-class LinearInterpolator:
+class PieceWiseLinearInterpolator(Estimator):
+
+    def __init__(
+        self,
+        controls: Array1D,
+        costs: Array1D,
+    ):
+        self.inputs = controls
+        self.costs = costs
+
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
+        fn = interp1d(self.inputs, self.costs)
+        return fn([y for y in x.values()][0])
+
+    def get_costs(self) -> Array1D:
+        return self.costs
+
+    def update(
+        self,
+        Vu: float = 0,
+        slope: Dict[str, float] = {},
+        n_scenario: int = 0,
+        idx: int = 0,
+        list_areas: List[str] = [],
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
+        interp_mode: Optional[bool] = False,
+    ) -> None:
+        self.costs[idx] += -Vu / n_scenario
+
+
+class BellmanValueEstimation(Estimator):
+
+    def __init__(
+        self, value: Dict[str, Array1D], stock_discretization: StockDiscretization
+    ):
+        self.V = value
+        self.discretization = stock_discretization
+
+    def __getitem__(self, key: str) -> Array1D:
+        return self.V[key]
+
+    def update(
+        self,
+        Vu: float = 0,
+        slope: Dict[str, float] = {},
+        n_scenario: int = 0,
+        idx: int = 0,
+        list_areas: List[str] = [],
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
+        interp_mode: Optional[bool] = False,
+    ) -> None:
+        self.V["intercept"][idx] += Vu / n_scenario
+        for area in list_areas:
+            self.V[f"slope_{area}"][idx] += slope[area] / n_scenario
+
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
+        return max(
+            [
+                sum(
+                    [
+                        self.V[f"slope_{area}"][idx]
+                        * (
+                            x[area]
+                            - self.discretization.list_discretization[area][idx[i]]
+                        )
+                        for i, area in enumerate(
+                            self.discretization.list_discretization.keys()
+                        )
+                    ]
+                )
+                + self.V["intercept"][idx]
+                for idx in self.discretization.get_product_stock_discretization()
+            ]
+        )
+
+
+class LinearInterpolator(Estimator):
     """Class to enable use of n-dimensionnal linear interpolation"""
 
     def __init__(
         self,
-        inputs: np.ndarray,
+        controls: np.ndarray,
         costs: np.ndarray,
         duals: np.ndarray,
         interp_mode: Optional[bool] = False,
@@ -39,21 +154,38 @@ class LinearInterpolator:
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        self.inputs = inputs
+        self.inputs = controls
         self.costs = costs.ravel()
         self.duals = duals
-        self.true_inputs = inputs
+        self.true_inputs = controls
         self.true_costs = costs.ravel()
         self.true_duals = duals
         if interp_mode:
             self.add_interpolations()
             self.remove_incoherence()
 
+    def get_costs(self) -> Array1D:
+        return self.costs
+
+    def get_true_inputs(self) -> Array1D:
+        return self.true_inputs
+
+    def get_true_costs(self) -> Array1D:
+        return self.true_costs
+
+    def get_true_duals(self) -> Array1D:
+        return self.true_duals
+
     def update(
         self,
-        inputs: np.ndarray,
-        costs: np.ndarray,
-        duals: np.ndarray,
+        Vu: float = 0,
+        slope: Dict[str, float] = {},
+        n_scenario: int = 0,
+        idx: int = 0,
+        list_areas: List[str] = [],
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
         interp_mode: Optional[bool] = False,
     ) -> None:
         """
@@ -66,10 +198,11 @@ class LinearInterpolator:
             costs:np.ndarray: Cost for every input,
             duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
         """
-        self.inputs = np.concatenate([self.inputs, inputs])
+        assert controls is not None
+        self.inputs = np.concatenate([self.inputs, controls])
         self.costs = np.concatenate([self.costs, costs])
         self.duals = np.concatenate([self.duals, duals])
-        self.true_inputs = np.concatenate([self.true_inputs, inputs])
+        self.true_inputs = np.concatenate([self.true_inputs, controls])
         self.true_costs = np.concatenate([self.true_costs, costs])
         self.true_duals = np.concatenate([self.true_duals, duals])
         if interp_mode:
@@ -94,7 +227,7 @@ class LinearInterpolator:
             self.costs = np.array([0])
             self.duals = np.zeros(inputs_shape)
 
-    def __call__(self, x: np.ndarray) -> float:
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
         """
         Interpolates between the saved points
 
@@ -109,24 +242,13 @@ class LinearInterpolator:
         """
         return np.max(
             [
-                self.costs[id] + np.dot(x - val, self.duals[id])
+                self.costs[id] + np.dot(area_value_to_array(x) - val, self.duals[id])
                 for id, val in enumerate(self.inputs)
             ],
             axis=0,
         )
 
-    def dualize(self, x: np.ndarray) -> float:
-        return self.duals[
-            np.argmax(
-                [
-                    self.costs[id] + np.dot(x - val, self.duals[id])
-                    for id, val in enumerate(self.inputs)
-                ],
-                axis=0,
-            )
-        ]
-
-    def get_owner(self, x: np.ndarray) -> Any:
+    def get_owner(self, x: np.ndarray) -> List[int]:
         """
         Interpolates between the saved points and returns the id of the subgradient active for each interpolation
 
@@ -227,7 +349,7 @@ class LinearInterpolator:
 
     def count_redundant(
         self, tolerance: float, remove: bool = False
-    ) -> tuple[int, list]:
+    ) -> tuple[int, list[bool]]:
         """
         Counts the number of estimation points that are already given by the others
 
@@ -261,33 +383,6 @@ class LinearInterpolator:
             self.remove(ids=redundants)
         return len(redundants), non_redundants
 
-    def remove_doublons(self, precision: int = 5) -> int:
-        n_inputs = self.inputs.shape[0]
-        # Initiate the good points list
-        corresponding_ineqs = np.array(
-            [
-                [
-                    np.format_float_scientific(
-                        cost - np.dot(input, duals), precision=precision
-                    )
-                ]
-                + [
-                    np.format_float_scientific(dual, precision=precision)
-                    for dual in duals
-                ]
-                for input, cost, duals in zip(self.inputs, self.costs, self.duals)
-            ]
-        )
-        # Initiate the good points list
-        non_redundants = [0]
-
-        for i in range(1, n_inputs):
-            if corresponding_ineqs[i] not in corresponding_ineqs[non_redundants]:
-                non_redundants.append(i)
-        redundants = [i for i in range(n_inputs) if i not in non_redundants]
-        self.remove(ids=redundants)
-        return len(redundants)
-
     def round(self, precision: int = 6) -> None:
         self.inputs = np.round(self.inputs, precision)
         self.costs = np.round(self.costs, precision)
@@ -296,181 +391,8 @@ class LinearInterpolator:
         self.true_costs = np.round(self.true_costs, precision)
         self.true_duals = np.round(self.true_duals, precision)
 
-    def to_julia_tuple(self) -> tuple:
-        return self.inputs, self.costs, self.duals
-
-    def to_julia_dict(self) -> Dict:
+    def to_julia_dict(self) -> Dict[str, np.ndarray]:
         return {"inputs": self.inputs, "costs": self.costs, "duals": self.duals}
-
-
-class LinearCostEstimator(Estimator):
-    """A class to contain an ensemble of Interpolators for every week and scenario"""
-
-    def __init__(
-        self,
-        param: TimeScenarioParameter,
-        controls: np.ndarray,
-        costs: np.ndarray,
-        duals: np.ndarray,
-        correlations: Optional[np.ndarray] = None,
-    ) -> None:
-        """
-        Instanciates a LinearCostEstimator
-
-        Parameters
-        ----------
-            param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on
-            controls:np.ndarray: The coordinates for which costs / duals are obtained
-                must have the same shape as what we'll call our interpolator with,
-            costs:np.ndarray: Cost for every input,
-            duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
-        """
-        self.estimators = np.array(
-            [
-                [
-                    LinearDecomposer(
-                        inputs=controls[week, scenario],
-                        costs=costs[week, scenario],
-                        duals=duals[week, scenario],
-                        correlations=correlations,
-                    )
-                    for scenario in range(param.len_scenario)
-                ]
-                for week in range(param.len_week)
-            ]
-        )
-
-    __code__ = __init__.__code__
-
-    def __getitem__(self, ws: Union[tuple[int, int], int]) -> LinearInterpolator:
-        """
-        Gets a LinearInterpolators
-
-        Parameters
-        ----------
-            ws:tuple[int, int] / int: index of the week or scenario we want,
-
-        Returns
-        -------
-            Array of ... or LinearInterpolator
-        """
-        return self.estimators[ws]
-
-    def __setitem__(self, key: tuple[int, int], value: LinearInterpolator) -> None:
-        """Sets LineaInterpolator
-
-        Args:
-            key (tuple[int,int]): Week / Scenario of Linear Interpolator
-            value (LinearInterpolator): Linear Interpolator
-        """
-        self.estimators[key] = value
-
-    def __call__(self, week: int, scenario: int, control: np.ndarray) -> float:
-        """
-        Directly gets an interpolation at given week / scenario
-
-        Parameters
-        ----------
-            week:int: index of the week,
-            scenario:int: index of the scenario,
-            control:np.ndarray: control(s) to interpolate at
-
-        Returns
-        -------
-            np.ndarray: interpolation(s) at control(s)
-        """
-        return self.estimators[week, scenario](control=control)
-
-    def update(
-        self,
-        inputs: np.ndarray,
-        costs: np.ndarray,
-        duals: np.ndarray,
-    ) -> None:
-        """
-        Updates the parameters of the Linear Interpolators
-
-        Parameters
-        ----------
-            inputs:np.ndarray: The coordinates for which costs / duals are obtained
-                must have the same shape as what we'll call our interpolator with,
-            costs:np.ndarray: Cost for every input,
-            duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
-        """
-        for week, (inputs_w, costs_w, duals_w) in enumerate(zip(inputs, costs, duals)):
-            for scenario, (inputs, costs, duals) in enumerate(
-                zip(inputs_w, costs_w, duals_w)
-            ):
-                self.estimators[week, scenario].update(
-                    inputs=inputs,
-                    costs=costs,
-                    duals=duals,
-                )
-
-    def enrich_estimator(self) -> None:
-        """
-        Adds 'mid_cuts' to our cost estimator to smoothen the curves and (hopefully) accelerate convergence
-
-        Args:
-            param (TimeScenarioParameter): Contains information of number of weeks / scenarios
-            costs_approx (LinearCostEstimator): Actual cost estimation
-            n_splits (int, optional): Number of level of subdivision. Defaults to 3.
-
-        Returns:
-            LinearCostEstimator: Interpolated cost estimator
-        """
-        for week_estimators in self.estimators:
-            for estimator in week_estimators:
-                estimator.add_interpolations()
-
-    def cleanup_approximations(
-        self,
-    ) -> None:
-        """Removes incoherent interpolations
-
-        Args:
-            param (TimeScenarioParameter): _description_
-            true_controls (np.ndarray): _description_
-            true_costs (np.ndarray): _description_
-        """
-        for week_estimators in self.estimators:
-            for estimator in week_estimators:
-                estimator.remove_incoherence()
-
-    def remove_redundants(
-        self,
-        tolerance: float = 1e-7,
-    ) -> None:
-        for week_estimators in self.estimators:
-            for estimator in week_estimators:
-                estimator.count_redundant(tolerance=tolerance, remove=True)
-
-    def remove_interpolations(
-        self,
-    ) -> None:
-        for week_estimators in self.estimators:
-            for estimator in week_estimators:
-                estimator.remove_interps()
-
-    def round(
-        self,
-        precision: int = 6,
-    ) -> None:
-        for week_estimators in self.estimators:
-            for estimator in week_estimators:
-                estimator.round(precision)
-
-    def to_julia_compatible_structure(self) -> Array1D:
-        julia_structure = np.array(
-            [
-                [estimator_scenario.to_julia_dict() for estimator_scenario in week]
-                for week in self.estimators
-            ]
-        )
-        return julia_structure
-
-
-from hyperplane_decomposition import decompose_hyperplanes
 
 
 class LinearDecomposer(LinearInterpolator):
@@ -504,10 +426,7 @@ class LinearDecomposer(LinearInterpolator):
         )
 
         self.correlations = correlations
-        self.lower_bound = LinearInterpolator(inputs=inputs, costs=costs, duals=duals)
-        inputs_decomp, duals_decomp = inputs_decomp.swapaxes(
-            0, 1
-        ), duals_decomp.swapaxes(0, 1)
+        self.lower_bound = LinearInterpolator(controls=inputs, costs=costs, duals=duals)
         self.layers: list[LinearInterpolator] = [
             LinearInterpolator(inp, np.zeros(inp.shape[0]), slp)
             for inp, slp in zip(inputs_decomp, duals_decomp)
@@ -526,68 +445,100 @@ class LinearDecomposer(LinearInterpolator):
         self.remove_inconsistence()
         self.remove_incoherence()
 
-    def __call__(self, x: np.ndarray) -> float:
+    def __call__(self, x: Dict[AreaIndex, float]) -> float:
         return np.maximum(
-            self.lower_bound(x), np.sum([layer(x) for layer in self.layers], axis=0)
-        )[0]
-
-    def dualize(self, x: np.ndarray) -> float:
-        lb_lower = self.lower_bound(x) <= np.sum(
-            [layer(x) for layer in self.layers], axis=0
-        )
-        return self.lower_bound.dualize(x) + lb_lower * (
-            np.sum([layer.dualize(x) for layer in self.layers], axis=0)
-            - self.lower_bound.dualize(x)
+            self.lower_bound(x),
+            np.sum([layer(x) for layer in self.layers], axis=0),
         )
 
     def remove_inconsistence(self, tolerance: float = 1) -> None:
         inputs, costs = self.lower_bound.inputs, self.lower_bound.costs
         assert all(costs + tolerance > 0)
-        guesses = np.array([layer(inputs) for layer in self.layers])  # N_res * N_inp
+        guesses = np.array(
+            [
+                [
+                    layer(
+                        array_to_area_value(
+                            x, [AreaIndex(f"{i}") for i in range(inputs[0].shape[0])]
+                        )
+                    )
+                    for x in inputs
+                ]
+                for layer in self.layers
+            ]
+        )  # N_res * N_inp
         while any(np.sum(guesses, axis=0) > costs + tolerance):
             # Identify likely source of error
             bad_guesses = np.sum(guesses, axis=0) > costs + tolerance
             # Removing first potential source of pb
             first_pb_inp = inputs[bad_guesses][0]
-            bad_lay = [layer for layer in self.layers if layer(first_pb_inp) > 0][-1]
+            bad_lay = [
+                layer
+                for layer in self.layers
+                if layer(
+                    array_to_area_value(
+                        first_pb_inp,
+                        [AreaIndex(f"{i}") for i in range(len(first_pb_inp))],
+                    )
+                )
+                > 0
+            ][-1]
             bad_lay.remove(bad_lay.get_owner(first_pb_inp))
             guesses = np.array(
-                [layer(inputs) for layer in self.layers]
+                [
+                    [
+                        layer(
+                            array_to_area_value(
+                                x,
+                                [AreaIndex(f"{i}") for i in range(inputs[0].shape[0])],
+                            )
+                        )
+                        for x in inputs
+                    ]
+                    for layer in self.layers
+                ]
             )  # N_res * N_inp
 
     def update(
         self,
-        inputs: np.ndarray,
-        costs: np.ndarray,
-        duals: np.ndarray,
-        interp_mode: Optional[bool] = None,
+        Vu: Optional[float] = None,
+        slope: Optional[Dict[str, float]] = None,
+        n_scenario: Optional[int] = None,
+        idx: Optional[int] = None,
+        list_areas: Optional[List[str]] = None,
+        costs: Optional[np.ndarray] = None,
+        duals: Optional[np.ndarray] = None,
+        controls: Optional[np.ndarray] = None,
+        interp_mode: Optional[bool] = False,
     ) -> None:
-        n_reservoirs = inputs.shape[-1]
-        n_inputs = inputs.shape[0]
+
+        assert controls is not None
+        n_reservoirs = controls.shape[-1]
+        n_inputs = controls.shape[0]
         # Compute decomposition
         inputs_decomp, _, duals_decomp = decompose_hyperplanes(
-            inputs=inputs, costs=costs, slopes=duals, correlations=self.correlations
+            inputs=controls,
+            costs=np.array(costs),
+            slopes=np.array(duals),
+            correlations=self.correlations,
         )
-        inputs_decomp, duals_decomp = inputs_decomp.swapaxes(
-            0, 1
-        ), duals_decomp.swapaxes(0, 1)
 
         # Update lower bound
-        self.lower_bound.update(inputs=inputs, costs=costs, duals=duals)
+        self.lower_bound.update(controls=controls, costs=costs, duals=duals)
 
         # Update decomposed hyper planes
         for estimator, new_inps, new_duals in zip(
             self.layers, inputs_decomp, duals_decomp
         ):
             estimator.update(
-                inputs=new_inps, costs=np.zeros(new_inps.shape[0]), duals=new_duals
+                controls=new_inps, costs=np.zeros(new_inps.shape[0]), duals=new_duals
             )
 
         # Update approx
         self.inputs = np.concatenate(
             [
                 self.inputs,
-                inputs,
+                controls,
                 inputs_decomp.reshape(n_inputs * n_reservoirs, n_reservoirs),
             ]
         )
@@ -601,7 +552,7 @@ class LinearDecomposer(LinearInterpolator):
                 duals_decomp.reshape(n_inputs * n_reservoirs, n_reservoirs),
             ]
         )
-        self.true_inputs = np.concatenate([self.true_inputs, inputs])
+        self.true_inputs = np.concatenate([self.true_inputs, controls])
         self.true_costs = np.concatenate([self.true_costs, costs])
         self.true_duals = np.concatenate([self.true_duals, duals])
         self.remove_incoherence()
@@ -619,3 +570,150 @@ class LinearDecomposer(LinearInterpolator):
         self.inputs = np.round(self.inputs, precision)
         self.costs = np.round(self.costs, precision)
         self.duals = np.round(self.duals, precision)
+
+
+class LinearCostEstimator:
+    """A class to contain an ensemble of Interpolators for every week and scenario"""
+
+    def __init__(
+        self,
+        param: TimeScenarioParameter,
+        controls: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
+        costs: Dict[TimeScenarioIndex, List[float]],
+        duals: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
+        type_estimator: str,
+        correlations: Optional[np.ndarray] = None,
+        interp_mode: bool = False,
+    ) -> None:
+        """
+        Instanciates a LinearCostEstimator
+
+        Parameters
+        ----------
+            param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on
+            controls:np.ndarray: The coordinates for which costs / duals are obtained
+                must have the same shape as what we'll call our interpolator with,
+            costs:np.ndarray: Cost for every input,
+            duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
+        """
+        estimators: Dict[TimeScenarioIndex, LinearInterpolator] = {}
+        for week in range(param.len_week):
+            for scenario in range(param.len_scenario):
+                if type_estimator == "LinearDecomposer":
+                    estimators[TimeScenarioIndex(week, scenario)] = LinearDecomposer(
+                        inputs=np.array(
+                            [
+                                [x for x in u.values()]
+                                for u in controls[TimeScenarioIndex(week, scenario)]
+                            ]
+                        ),
+                        costs=np.array(costs[TimeScenarioIndex(week, scenario)]),
+                        duals=np.array(
+                            [
+                                [y for y in x.values()]
+                                for x in duals[TimeScenarioIndex(week, scenario)]
+                            ]
+                        ),
+                        correlations=correlations,
+                    )
+                elif type_estimator == "LinearInterpolator":
+                    estimators[TimeScenarioIndex(week, scenario)] = LinearInterpolator(
+                        controls=np.array(
+                            [
+                                [x for x in u.values()]
+                                for u in controls[TimeScenarioIndex(week, scenario)]
+                            ]
+                        ),
+                        costs=np.array(costs[TimeScenarioIndex(week, scenario)]),
+                        duals=np.array(
+                            [
+                                [y for y in x.values()]
+                                for x in duals[TimeScenarioIndex(week, scenario)]
+                            ]
+                        ),
+                        interp_mode=interp_mode,
+                    )
+                else:
+                    raise NotImplementedError
+        self.estimators = estimators
+        self.param = param
+
+    def __getitem__(self, index: TimeScenarioIndex) -> LinearInterpolator:
+        """
+        Gets a LinearInterpolators
+
+        Parameters
+        ----------
+            ws:tuple[int, int] / int: index of the week or scenario we want,
+
+        Returns
+        -------
+            Array of ... or LinearInterpolator
+        """
+        return self.estimators[index]
+
+    def get_week_estimators(self, week: int) -> Dict[ScenarioIndex, LinearInterpolator]:
+        return {
+            ScenarioIndex(s): self.estimators[TimeScenarioIndex(week, s)]
+            for s in range(self.param.len_scenario)
+        }
+
+    def update(
+        self,
+        controls: np.ndarray,
+        costs: np.ndarray,
+        duals: np.ndarray,
+    ) -> None:
+        """
+        Updates the parameters of the Linear Interpolators
+
+        Parameters
+        ----------
+            inputs:np.ndarray: The coordinates for which costs / duals are obtained
+                must have the same shape as what we'll call our interpolator with,
+            costs:np.ndarray: Cost for every input,
+            duals:np.ndarray: Duals for every input first dimension should be the same as inputs,
+        """
+        for week, (inputs_w, costs_w, duals_w) in enumerate(
+            zip(controls, costs, duals)
+        ):
+            for scenario, (controls, costs, duals) in enumerate(
+                zip(inputs_w, costs_w, duals_w)
+            ):
+                self.estimators[TimeScenarioIndex(week, scenario)].update(
+                    controls=controls,
+                    costs=costs,
+                    duals=duals,
+                )
+
+    def remove_redundants(
+        self,
+        tolerance: float = 1e-7,
+    ) -> None:
+        for estimator in self.estimators.values():
+            estimator.count_redundant(tolerance=tolerance, remove=True)
+
+    def remove_interpolations(
+        self,
+    ) -> None:
+        for estimator in self.estimators.values():
+            estimator.remove_interps()
+
+    def round(
+        self,
+        precision: int = 6,
+    ) -> None:
+        for estimator in self.estimators.values():
+            estimator.round(precision)
+
+    def to_julia_compatible_structure(self) -> Array1D:
+        julia_structure = np.array(
+            [
+                [
+                    self.estimators[TimeScenarioIndex(week, scenario)].to_julia_dict()
+                    for scenario in range(self.param.len_scenario)
+                ]
+                for week in range(self.param.len_week)
+            ]
+        )
+        return julia_structure

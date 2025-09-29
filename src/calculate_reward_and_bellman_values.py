@@ -1,532 +1,453 @@
-from itertools import product
+import os as os
+import pickle as pkl
+from pathlib import Path
 
 import numpy as np
-from scipy.interpolate import interp1d
+from tqdm import tqdm
 
-from read_antares_data import Reservoir, TimeScenarioIndex, TimeScenarioParameter
-from type_definition import Array1D, Array2D, Callable, Dict, Iterable, List, Optional
+from estimation import (
+    Estimator,
+    LinearCostEstimator,
+    LinearInterpolator,
+    PieceWiseLinearInterpolator,
+)
+from optimization import AntaresProblem, WeeklyBellmanProblem
+from reservoir_management import MultiStockManagement
+from type_definition import (
+    AreaIndex,
+    Dict,
+    List,
+    Optional,
+    ScenarioIndex,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    Union,
+    WeekIndex,
+    area_value_to_area_scenario_value,
+    area_value_to_array,
+    list_area_value_to_array,
+    mean_scenario_value,
+)
 
 
-class ReservoirManagement:
+def get_bellman_values_from_approximate_costs(
+    param: TimeScenarioParameter,
+    multi_stock_management: MultiStockManagement,
+    costs_approx: LinearCostEstimator,
+    levels: Dict[WeekIndex, List[Dict[AreaIndex, float]]],
+    piecewiselinear: bool,
+    final_bellman_values: Optional[Estimator] = None,
+    name_solver: str = "CLP",
+    divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
+    verbose: bool = False,
+    n_cycle: int = 1,
+) -> Dict[WeekIndex, Estimator]:
+    """
+    Calculate Bellman values for every week based on reward approximation
 
-    def __init__(
-        self,
-        reservoir: Reservoir,
-        penalty_bottom_rule_curve: float = 0,
-        penalty_upper_rule_curve: float = 0,
-        penalty_final_level: float = 0,
-        force_final_level: bool = False,
-        final_level: Optional[float] = None,
-        overflow: bool = True,
-    ) -> None:
-        """Class to describe reservoir management parameters.
+    Parameters
+    ----------
 
-        Args:
-            reservoir (Reservoir): Reservoir in question
-            penalty_bottom_rule_curve (float, optional): Penalty for violating bottom rule curve. Defaults to 0.
-            penalty_upper_rule_curve (float, optional): Penalty for violating upper rule curve. Defaults to 0.
-            penalty_final_level (float, optional): Penalty for not respecting final level. Defaults to 0.
-            force_final_level (bool, optional): Whether final level is imposed. Defaults to False.
-            final_level (Optional[float], optional): Final level to impose, if not specified is equal to initial level. Defaults to None.
-            overflow (bool, optional) : Whether overflow is possible or forbiden. Defaults to True.
-        """
+    Returns
+    -------
 
-        self.reservoir = reservoir
-        self.penalty_bottom_rule_curve = penalty_bottom_rule_curve
-        self.penalty_upper_rule_curve = penalty_upper_rule_curve
-        self.overflow = overflow
+    """
+    if final_bellman_values is None:
+        if piecewiselinear:
+            X = list_area_value_to_array(levels[WeekIndex(param.len_week)])[:, 0]
+            final_bellman_values = PieceWiseLinearInterpolator(
+                X, np.zeros(len(X), dtype=np.float32)
+            )
+        else:
+            final_bellman_values = get_default_linear_interpolator(
+                multi_stock_management
+            )
 
-        if force_final_level:
-            self.penalty_final_level = penalty_final_level
-            if final_level:
-                self.final_level = final_level
+    for i in range(n_cycle):
+        bellman_values = {WeekIndex(param.len_week): final_bellman_values}
+
+        week_range = range(param.len_week - 1, -1, -1)
+        if verbose:
+            week_range = tqdm(week_range, colour="Green", desc="Dynamic Solving")
+        for week in week_range:
+            costs_w: List[float] = []
+            duals_w: List[Dict[AreaIndex, float]] = []
+
+            for lvl_init in levels[WeekIndex(week)]:
+
+                problem = WeeklyBellmanProblem(
+                    param=param,
+                    multi_stock_management=multi_stock_management,
+                    week_costs_estimation=costs_approx.get_week_estimators(week),
+                    name_solver=name_solver,
+                    divisor=divisor,
+                    week=week,
+                )
+
+                _, cost_wl, duals_wl, _ = problem.solve(
+                    level_init=area_value_to_area_scenario_value(
+                        lvl_init, param.len_scenario
+                    ),
+                    future_costs_estimation=bellman_values[WeekIndex(week + 1)],
+                )
+
+                costs_w.append(cost_wl)
+                duals_w.append(
+                    {
+                        a: mean_scenario_value(duals_wl[a])
+                        for a in multi_stock_management.areas
+                    }
+                )
+
+            if piecewiselinear:
+                bellman_values[WeekIndex(week)] = PieceWiseLinearInterpolator(
+                    list_area_value_to_array(levels[WeekIndex(week)])[:, 0],
+                    -np.array(costs_w),
+                )
             else:
-                self.final_level = reservoir.initial_level
-        else:
-            self.final_level = False
-
-    def get_penalty(self, week: int, len_week: int) -> Callable:
-        """
-        Return a function to evaluate penalities for violating rule curves for any level of stock.
-
-        Parameters
-        ----------
-        week:int :
-            Week considered
-        len_week:int :
-            Total number of weeks
-
-        Returns
-        -------
-
-        """
-        if week == len_week - 1 and self.final_level:
-            pen = interp1d(
-                [
-                    0,
-                    self.final_level,
-                    self.reservoir.capacity,
-                ],
-                [
-                    -self.penalty_final_level * (self.final_level),
-                    0,
-                    -self.penalty_final_level
-                    * (self.reservoir.capacity - self.final_level),
-                ],
-            )
-        else:
-            pen = interp1d(
-                [
-                    0,
-                    self.reservoir.bottom_rule_curve[week],
-                    self.reservoir.upper_rule_curve[week],
-                    self.reservoir.capacity,
-                ],
-                [
-                    -self.penalty_bottom_rule_curve
-                    * (self.reservoir.bottom_rule_curve[week]),
-                    0,
-                    0,
-                    -self.penalty_upper_rule_curve
-                    * (self.reservoir.capacity - self.reservoir.upper_rule_curve[week]),
-                ],
-            )
-        return pen
+                bellman_values[WeekIndex(week)] = LinearInterpolator(
+                    controls=list_area_value_to_array(levels[WeekIndex(week)]),
+                    costs=np.array(costs_w),
+                    duals=list_area_value_to_array(duals_w),
+                )
+        final_bellman_values = bellman_values[WeekIndex(0)]
+    return bellman_values
 
 
-class MultiStockManagement:
-
-    def __init__(self, list_reservoirs: List[ReservoirManagement]) -> None:
-        """Describes reservoir management for all stocks
-
-        Args:
-            list_reservoirs (List[ReservoirManagement]): List of reservoir management
-        """
-        self.dict_reservoirs = {}
-        for res in list_reservoirs:
-            self.dict_reservoirs[res.reservoir.area] = res
-
-    def get_disc(
-        self,
-        method: str,
-        week: int,
-        xNsteps: int,
-        reference_pt: np.ndarray,
-        correlation_matrix: np.ndarray,
-        alpha: float = 1.0,
-        in_out_ratio: float = 3.0,
-    ) -> Array1D:
-        n_reservoirs = len(self.dict_reservoirs)
-        if len(reference_pt.shape) > 1:
-            reference_pt = np.mean(reference_pt, axis=1)
-        lbs = np.array(
+def get_default_linear_interpolator(
+    multi_stock_management: MultiStockManagement,
+) -> LinearInterpolator:
+    return LinearInterpolator(
+        controls=np.array(
             [
-                mng.reservoir.bottom_rule_curve[week] * alpha
-                for mng in self.dict_reservoirs.values()
+                area_value_to_array(
+                    {
+                        a: res.reservoir.capacity
+                        for a, res in multi_stock_management.dict_reservoirs.items()
+                    }
+                )
             ]
-        )
-        ubs = np.array(
-            [
-                mng.reservoir.upper_rule_curve[week] * alpha
-                + mng.reservoir.capacity * (1 - alpha)
-                for mng in self.dict_reservoirs.values()
-            ]
-        )
-        full = np.array(
-            [mng.reservoir.capacity for mng in self.dict_reservoirs.values()]
-        )
-        empty = np.array([0] * n_reservoirs)
-        n_pts_above = np.maximum(
-            1 + 2 * (full - ubs > 0),
-            np.round(
-                xNsteps
-                * (full - ubs)
-                / (full - empty + (in_out_ratio - 1) * (ubs - lbs))
-            ).astype(int),
-        )
-        n_pts_in = np.round(
-            xNsteps
-            * (ubs - lbs)
-            * in_out_ratio
-            / (full - empty + (in_out_ratio - 1) * (ubs - lbs))
-        ).astype(int)
-        n_pts_below = np.maximum(
-            1,
-            np.round(
-                xNsteps
-                * (lbs - empty)
-                / (full - empty + (in_out_ratio - 1) * (ubs - lbs))
-            ).astype(int),
-        )
-        n_pts_in += xNsteps - (
-            n_pts_below + n_pts_in + n_pts_above
-        )  # Make sure total adds up
-        if method == "lines":
-            above_curve_pts = [
-                np.linspace(ubs[r], full[r], n_pts_above[r], endpoint=True)
-                for r in range(n_reservoirs)
-            ]
-            in_curve_pts = [
-                np.linspace(lbs[r], ubs[r], n_pts_in[r], endpoint=False)
-                for r in range(n_reservoirs)
-            ]
-            below_curve_pts = [
-                np.linspace(empty[r], lbs[r], n_pts_below[r], endpoint=False)
-                for r in range(n_reservoirs)
-            ]
-            all_pts = np.array(
-                [
-                    np.concatenate(
-                        (below_curve_pts[r], in_curve_pts[r], above_curve_pts[r])
-                    )
-                    for r in range(n_reservoirs)
-                ]
-            ).T
-            diffs_to_ref = all_pts[:, None] - reference_pt[None, :]  # Disc * R
-            diffs_to_ref = (
-                diffs_to_ref[:, :, None] * np.eye(n_reservoirs)[None, :, :]
-            )  # Disc * R * R
-            diffs_to_ref = np.dot(diffs_to_ref, correlation_matrix)  # Disc * R * R
-            new_levels = reference_pt[None, None, :] + diffs_to_ref  # Disc * R * R
-            new_levels = np.maximum(
-                new_levels, empty[None, None, :]
-            )  # Do or do not make other points leave guiding curves ?
-            new_levels = np.minimum(
-                new_levels, full[None, None, :]
-            )  # We chose the former
-            levels = np.reshape(
-                new_levels, (xNsteps * n_reservoirs, n_reservoirs)
-            )  # (Disc * R) * R
-        else:
-            # Listing all levels
-            levels_discretization = product(
-                *[
-                    np.concatenate(
-                        [
-                            [0],
-                            np.linspace(lbs[i], ubs[i], xNsteps - 2),
-                            [(alpha + 1) / 2 * mng.reservoir.capacity],
-                        ]
-                    )
-                    for i, mng in enumerate(self.dict_reservoirs.values())
-                ]
+        ),
+        costs=np.array([0]),
+        duals=np.array(
+            [area_value_to_array({a: 0 for a in multi_stock_management.areas})]
+        ),
+    )
+
+
+def get_optimal_trajectory_from_approximate_costs(
+    param: TimeScenarioParameter,
+    multi_stock_management: MultiStockManagement,
+    costs_approx: LinearCostEstimator,
+    bellman_values: Dict[WeekIndex, Estimator],
+    level_init: Optional[Dict[AreaIndex, float]] = None,
+    random_scenario: bool = False,
+    random_seed: int = 0,
+    name_solver: str = "CLP",
+    divisor: dict[str, float] = {"euro": 1e8, "energy": 1e4},
+) -> tuple[
+    Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
+    Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
+    float,
+]:
+    """Finds the optimal trajectory starting from starting_pts
+
+    Args:
+        param (TimeScenarioParameter): Number of weeks and scenarios
+        multi_stock_management (MultiStockManagement): _description_
+        costs_approx (Estimator): _description_
+        future_estimators_l (Dict[WeekIndex,LinearInterpolator]): _description_
+        starting_pt (Dict[AreaIndex, float]): _description_
+        name_solver (str): _description_
+        verbose (bool): _derscription_
+
+    Returns:
+        tuple[Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
+              Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
+              Dict[WeekIndex, float],]:
+        Optimal trajectory, optimal controls, corresponding costs
+    """
+    trajectory = {}
+    for scenario in range(param.len_scenario):
+        if level_init is None:
+            trajectory[TimeScenarioIndex(-1, scenario)] = (
+                multi_stock_management.get_initial_level()
             )
-            levels = np.array([level for level in levels_discretization])
-        return levels
-
-
-class RewardApproximation:
-    """Class to store and update reward approximation for a given week and a given scenario"""
-
-    def __init__(self, lb_control: float, ub_control: float, ub_reward: float) -> None:
-        """
-        Create a new reward approximation
-
-        Parameters
-        ----------
-        lb_control:float :
-            Lower possible bound on control
-        ub_control:float :
-            Upper possible bound on control
-        ub_reward:float :
-            Upper bound on reward
-
-        Returns
-        -------
-        None
-        """
-        self.breaking_point = [lb_control, ub_control]
-        self.list_cut = [(0.0, ub_reward)]
-
-    def reward_function(self) -> Callable:
-        """Return a function to evaluate reward at any point based on the current approximation."""
-        return lambda x: min([cut[0] * x + cut[1] for cut in self.list_cut])
-
-    def update_reward_approximation(
-        self, slope_new_cut: float, intercept_new_cut: float
-    ) -> None:
-        """
-        Update reward approximation by adding a new cut
-
-        Returns
-        -------
-        None
-        """
-
-        previous_reward = self.reward_function()
-        new_cut: Callable = lambda x: slope_new_cut * x + intercept_new_cut
-        new_reward: list[tuple[float, float]] = []
-        new_points = [self.breaking_point[0]]
-
-        if len(self.breaking_point) != len(self.list_cut) + 1:
-            raise (ValueError)
-
-        for i in range(len(self.breaking_point)):
-            if i == len(self.breaking_point) - 1:
-                new_points.append(self.breaking_point[-1])
+        else:
+            trajectory[TimeScenarioIndex(-1, scenario)] = level_init
+    controls: Dict[TimeScenarioIndex, Dict[AreaIndex, float]] = {}
+    costs = 0.0
+    np.random.seed(random_seed)
+    for week in range(param.len_week):
+        if week >= 0:
+            # Write problem
+            problem = WeeklyBellmanProblem(
+                param=param,
+                multi_stock_management=multi_stock_management,
+                week_costs_estimation=costs_approx.get_week_estimators(week),
+                divisor=divisor,
+                name_solver=name_solver,
+                week=week,
+            )
+            if random_scenario:
+                scenarios = np.random.permutation(range(param.len_scenario))
             else:
-                new_cut_below_previous_reward_at_i = self.check_relative_position(
-                    previous_reward, new_cut, i
-                )
-                new_cut_above_previous_reward_at_i = self.check_relative_position(
-                    new_cut, previous_reward, i
-                )
-                new_cut_below_previous_reward_at_i_plus_1 = (
-                    self.check_relative_position(previous_reward, new_cut, i + 1)
-                )
-                new_cut_above_previous_reward_at_i_plus_1 = (
-                    self.check_relative_position(new_cut, previous_reward, i + 1)
-                )
-                slopes_are_different = (slope_new_cut - self.list_cut[i][0]) != 0
-                if i == 0:
-                    if new_cut_below_previous_reward_at_i:
-                        new_reward.append((slope_new_cut, intercept_new_cut))
-                    elif new_cut_above_previous_reward_at_i:
-                        new_reward.append(self.list_cut[i])
-                    elif new_cut_below_previous_reward_at_i_plus_1:
-                        new_reward.append((slope_new_cut, intercept_new_cut))
-                    else:
-                        new_reward.append(self.list_cut[i])
-                if (new_cut_below_previous_reward_at_i) and (
-                    new_cut_above_previous_reward_at_i_plus_1
-                ):
-                    if slopes_are_different:
-                        new_reward.append(self.list_cut[i])
-                        new_points.append(
-                            self.calculate_breaking_point(
-                                slope_new_cut=slope_new_cut,
-                                intercept_new_cut=intercept_new_cut,
-                                i=i,
-                            )
-                        )
-                elif new_cut_above_previous_reward_at_i:
-                    if i != 0:
-                        new_reward.append(self.list_cut[i])
-                        new_points.append(self.breaking_point[i])
-                    if new_cut_below_previous_reward_at_i_plus_1:
-                        if slopes_are_different:
-                            new_reward.append((slope_new_cut, intercept_new_cut))
-                            new_points.append(
-                                self.calculate_breaking_point(
-                                    slope_new_cut=slope_new_cut,
-                                    intercept_new_cut=intercept_new_cut,
-                                    i=i,
-                                )
-                            )
-                elif (
-                    not (new_cut_below_previous_reward_at_i)
-                    and not (new_cut_above_previous_reward_at_i)
-                    and i != 0
-                ):
-                    new_points.append(self.breaking_point[i])
-                    if new_cut_below_previous_reward_at_i_plus_1:
-                        new_reward.append((slope_new_cut, intercept_new_cut))
-                    else:
-                        new_reward.append(self.list_cut[i])
+                scenarios = np.array([s for s in range(param.len_scenario)])
+            level_i = {
+                a: {
+                    ScenarioIndex(s): trajectory[TimeScenarioIndex(week - 1, s)][a]
+                    for s in scenarios
+                }
+                for a in multi_stock_management.areas
+            }
 
-        self.breaking_point = new_points
-        self.list_cut = new_reward
-
-    def calculate_breaking_point(
-        self,
-        intercept_new_cut: float,
-        slope_new_cut: float,
-        i: int,
-    ) -> float:
-        intercept_previous_cut = self.list_cut[i][1]
-        slope_previous_cut = self.list_cut[i][0]
-        return -(intercept_new_cut - intercept_previous_cut) / (
-            slope_new_cut - slope_previous_cut
-        )
-
-    def check_relative_position(
-        self, previous_reward: Callable, new_cut: Callable, i: int
-    ) -> bool:
-        return new_cut(self.breaking_point[i]) < previous_reward(self.breaking_point[i])
-
-
-class BellmanValueCalculation:
-
-    def __init__(
-        self,
-        param: TimeScenarioParameter,
-        reward: Dict[TimeScenarioIndex, RewardApproximation],
-        reservoir_management: ReservoirManagement,
-        stock_discretization: Array1D,
-    ) -> None:
-        self.time_scenario_param = param
-        self.reward_approximation = reward
-        self.reservoir_management = reservoir_management
-        self.stock_discretization = stock_discretization
-
-        self.reward_fn: Dict[TimeScenarioIndex, Callable] = {}
-        self.penalty_fn: Dict[TimeScenarioIndex, Callable] = {}
-        for week in range(self.time_scenario_param.len_week):
-            for scenario in range(self.time_scenario_param.len_scenario):
-                self.reward_fn[TimeScenarioIndex(week=week, scenario=scenario)] = (
-                    self.reward_approximation[
-                        TimeScenarioIndex(week=week, scenario=scenario)
-                    ].reward_function()
-                )
-                self.penalty_fn[TimeScenarioIndex(week=week, scenario=scenario)] = (
-                    self.reservoir_management.get_penalty(
-                        week=week, len_week=param.len_week
-                    )
-                )
-
-    def solve_weekly_problem_with_approximation(
-        self,
-        week: int,
-        scenario: int,
-        level_i: float,
-        V_fut: Callable,
-    ) -> tuple[float, float, float]:
-        """
-        Optimize control of reservoir during a week based on reward approximation and current Bellman values.
-
-        Parameters
-        ----------
-        level_i:float :
-            Initial level of reservoir at the beginning of the week
-        V_fut:callable :
-            Bellman values at the end of the week
-
-        Returns
-        -------
-        Vu:float :
-            Optimal objective value
-        xf:float :
-            Final level of sotck
-        control:float :
-            Optimal control
-        """
-
-        Vu = float("-inf")
-        stock = self.reservoir_management.reservoir
-        pen = self.penalty_fn[TimeScenarioIndex(week=week, scenario=scenario)]
-        reward_fn = self.reward_fn[TimeScenarioIndex(week=week, scenario=scenario)]
-        points = self.reward_approximation[
-            TimeScenarioIndex(week=week, scenario=scenario)
-        ].breaking_point
-        X = self.stock_discretization
-
-        for i_fut in range(len(X)):
-            u = -X[i_fut] + level_i + stock.inflow[week, scenario]
-            if -stock.max_pumping[week] * stock.efficiency <= u:
-                if (
-                    self.reservoir_management.overflow
-                    or u <= stock.max_generating[week]
-                ):
-                    u = min(u, stock.max_generating[week])
-                    G = reward_fn(u)
-                    penalty = pen(X[i_fut])
-                    if (G + V_fut(X[i_fut]) + penalty) > Vu:
-                        Vu = G + V_fut(X[i_fut]) + penalty
-                        xf = X[i_fut]
-                        control = u
-
-        for u in range(len(points)):
-            state_fut = level_i - points[u] + stock.inflow[week, scenario]
-            if 0 <= state_fut <= stock.capacity:
-                penalty = pen(state_fut)
-                G = reward_fn(points[u])
-                if (G + V_fut(state_fut) + penalty) > Vu:
-                    Vu = G + V_fut(state_fut) + penalty
-                    xf = state_fut
-                    control = points[u]
-
-        Umin = level_i + stock.inflow[week, scenario] - stock.bottom_rule_curve[week]
-        if (
-            -stock.max_pumping[week] * stock.efficiency
-            <= Umin
-            <= stock.max_generating[week]
-        ):
-            state_fut = level_i - Umin + stock.inflow[week, scenario]
-            penalty = pen(state_fut)
-            if (reward_fn(Umin) + V_fut(state_fut) + penalty) > Vu:
-                Vu = reward_fn(Umin) + V_fut(state_fut) + penalty
-                xf = state_fut
-                control = Umin
-
-        Umax = level_i + stock.inflow[week, scenario] - stock.upper_rule_curve[week]
-        if (
-            -stock.max_pumping[week] * stock.efficiency
-            <= Umax
-            <= stock.max_generating[week]
-        ):
-            state_fut = level_i - Umax + stock.inflow[week, scenario]
-            penalty = pen(state_fut)
-            if (reward_fn(Umax) + V_fut(state_fut) + penalty) > Vu:
-                Vu = reward_fn(Umax) + V_fut(state_fut) + penalty
-                xf = state_fut
-                control = Umax
-
-        control = min(
-            -(xf - level_i - stock.inflow[week, scenario]),
-            stock.max_generating[week],
-        )
-        return (Vu, xf, control)
-
-    def calculate_VU(
-        self,
-        final_values: Array1D = np.zeros(1, dtype=np.float32),
-    ) -> Array2D:
-        """
-        Calculate Bellman values for every week based on reward approximation
-
-        Parameters
-        ----------
-
-        Returns
-        -------
-
-        """
-        X = self.stock_discretization
-        V = np.zeros(
-            (
-                len(X),
-                self.time_scenario_param.len_week + 1,
-                self.time_scenario_param.len_scenario,
+            # Solve, might be cool to reuse bases
+            controls_w, cost_w, _, levels = problem.solve(
+                level_init=level_i,
+                future_costs_estimation=bellman_values[WeekIndex(week + 1)],
+                remove_future_costs=True,
             )
+            trajectory[TimeScenarioIndex(week, scenario)] = {
+                a: l[ScenarioIndex(scenario)] for a, l in levels.items()
+            }
+            controls[TimeScenarioIndex(week, scenario)] = {
+                a: c[ScenarioIndex(scenario)] for a, c in controls_w.items()
+            }
+            costs += cost_w
+
+    return trajectory, controls, costs
+
+
+def compute_upper_bound(
+    multi_stock_management: MultiStockManagement,
+    param: TimeScenarioParameter,
+    list_models: Dict[TimeScenarioIndex, AntaresProblem],
+    V: Dict[WeekIndex, Estimator],
+    reward_approximation: Optional[LinearCostEstimator] = None,
+) -> tuple[
+    float,
+    Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
+    Dict[TimeScenarioIndex, int],
+    Dict[TimeScenarioIndex, float],
+]:
+    """
+    Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
+
+    Parameters
+    ----------
+    bellman_value_calculation: BellmanValueCalculation :
+        Parameters to use to calculate Bellman values
+    list_models:Dict[TimeScenarioIndex, AntaresProblem] :
+        Optimization problems for every week and every scenario
+    V:Dict[WeekIndex, Estimator] :
+        Bellman values
+
+    Returns
+    -------
+    upper_bound:float :
+        Upper bound on the overall problem
+    controls:Dict[TimeScenarioIndex, Dict[AreaIndex, float]] :
+        Optimal controls for every week and every scenario
+    current_itr:Dict[TimeScenarioIndex, int] :
+        Simplex iterations used to solve the problem
+    time:Dict[TimeScenarioIndex, float] :
+        Time to solve the problem
+    """
+
+    current_itr = {}
+    times = {}
+
+    if reward_approximation is None:
+        reward = LinearCostEstimator(
+            param=param,
+            controls={
+                TimeScenarioIndex(week, scenario): [
+                    {
+                        area: res_management.reservoir.max_generating[week]
+                        for area, res_management in multi_stock_management.dict_reservoirs.items()
+                    }
+                ]
+                for week in range(param.len_week)
+                for scenario in range(param.len_scenario)
+            },
+            costs={
+                TimeScenarioIndex(week, scenario): [0]
+                for week in range(param.len_week)
+                for scenario in range(param.len_scenario)
+            },
+            duals={
+                TimeScenarioIndex(week, scenario): [
+                    {area: 0 for area in multi_stock_management.areas}
+                ]
+                for week in range(param.len_week)
+                for scenario in range(param.len_scenario)
+            },
+            type_estimator="LinearInterpolator",
         )
-        if len(final_values) == len(X):
-            for scenario in range(self.time_scenario_param.len_scenario):
-                V[:, self.time_scenario_param.len_week, scenario] = final_values
+    else:
+        reward = reward_approximation
 
-        for week in range(self.time_scenario_param.len_week - 1, -1, -1):
+    cout = 0.0
+    controls = {}
+    for scenario in range(param.len_scenario):
 
-            for scenario in range(self.time_scenario_param.len_scenario):
-                V_fut = interp1d(X, V[:, week + 1, scenario])
-                for i in range(len(X)):
+        level_i = multi_stock_management.get_initial_level()
+        for week in range(param.len_week):
+            print(f"{scenario} {week}", end="\r")
+            m = list_models[TimeScenarioIndex(week, scenario)]
 
-                    Vu, _, _ = self.solve_weekly_problem_with_approximation(
-                        level_i=X[i],
-                        V_fut=V_fut,
-                        week=week,
+            computational_time, itr, current_cost, _, control, level_i, _ = (
+                m.solve_problem_with_bellman_values(
+                    V=V[WeekIndex(week + 1)],
+                    level_i=level_i,
+                    take_into_account_z_and_y=(week == param.len_week - 1),
+                    multi_stock_management=multi_stock_management,
+                    param=param,
+                    reward=reward,
+                )
+            )
+            cout += current_cost
+            controls[TimeScenarioIndex(week, scenario)] = control
+            current_itr[TimeScenarioIndex(week, scenario)] = itr
+            times[TimeScenarioIndex(week, scenario)] = computational_time
+
+        upper_bound = cout / param.len_scenario
+    return (upper_bound, controls, current_itr, times)
+
+
+def get_week_scenario_costs(
+    m: AntaresProblem,
+    controls_list: Union[List[Dict[AreaIndex, float]], Dict[AreaIndex, float]],
+) -> tuple[List[float], List[Dict[AreaIndex, float]], int, float]:
+    """
+    Takes a control and an initialized Antares problem setup and returns the objective and duals
+    for every week and every Scenario
+
+    Parameters
+    ----------
+        m:AntaresProblem: Instance of Antares problem describing the problem currently solved
+            (at specified week and scenario),
+        multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
+        controls_list:List[Dict[AreaIndex, float]], list of all controls to be checked
+
+    Returns
+    -------
+        costs:List[float]: cost of each control,
+        slopes:List[Dict[AreaIndex, float]]: dual values for each control,
+        tot_iter:int: number of simplex pivots,
+        times:List[float]: list of solving times
+    """
+
+    tot_iter = 0
+    times = 0.0
+
+    # Initialize costs
+    costs: List[float] = []
+    slopes: List[Dict[AreaIndex, float]] = []
+    if type(controls_list) is list:
+        controls = controls_list
+    else:
+        controls = [controls_list]  # type:ignore
+    for u in controls:
+
+        # Solving the problem
+        control_cost, control_slopes, itr, time_taken = (
+            m.solve_with_predefined_controls(control=u)
+        )
+        tot_iter += itr
+        times += time_taken
+
+        # Save results
+        # print(f"Imposing control {control} costs {costs}, with duals {control_slopes}")
+        costs.append(control_cost)
+        slopes.append(control_slopes)
+
+    return costs, slopes, tot_iter, times
+
+
+def get_antares_costs(
+    param: TimeScenarioParameter,
+    controls: Union[
+        Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
+        Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
+    ],
+    multi_stock_management: Optional[MultiStockManagement] = None,
+    list_models: Dict[TimeScenarioIndex, AntaresProblem] = {},
+    output_path: str = "",
+    name_solver: str = "CLP",
+    saving_dir: Optional[str] = None,
+    save_protos: bool = False,
+    verbose: bool = False,
+    keep_intermed_res: bool = False,
+    prefix: str = "",
+) -> tuple[
+    Dict[TimeScenarioIndex, List[float]],
+    Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]],
+    Dict[TimeScenarioIndex, float],
+    Dict[TimeScenarioIndex, int],
+]:
+    """
+    Takes a problem and a discretization level and solves the Antares pb for every combination of stock for every week
+
+        Parameters
+        ----------
+            param:TimeScenarioParameter: Contains the details of the simulations we'll optimize on,
+            list_models:Dict[TimeScenarioIndex, AntaresProblem]: List of models
+            multi_stock_management:MultiStockManagement: Description of stocks and their global policies,
+            controls_list:Dict[WeekIndex, List[Dict[AreaIndex, float]]]: Controls to be evaluated, per week, per scenario
+            verbose:bool:Control the level of outputs show by the function
+
+        Returns
+        -------
+            Bellman Values:Dict[TimeScenarioIndex, List[float]]: Bellman values
+    """
+    current_itr = {}
+    times: Dict[TimeScenarioIndex, float] = {}
+    costs: Dict[TimeScenarioIndex, List[float]] = {}
+    slopes: Dict[TimeScenarioIndex, List[Dict[AreaIndex, float]]] = {}
+    week_start = 0
+    if keep_intermed_res:
+        assert saving_dir is not None
+        filename = f"{saving_dir}/{prefix}get_all_costs_run.pkl"
+        if Path(filename).is_file():
+            with open(filename, "rb") as file:
+                week_start, pre_costs, pre_slopes = pkl.load(file)
+            costs = pre_costs
+            slopes = pre_slopes
+    week_range = range(param.len_week)
+    if verbose:
+        week_range = tqdm(range(param.len_week), colour="blue", desc="Simulation")
+    for week in week_range:
+        if week >= week_start:
+            for scenario in range(param.len_scenario):
+                ts_id = TimeScenarioIndex(week=week, scenario=scenario)
+                try:
+                    m = list_models[ts_id]
+                except KeyError:
+                    assert output_path != ""
+                    assert multi_stock_management is not None
+                    m = AntaresProblem(
                         scenario=scenario,
+                        week=week,
+                        path=output_path,
+                        saving_directory=saving_dir,
+                        name_solver=name_solver,
+                        save_protos=save_protos,
+                        param=param,
+                        multi_stock_management=multi_stock_management,
                     )
-
-                    V[i, week, scenario] = Vu + V[i, week, scenario]
-
-            V[:, week, :] = np.repeat(
-                np.mean(V[:, week, :], axis=1, keepdims=True),
-                self.time_scenario_param.len_scenario,
-                axis=1,
-            )
-        return np.mean(V, axis=2)
-
-
-class MultiStockBellmanValueCalculation:
-
-    def __init__(self, list_reservoirs: List[BellmanValueCalculation]) -> None:
-        self.dict_reservoirs = {}
-        for res in list_reservoirs:
-            self.dict_reservoirs[res.reservoir_management.reservoir.area] = res
-
-    def get_product_stock_discretization(self) -> Iterable:
-        return product(
-            *[
-                [i for i in range(len(res_man.stock_discretization))]
-                for res_man in self.dict_reservoirs.values()
-            ]
-        )
+                costs_ws, slopes_ws, iters, times_ws = get_week_scenario_costs(
+                    m=m,
+                    controls_list=controls[ts_id],
+                )
+                times[ts_id] = times_ws
+                costs[ts_id] = costs_ws
+                slopes[ts_id] = slopes_ws
+                current_itr[ts_id] = iters
+            if keep_intermed_res:
+                assert saving_dir is not None
+                if not (os.path.exists(saving_dir)):
+                    os.makedirs(saving_dir)
+                with open(filename, "wb") as file:
+                    pkl.dump((week, costs, slopes), file)
+    return costs, slopes, times, current_itr

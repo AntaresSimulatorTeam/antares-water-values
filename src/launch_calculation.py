@@ -1,11 +1,18 @@
-from calculate_reward_and_bellman_values import ReservoirManagement
+import numpy as np
+
 from functions_iterative import itr_control
-from read_antares_data import TimeScenarioParameter
+from reservoir_management import MultiStockManagement, ReservoirManagement
 from simple_bellman_value_calculation import (
     calculate_bellman_value_directly,
-    calculate_bellman_value_with_precalculated_reward,
+    calculate_bellman_value_with_precalculated_cost,
 )
-from type_definition import Array1D, Array2D
+from type_definition import (
+    Array1D,
+    Array2D,
+    TimeScenarioParameter,
+    WeekIndex,
+    array_to_list_area_value,
+)
 
 
 def calculate_bellman_values(
@@ -40,28 +47,56 @@ def calculate_bellman_values(
 
     if method == "direct":
         # Compute Bellman values directly
-        vb = calculate_bellman_value_directly(
+        intermediate_vb, _, _ = calculate_bellman_value_directly(
             param=param,
-            reservoir_management=reservoir_management,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
             output_path=output_path,
-            X=X,
+            X={reservoir_management.reservoir.area: X},
             solver=solver,
+            univariate=True,
+        )
+
+        vb = np.transpose(
+            [
+                [
+                    intermediate_vb[week]({reservoir_management.reservoir.area: x})
+                    for x in X
+                ]
+                for week in range(param.len_week + 1)
+            ]
         )
 
     elif method == "precalculated":
         # or with precalulated reward
-        vb, _ = calculate_bellman_value_with_precalculated_reward(
+        precal_vb, _, _, _ = calculate_bellman_value_with_precalculated_cost(
             len_controls=len_controls,
             param=param,
-            reservoir_management=reservoir_management,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
             output_path=output_path,
-            X=X,
-            solver=solver,
+            levels={
+                WeekIndex(w): array_to_list_area_value(
+                    X, [reservoir_management.reservoir.area]
+                )
+                for w in range(param.len_week)
+            },
+            name_solver=solver,
+            piecewiselinear=True,
+            type_estimator="LinearInterpolator",
+        )
+
+        vb = np.transpose(
+            [
+                [
+                    precal_vb[WeekIndex(week)]({reservoir_management.reservoir.area: x})
+                    for x in X
+                ]
+                for week in range(param.len_week + 1)
+            ]
         )
 
     elif method == "iterative":
         # or with iterative algorithm
-        vb, _, _, _, _, _ = itr_control(
+        dict_vb, _, _, _, _, _, _, _ = itr_control(
             param=param,
             reservoir_management=reservoir_management,
             output_path=output_path,
@@ -70,5 +105,6 @@ def calculate_bellman_values(
             tol_gap=tol_gap,
             solver=solver,
         )
+        vb = np.array([x for x in dict_vb])
 
     return vb

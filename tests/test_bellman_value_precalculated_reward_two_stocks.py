@@ -1,50 +1,165 @@
 import numpy as np
 import pytest
 
-from calculate_reward_and_bellman_values import MultiStockManagement
-from functions_iterative import ReservoirManagement, TimeScenarioParameter
-from multi_stock_bellman_value_calculation import *
-from read_antares_data import Reservoir
+from calculate_reward_and_bellman_values import get_default_linear_interpolator
+from estimation import LinearInterpolator
+from functions_iterative import TimeScenarioParameter
+from multi_stock_bellman_value_calculation import get_correlation_matrix
+from optimization import WeeklyBellmanProblem
+from reservoir_management import MultiStockManagement
+from simple_bellman_value_calculation import (
+    calculate_bellman_value_with_precalculated_cost,
+)
+from type_definition import (
+    ScenarioIndex,
+    TimeScenarioIndex,
+    WeekIndex,
+    area_scenario_value_to_array,
+    area_value_to_area_scenario_value,
+    time_list_area_value_to_array,
+)
 
 
-def test_bellman_value_precalculated_multi_stock() -> None:
+def test_weekly_bellman_problem(
+    param: TimeScenarioParameter, multi_stock_management_two_nodes: MultiStockManagement
+) -> None:
+    week = param.len_week - 1
+    # Initialize cost functions
+    costs_approx = {
+        ScenarioIndex(0): LinearInterpolator(
+            controls=np.array(
+                [
+                    [
+                        res.reservoir.max_generating[week]
+                        for res in multi_stock_management_two_nodes.dict_reservoirs.values()
+                    ]
+                ]
+            ),
+            costs=np.array([1e7]),
+            duals=np.array([[-100 for a in multi_stock_management_two_nodes.areas]]),
+        )
+    }
 
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
-
-    reservoir_1 = Reservoir("test_data/two_nodes", "area_1")
-    reservoir_management_1 = ReservoirManagement(
-        reservoir=reservoir_1,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    reservoir_2 = Reservoir("test_data/two_nodes", "area_2")
-    reservoir_management_2 = ReservoirManagement(
-        reservoir=reservoir_2,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=True,
-    )
-
-    multi_management = MultiStockManagement(
-        [reservoir_management_1, reservoir_management_2]
-    )
-
-    levels, _, bellman_costs, bellman_controls, slopes, _ = precalculated_method(
+    problem = WeeklyBellmanProblem(
         param=param,
-        multi_stock_management=multi_management,
-        output_path="test_data/two_nodes",
+        multi_stock_management=multi_stock_management_two_nodes,
+        week_costs_estimation=costs_approx,
+        name_solver="CLP",
+        divisor={"euro": 1e8, "energy": 1e4},
+        week=week,
+    )
+
+    controls, cost, duals, levels = problem.solve(
+        level_init=area_value_to_area_scenario_value(
+            {
+                a: res.reservoir.capacity / 2
+                for a, res in multi_stock_management_two_nodes.dict_reservoirs.items()
+            },
+            param.len_scenario,
+        ),
+        future_costs_estimation=get_default_linear_interpolator(
+            multi_stock_management_two_nodes
+        ),
+    )
+
+    assert area_scenario_value_to_array(controls) == pytest.approx(
+        np.array([[56094.035], [127275.715]])
+    )
+    assert cost == pytest.approx(64323025)
+    assert area_scenario_value_to_array(duals) == pytest.approx(
+        np.array([[-100], [-100]])
+    )
+    assert area_scenario_value_to_array(levels) == pytest.approx(
+        np.array([[342221.465], [773949.785]])
+    )
+
+
+def test_bellman_value_precalculated_multi_stock_1cycle(
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
+
+    levels = multi_stock_management_two_nodes.get_disc(
+        param=param,
         xNsteps=5,
-        Nsteps_bellman=5,
+        trajectory={
+            TimeScenarioIndex(w, s): {
+                a: mng.reservoir.bottom_rule_curve[0] * 0.7
+                + mng.reservoir.upper_rule_curve[0] * 0.3
+                for a, mng in multi_stock_management_two_nodes.dict_reservoirs.items()
+            }
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
+        correlation_matrix=get_correlation_matrix(
+            multi_stock_management=multi_stock_management_two_nodes,
+            corr_type="no_corrs",
+        ),
+        method="lines",
+    )
+
+    _, _, lb, ub = calculate_bellman_value_with_precalculated_cost(
+        param=param,
+        multi_stock_management=multi_stock_management_two_nodes,
+        output_path="test_data/two_nodes",
+        len_controls=5,
+        levels=levels,
         name_solver="CLP",
         controls_looked_up="line+diagonal",
         verbose=True,
+        n_cycle=1,
+        type_estimator="LinearDecomposer",
+        piecewiselinear=False,
     )
 
-    assert levels == pytest.approx(
+    assert lb == pytest.approx(559368290)
+    assert ub == pytest.approx(735370177)
+
+
+def test_bellman_value_precalculated_multi_stock_2cycles(
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
+
+    levels = multi_stock_management_two_nodes.get_disc(
+        param=param,
+        xNsteps=5,
+        trajectory={
+            TimeScenarioIndex(w, s): {
+                a: mng.reservoir.bottom_rule_curve[0] * 0.7
+                + mng.reservoir.upper_rule_curve[0] * 0.3
+                for a, mng in multi_stock_management_two_nodes.dict_reservoirs.items()
+            }
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
+        correlation_matrix=get_correlation_matrix(
+            multi_stock_management=multi_stock_management_two_nodes,
+            corr_type="no_corrs",
+        ),
+        method="lines",
+    )
+
+    bellman_values, _, lb, ub = calculate_bellman_value_with_precalculated_cost(
+        param=param,
+        multi_stock_management=multi_stock_management_two_nodes,
+        output_path="test_data/two_nodes",
+        len_controls=5,
+        levels=levels,
+        name_solver="CLP",
+        controls_looked_up="line+diagonal",
+        verbose=True,
+        n_cycle=2,
+        type_estimator="LinearDecomposer",
+        piecewiselinear=False,
+    )
+
+    assert lb == pytest.approx(1271687268)
+    assert ub == pytest.approx(1111002597)
+
+    assert time_list_area_value_to_array(
+        levels, param, multi_stock_management_two_nodes.areas
+    )[::-1] == pytest.approx(
         np.array(
             [
                 [
@@ -52,18 +167,18 @@ def test_bellman_value_precalculated_multi_stock() -> None:
                     [277853.0681, 0.0],
                     [175340.436, 628377.6569],
                     [277853.0681, 396540.564],
-                    [409896.721, 628377.6569],
-                    [277853.0681, 927000.529],
-                    [589466.8605, 628377.6569],
-                    [277853.0681, 1333106.7645],
+                    [396823.092, 628377.6569],
+                    [277853.0681, 897433.908],
+                    [582930.046, 628377.6569],
+                    [277853.0681, 1318323.454],
                     [769037.0, 628377.6569],
                     [277853.0681, 1739213.0],
                 ],
                 [
                     [0.0, 628377.6569],
                     [277853.0681, 0.0],
-                    [178416.584, 628377.6569],
-                    [277853.0681, 403497.416],
+                    [177647.547, 628377.6569],
+                    [277853.0681, 401758.203],
                     [486031.384, 628377.6569],
                     [277853.0681, 1099182.616],
                     [627534.192, 628377.6569],
@@ -88,10 +203,10 @@ def test_bellman_value_precalculated_multi_stock() -> None:
                     [277853.0681, 0.0],
                     [183030.806, 628377.6569],
                     [277853.0681, 413932.694],
-                    [491414.643, 628377.6569],
-                    [277853.0681, 1111357.107],
-                    [630225.8215, 628377.6569],
-                    [277853.0681, 1425285.0535],
+                    [490645.606, 628377.6569],
+                    [277853.0681, 1109617.894],
+                    [629841.303, 628377.6569],
+                    [277853.0681, 1424415.447],
                     [769037.0, 628377.6569],
                     [277853.0681, 1739213.0],
                 ],
@@ -111,202 +226,144 @@ def test_bellman_value_precalculated_multi_stock() -> None:
         )
     )
 
-    assert bellman_controls == pytest.approx(
+    assert np.array(
+        [
+            bellman_values[WeekIndex(w)].get_true_costs()
+            - min(bellman_values[WeekIndex(w + 1)].get_true_costs())
+            for w in range(param.len_week)
+        ]
+    )[::-1] == pytest.approx(
         np.array(
             [
                 [
-                    [[0.0], [181530.9463735]],
-                    [[129383.263], [-304244.94783314]],
-                    [[26870.633], [181530.95748161]],
-                    [[129383.263], [61185.617]],
-                    [[160609.60919247], [124748.89981205]],
-                    [[129383.263], [155975.24600452]],
-                    [[219514.397], [124748.89981205]],
-                    [[103827.55582937], [419664.0]],
-                    [[306936.0], [124748.89981205]],
-                    [[103827.55582937], [419664.0]],
+                    2.42217781e09,
+                    5.52079961e09,
+                    1.07560621e09,
+                    1.66633557e09,
+                    1.46043373e08,
+                    4.20957434e08,
+                    1.22087702e08,
+                    4.09981835e08,
+                    1.22087702e08,
+                    4.09981835e08,
                 ],
                 [
-                    [[13776.0], [263393.096]],
-                    [[217424.96382709], [-28367.50984833]],
-                    [[52773.40570775], [144306.62825704]],
-                    [[116288.634], [78091.78486466]],
-                    [[193278.43809968], [197279.2502553]],
-                    [[116288.634], [203738.091]],
-                    [[259392.28273827], [263393.096]],
-                    [[116288.634], [419664.0]],
-                    [[306936.0], [263393.096]],
-                    [[116288.634], [419664.0]],
+                    4.31543953e09,
+                    8.32363876e09,
+                    2.29582512e09,
+                    3.37372500e09,
+                    3.27972421e08,
+                    5.99791688e08,
+                    1.08317908e08,
+                    5.76426181e08,
+                    9.23825146e07,
+                    5.76426181e08,
                 ],
                 [
-                    [[0.0], [256443.244]],
-                    [[144342.19194326], [-294442.21953368]],
-                    [[11011.94606618], [184605.26872985]],
-                    [[146538.83712493], [41945.38354514]],
-                    [[175156.44001992], [246067.35263216]],
-                    [[86019.81249675], [419664.0]],
-                    [[206364.00587073], [256443.244]],
-                    [[86019.81249675], [419664.0]],
-                    [[298585.86061946], [256443.244]],
-                    [[113212.486], [419664.0]],
+                    6.83475714e09,
+                    1.06710309e10,
+                    4.19373077e09,
+                    5.41906297e09,
+                    1.58480937e09,
+                    5.28360544e08,
+                    7.47078107e08,
+                    4.91779685e08,
+                    1.89892715e08,
+                    4.90849622e08,
                 ],
                 [
-                    [[0.0], [251428.605]],
-                    [[138754.63237131], [-310705.16724054]],
-                    [[16174.115], [79192.47066511]],
-                    [[110996.375], [-16964.93476829]],
-                    [[19371.83979269], [85278.13317882]],
-                    [[0.0], [419664.0]],
-                    [[158812.70351082], [95447.16468272]],
-                    [[0.0], [419664.0]],
-                    [[297623.88351082], [95447.16468272]],
-                    [[0.0], [419664.0]],
+                    7.94747855e09,
+                    1.12890211e10,
+                    4.91455961e09,
+                    6.11078671e09,
+                    1.97371086e09,
+                    3.63021044e08,
+                    1.13853672e09,
+                    3.03182855e08,
+                    4.96058171e08,
+                    3.02235658e08,
                 ],
                 [
-                    [[0.0], [-272320.61380624]],
-                    [[34066.10375969], [-322182.0]],
-                    [[14066.07670537], [-77354.29218551]],
-                    [[12630.48903407], [-200568.15764549]],
-                    [[153336.66361319], [31852.9091698]],
-                    [[15945.4810059], [419664.0]],
-                    [[290994.29361319], [31852.9091698]],
-                    [[15945.4810059], [419664.0]],
-                    [[306936.0], [31993.30673435]],
-                    [[15945.4810059], [419664.0]],
+                    5.28632092e09,
+                    7.71412486e09,
+                    1.91505229e09,
+                    3.06499098e09,
+                    7.17505115e07,
+                    5.77609592e07,
+                    4.54545140e07,
+                    5.16596854e07,
+                    2.89373285e07,
+                    5.16596854e07,
                 ],
             ]
-        )
+        ),
+        rel=1e-4,
     )
 
-    assert bellman_costs == pytest.approx(
+    assert np.array(
+        [bellman_values[WeekIndex(w)].get_true_duals() for w in range(param.len_week)]
+    )[::-1] == pytest.approx(
         np.array(
             [
                 [
-                    1.00000010e16,
-                    1.00000013e16,
-                    1.00000000e16,
-                    1.00000000e16,
-                    1.00000000e16,
-                    1.00000000e16,
-                    1.00000005e16,
-                    1.00000014e16,
-                    1.00000014e16,
-                    1.00000039e16,
+                    [-18000.0, -6000.0],
+                    [-12000.0, -12000.0],
+                    [-6000.0, -215.58],
+                    [-6000.0, -6000.01],
+                    [-161.68, -215.58],
+                    [-6000.0, -115.17],
+                    [0.0, -115.17],
+                    [-5999.989836, 0.0],
+                    [0.0, -115.17],
+                    [-5999.989836, 0.0],
                 ],
                 [
-                    1.00000025e16,
-                    1.00000041e16,
-                    1.00000003e16,
-                    1.00000002e16,
-                    1.00000000e16,
-                    1.00000001e16,
-                    1.00000005e16,
-                    1.00000013e16,
-                    1.00000013e16,
-                    1.00000048e16,
+                    [-17000.0, -10000.0],
+                    [-10333.327222, -13333.33],
+                    [-9000.0, -6000.01],
+                    [-10000.0, -10000.0],
+                    [-6000.0, -6000.01],
+                    [-6000.0, -115.17],
+                    [-161.68, -215.58],
+                    [-5999.99, 0.0],
+                    [0.0, -215.58],
+                    [-5999.99, 0.0],
                 ],
                 [
-                    1.00000034e16,
-                    1.00000059e16,
-                    1.00000003e16,
-                    1.00000008e16,
-                    1.00000001e16,
-                    1.00000001e16,
-                    1.00000005e16,
-                    1.00000010e16,
-                    1.00000009e16,
-                    1.00000036e16,
+                    [-20000.0, -10000.0],
+                    [-10033.3327, -13333.33],
+                    [-10000.0, -10000.0],
+                    [-10000.0, -10000.0],
+                    [-6000.0, -6000.01],
+                    [-6000.0, -119.16],
+                    [-5789.484211, -6000.01],
+                    [-6000.0, -115.17],
+                    [0.0, -500.0],
+                    [-6000.0, 0.0],
                 ],
                 [
-                    1.00000042e16,
-                    1.00000061e16,
-                    1.00000004e16,
-                    1.00000011e16,
-                    1.00000001e16,
-                    1.00000001e16,
-                    1.00000005e16,
-                    1.00000010e16,
-                    1.00000009e16,
-                    1.00000034e16,
+                    [-23000.0, -10000.0],
+                    [-10003.33307, -13333.34],
+                    [-10000.0, -10000.0],
+                    [-10000.0, -10000.0],
+                    [-6000.0, -6000.01],
+                    [-6000.0, -6000.004068],
+                    [-6000.0, -6000.01],
+                    [-6000.0, -119.16],
+                    [0.0, -6000.01],
+                    [-6000.0, 0.0],
                 ],
                 [
-                    1.00000050e16,
-                    1.00000035e16,
-                    1.00000000e16,
-                    1.00000000e16,
-                    1.00000000e16,
-                    1.00000000e16,
-                    1.00000004e16,
-                    1.00000009e16,
-                    1.00000008e16,
-                    1.00000033e16,
-                ],
-            ]
-        )
-    )
-
-    assert slopes == pytest.approx(
-        np.array(
-            [
-                [
-                    [-6.00000000e03, 0.00000000e00],
-                    [-2.11898256e03, -6.00000000e03],
-                    [-1.15170000e02, 0.00000000e00],
-                    [-1.15170000e02, -1.15170000e02],
-                    [0.00000000e00, 0.00000000e00],
-                    [0.00000000e00, 0.00000000e00],
-                    [3.00000000e03, 0.00000000e00],
-                    [0.00000000e00, 6.00000000e03],
-                    [6.00000000e03, 0.00000000e00],
-                    [0.00000000e00, 6.00000000e03],
-                ],
-                [
-                    [-1.30000000e04, 0.00000000e00],
-                    [-5.11898000e03, -1.20000000e04],
-                    [-9.00000000e03, 0.00000000e00],
-                    [-2.75281053e03, -3.11517000e03],
-                    [-5.95800000e01, -5.95800000e01],
-                    [-1.19160000e02, 0.00000000e00],
-                    [3.00000000e03, -1.19160000e02],
-                    [-1.19160000e02, 6.00000000e03],
-                    [9.00000000e03, -1.19160000e02],
-                    [-1.19160000e02, 1.20000000e04],
-                ],
-                [
-                    [-1.90000000e04, 0.00000000e00],
-                    [-7.04933707e03, -1.39835533e04],
-                    [-2.75281035e03, -3.11516983e03],
-                    [-5.85635493e03, -6.06353718e03],
-                    [-1.22642731e02, -1.31127492e02],
-                    [-1.66240000e02, 0.00000000e00],
-                    [2.94042000e03, -3.20801251e02],
-                    [-1.66240000e02, 3.00000000e03],
-                    [3.00000000e03, -5.00000000e02],
-                    [-1.66240000e02, 1.20000000e04],
-                ],
-                [
-                    [-2.50000000e04, 0.00000000e00],
-                    [-9.04534212e03, -1.33182190e04],
-                    [-3.01822810e03, -3.11517000e03],
-                    [-6.00811264e03, -6.06354000e03],
-                    [-1.58015064e-01, -1.38714297e02],
-                    [-1.66240000e02, 0.00000000e00],
-                    [3.00000000e03, -1.38850000e02],
-                    [-1.66240000e02, 3.00000000e03],
-                    [3.00000000e03, -1.38850000e02],
-                    [-1.66240000e02, 9.00000000e03],
-                ],
-                [
-                    [-3.10000000e04, 0.00000000e00],
-                    [-9.04534000e03, -1.93182200e04],
-                    [-2.70028202e02, -1.13365718e02],
-                    [-2.70028202e02, -1.13365718e02],
-                    [0.00000000e00, 0.00000000e00],
-                    [-1.66240000e02, 0.00000000e00],
-                    [3.00000000e03, 0.00000000e00],
-                    [-1.66240000e02, 3.00000000e03],
-                    [3.00000000e03, 0.00000000e00],
-                    [-1.66240000e02, 9.00000000e03],
+                    [-26000.0, -10000.0],
+                    [-10000.332996, -13333.33],
+                    [-6000.0, -6000.01],
+                    [-10000.0, -10000.0],
+                    [-4500.00580527, -6000.01],
+                    [-6000.0, -46.60474687],
+                    [-138.85, -185.14],
+                    [-6000.0, 0.0],
+                    [0.0, -158.88],
+                    [-6000.0, 0.0],
                 ],
             ]
         )

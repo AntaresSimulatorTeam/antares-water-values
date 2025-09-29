@@ -1,211 +1,27 @@
 from time import time
 
 import numpy as np
-from scipy.interpolate import interp1d
 
 from calculate_reward_and_bellman_values import (
-    BellmanValueCalculation,
-    MultiStockBellmanValueCalculation,
-    MultiStockManagement,
-    ReservoirManagement,
-    RewardApproximation,
+    compute_upper_bound,
+    get_antares_costs,
+    get_bellman_values_from_approximate_costs,
+    get_optimal_trajectory_from_approximate_costs,
 )
-from optimization import AntaresProblem, Basis
-from read_antares_data import TimeScenarioIndex, TimeScenarioParameter
-from type_definition import Array1D, Array2D, Array3D, Array4D, Dict, List
-
-
-def compute_x_multi_scenario(
-    bellman_value_calculation: BellmanValueCalculation,
-    V: Array2D,
-    itr: int,
-) -> tuple[Array2D, Array2D]:
-    """
-    Compute several optimal trajectories for the level of stock based on reward approximation and Bellman values. The number of trajectories is equal to the number of scenarios but trajectories doesn't depend on Monte Carlo years, ie for a given trajectory each week correspond to a random scenario.
-
-    Parameters
-    ----------
-    bellman_value_calculation:BellmanValueCalculation:
-        Parameters to use to calculate Bellman values
-    V:np.array :
-        Bellman values
-    itr:int :
-        Iteration of iterative algorithm used to generate seed
-
-    Returns
-    -------
-    initial_x:np.array :
-        Trajectories
-    controls:np.array :
-        Controls associated to trajectories
-    """
-    param = bellman_value_calculation.time_scenario_param
-    initial_x = np.zeros(
-        (
-            param.len_week + 1,
-            param.len_scenario,
-        ),
-        dtype=np.float32,
-    )
-    initial_x[0] = (
-        bellman_value_calculation.reservoir_management.reservoir.initial_level
-    )
-    np.random.seed(19 * itr)
-    controls = np.zeros(
-        (
-            param.len_week,
-            param.len_scenario,
-        ),
-        dtype=np.float32,
-    )
-
-    for week in range(param.len_week):
-
-        V_fut = interp1d(bellman_value_calculation.stock_discretization, V[:, week + 1])
-        for trajectory, scenario in enumerate(
-            np.random.permutation(range(param.len_scenario))
-        ):
-
-            _, xf, u = (
-                bellman_value_calculation.solve_weekly_problem_with_approximation(
-                    week=week,
-                    scenario=scenario,
-                    level_i=initial_x[week, trajectory],
-                    V_fut=V_fut,
-                )
-            )
-
-            initial_x[week + 1, trajectory] = xf
-            controls[week, scenario] = u
-
-    return (initial_x, controls)
-
-
-def compute_upper_bound(
-    bellman_value_calculation: BellmanValueCalculation,
-    list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    V: Array2D,
-) -> tuple[float, Array2D, Array3D]:
-    """
-    Compute an approximate upper bound on the overall problem by solving the real complete Antares problem with Bellman values.
-
-    Parameters
-    ----------
-    bellman_value_calculation: BellmanValueCalculation :
-        Parameters to use to calculate Bellman values
-    list_models:Dict[TimeScenarioIndex, AntaresProblem] :
-        Optimization problems for every week and every scenario
-    V:Array2D :
-        Bellman values
-
-    Returns
-    -------
-    upper_bound:float :
-        Upper bound on the overall problem
-    controls:Array2D :
-        Optimal controls for every week and every scenario
-    current_itr:Array2D :
-        Time and simplex iterations used to solve the problem
-    """
-    param = bellman_value_calculation.time_scenario_param
-
-    current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
-
-    cout = 0.0
-    controls = np.zeros((param.len_week, param.len_scenario), dtype=np.float32)
-    for scenario in range(param.len_scenario):
-
-        level_i = {
-            bellman_value_calculation.reservoir_management.reservoir.area: bellman_value_calculation.reservoir_management.reservoir.initial_level
-        }
-        for week in range(param.len_week):
-            print(f"{scenario} {week}", end="\r")
-            m = list_models[TimeScenarioIndex(week, scenario)]
-
-            computational_time, itr, current_cost, control, level_i = (
-                m.solve_problem_with_bellman_values(
-                    multi_bellman_value_calculation=MultiStockBellmanValueCalculation(
-                        [bellman_value_calculation]
-                    ),
-                    V={
-                        bellman_value_calculation.reservoir_management.reservoir.area: V
-                    },
-                    level_i=level_i,
-                    take_into_account_z_and_y=(
-                        week
-                        == bellman_value_calculation.time_scenario_param.len_week - 1
-                    ),
-                )
-            )
-            cout += current_cost
-            controls[week, scenario] = control[
-                bellman_value_calculation.reservoir_management.reservoir.area
-            ]
-            current_itr[week, scenario] = (itr, computational_time)
-
-        upper_bound = cout / param.len_scenario
-    return (upper_bound, controls, current_itr)
-
-
-def calculate_reward(
-    param: TimeScenarioParameter,
-    controls: Array2D,
-    list_models: Dict[TimeScenarioIndex, AntaresProblem],
-    G: Dict[TimeScenarioIndex, RewardApproximation],
-    i: int,
-    name_reservoir: str,
-) -> tuple[Array3D, Dict[TimeScenarioIndex, RewardApproximation]]:
-    """
-    Evaluate reward for a set of given controls for each week and each scenario to update reward approximation.
-
-    Parameters
-    ----------
-    param:AntaresParameter :
-        Time-related parameters
-    controls:Array2D :
-        Set of controls to evaluate
-    list_models:Dict[TimeScenarioIndex, AntaresProblem] :
-        Optimization problems for every week and every scenario
-    G:Dict[TimeScenarioIndex, RewardApproximation] :
-        Reward approximation to update for every week and every scenario
-    i:int :
-        Iteration of iterative algorithm
-
-    Returns
-    -------
-    current_itr:Array3D :
-        Time and simplex iterations used to solve the problem
-    G:Dict[TimeScenarioIndex, RewardApproximation] :
-        Updated reward approximation
-    """
-
-    current_itr = np.zeros((param.len_week, param.len_scenario, 2), dtype=np.float32)
-
-    for scenario in range(param.len_scenario):
-        basis_0 = Basis([], [])
-        for week in range(param.len_week):
-            print(f"{scenario} {week}", end="\r")
-
-            beta, lamb, itr, computation_time = list_models[
-                TimeScenarioIndex(week, scenario)
-            ].solve_with_predefined_controls(
-                control={name_reservoir: float(controls[week][scenario])},
-                prev_basis=basis_0 if i == 0 else Basis([], []),
-            )
-            if list_models[TimeScenarioIndex(week, scenario)].store_basis:
-                basis_0 = list_models[TimeScenarioIndex(week, scenario)].basis[-1]
-            else:
-                basis_0 = Basis([], [])
-
-            G[TimeScenarioIndex(week, scenario)].update_reward_approximation(
-                slope_new_cut=-lamb[name_reservoir],
-                intercept_new_cut=-beta
-                + lamb[name_reservoir] * controls[week][scenario],
-            )
-
-            current_itr[week, scenario] = (itr, computation_time)
-
-    return (current_itr, G)
+from estimation import Estimator, LinearCostEstimator, PieceWiseLinearInterpolator
+from optimization import AntaresProblem
+from reservoir_management import MultiStockManagement, ReservoirManagement
+from type_definition import (
+    AreaIndex,
+    Array1D,
+    Dict,
+    List,
+    TimeScenarioIndex,
+    TimeScenarioParameter,
+    WeekIndex,
+    area_value_to_array,
+    list_area_value_to_array,
+)
 
 
 def itr_control(
@@ -217,12 +33,14 @@ def itr_control(
     tol_gap: float,
     solver: str = "GLOP",
 ) -> tuple[
-    Array2D,
-    Dict[TimeScenarioIndex, RewardApproximation],
-    Array4D,
-    list[float],
-    list[Array2D],
-    list[Array2D],
+    Dict[WeekIndex, List[float]],
+    LinearCostEstimator,
+    List[Dict[TimeScenarioIndex, int]],
+    List[float],
+    List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
+    List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
+    float,
+    float,
 ]:
     """
     Algorithm to evaluate Bellman values. Each iteration of the algorithm consists in computing optimal trajectories based on reward approximation then evaluating rewards for those trajectories and finally updating reward approximation and calculating Bellman values. The algorithm stops when a certain number of iterations is done or when the gap between the lower bound and the upper bound is small enough.
@@ -246,17 +64,17 @@ def itr_control(
 
     Returns
     -------
-    V:np.array :
+    V:Dict[WeekIndex,List[float]] :
         Bellman values
-    G:Dict[TimeScenarioIndex, RewardApproximation] :
+    G:Dict[TimeScenarioIndex, LinearInterpolator] :
         Reward approximation
-    itr:np.array :
+    itr:Dict[TimeScenarioIndex, int] :
         Time and simplex iterations used to solve optimization problems at each iteration
     tot_t:list[float] :
         Time spent at each iteration
-    controls_upper:list[np.array] :
+    controls_upper:List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]] :
         Optimal controls found at each iteration during the evaluation of the upper bound
-    traj:list[np.array] :
+    traj:List[Dict[TimeScenarioIndex, float]] :
         Trajectories computed at each iteration
     """
 
@@ -267,7 +85,6 @@ def itr_control(
         itr_tot,
         controls_upper,
         traj,
-        bellman_value_calculation,
         gap,
         G,
     ) = init_iterative_calculation(param, reservoir_management, output_path, X, solver)
@@ -276,50 +93,89 @@ def itr_control(
     while (gap >= tol_gap and gap >= 0) and i < N:
         debut = time()
 
-        initial_x, controls = compute_x_multi_scenario(
-            bellman_value_calculation=bellman_value_calculation,
-            V=V,
-            itr=i,
-        )
-        traj.append(np.array(initial_x))
+        if i == 0:
+            controls = {
+                TimeScenarioIndex(w, s): {
+                    reservoir_management.reservoir.area: reservoir_management.reservoir.inflow[
+                        w, s
+                    ]
+                }
+                for w in range(param.len_week)
+                for s in range(param.len_scenario)
+            }
+            initial_x: Dict[TimeScenarioIndex, Dict[AreaIndex, float]] = {}
+            for s in range(param.len_scenario):
+                for w in range(param.len_week + 1):
+                    initial_x[TimeScenarioIndex(w, s)] = {
+                        reservoir_management.reservoir.area: reservoir_management.reservoir.initial_level
+                    }
+        else:
+            initial_x, controls, _ = get_optimal_trajectory_from_approximate_costs(
+                bellman_values=V,
+                param=param,
+                multi_stock_management=MultiStockManagement([reservoir_management]),
+                costs_approx=G,
+                random_seed=19 * i,
+                random_scenario=True,
+            )
+        traj.append(initial_x)
 
-        current_itr, G = calculate_reward(
-            param=param,
-            controls=controls,
-            list_models=list_models,
-            G=G,
-            i=i,
-            name_reservoir=reservoir_management.reservoir.area,
+        costs, duals, _, current_itr = get_antares_costs(
+            param=param, controls=controls, list_models=list_models
         )
+        for idx in G.estimators.keys():
+            G[idx].update(
+                controls=np.array([area_value_to_array(controls[idx])]),
+                duals=list_area_value_to_array(duals[idx]),
+                costs=np.array(costs[idx]),
+            )
         itr_tot.append(current_itr)
 
-        bellman_value_calculation = BellmanValueCalculation(
+        V = get_bellman_values_from_approximate_costs(
+            levels={
+                WeekIndex(w): [{reservoir_management.reservoir.area: x} for x in X]
+                for w in range(param.len_week + 1)
+            },
             param=param,
-            reward=G,
-            reservoir_management=reservoir_management,
-            stock_discretization=X,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
+            costs_approx=G,
+            piecewiselinear=True,
         )
 
-        V = bellman_value_calculation.calculate_VU()
+        V0 = V[WeekIndex(0)](
+            {
+                reservoir_management.reservoir.area: reservoir_management.reservoir.initial_level
+            }
+        )
 
-        V_fut = interp1d(X, V[:, 0])
-        V0 = V_fut(reservoir_management.reservoir.initial_level)
-
-        upper_bound, controls, current_itr = compute_upper_bound(
-            bellman_value_calculation=bellman_value_calculation,
+        upper_bound, ctr, current_itr, times = compute_upper_bound(
+            param=param,
+            multi_stock_management=MultiStockManagement([reservoir_management]),
             list_models=list_models,
             V=V,
+            reward_approximation=G,
         )
         itr_tot.append(current_itr)
-        controls_upper.append(controls)
+        controls_upper.append(ctr)
 
-        gap = upper_bound + V0
-        print(gap, upper_bound, -V0)
-        gap = gap / -V0
+        print(upper_bound + V0, upper_bound, -V0)
+        gap = (upper_bound + V0) / -V0
         i += 1
         fin = time()
         tot_t.append(fin - debut)
-    return (V, G, np.array(itr_tot), tot_t, controls_upper, traj)
+    return (
+        {
+            WeekIndex(week): list(V[WeekIndex(week)].get_costs())
+            for week in range(param.len_week + 1)
+        },
+        G,
+        itr_tot,
+        tot_t,
+        controls_upper,
+        traj,
+        V0,
+        upper_bound,
+    )
 
 
 def init_iterative_calculation(
@@ -329,15 +185,14 @@ def init_iterative_calculation(
     X: Array1D,
     solver: str,
 ) -> tuple[
-    List,
+    List[float],
     Dict[TimeScenarioIndex, AntaresProblem],
-    Array2D,
-    List,
-    List,
-    List,
-    BellmanValueCalculation,
+    Dict[WeekIndex, Estimator],
+    List[Dict[TimeScenarioIndex, int]],
+    List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
+    List[Dict[TimeScenarioIndex, Dict[AreaIndex, float]]],
     float,
-    Dict[TimeScenarioIndex, RewardApproximation],
+    LinearCostEstimator,
 ]:
     len_week = param.len_week
     len_scenario = param.len_scenario
@@ -352,43 +207,50 @@ def init_iterative_calculation(
                 scenario=scenario,
                 week=week,
                 path=output_path,
-                itr=1,
                 name_solver=solver,
-                name_scenario=(
-                    param.name_scenario[scenario]
-                    if len(param.name_scenario) > 1
-                    else -1
-                ),
-            )
-            m.create_weekly_problem_itr(
                 param=param,
                 multi_stock_management=MultiStockManagement([reservoir_management]),
             )
             list_models[TimeScenarioIndex(week, scenario)] = m
 
-    V = np.zeros((len(X), len_week + 1), dtype=np.float32)
+    V: Dict[WeekIndex, Estimator] = {
+        WeekIndex(week): PieceWiseLinearInterpolator(
+            X, np.zeros((len(X)), dtype=np.float32)
+        )
+        for week in range(len_week + 1)
+    }
 
-    G: Dict[TimeScenarioIndex, RewardApproximation] = {}
-    for week in range(len_week):
-        for scenario in range(len_scenario):
-            r = RewardApproximation(
-                lb_control=-reservoir_management.reservoir.max_pumping[week]
-                * reservoir_management.reservoir.efficiency,
-                ub_control=reservoir_management.reservoir.max_generating[week],
-                ub_reward=0,
-            )
-            G[TimeScenarioIndex(week, scenario)] = r
+    G = LinearCostEstimator(
+        param=param,
+        controls={
+            TimeScenarioIndex(week, scenario): [
+                {
+                    reservoir_management.reservoir.area: reservoir_management.reservoir.max_generating[
+                        week
+                    ]
+                }
+            ]
+            for week in range(len_week)
+            for scenario in range(len_scenario)
+        },
+        costs={
+            TimeScenarioIndex(week, scenario): [0]
+            for week in range(len_week)
+            for scenario in range(len_scenario)
+        },
+        duals={
+            TimeScenarioIndex(week, scenario): [
+                {reservoir_management.reservoir.area: 0}
+            ]
+            for week in range(len_week)
+            for scenario in range(len_scenario)
+        },
+        type_estimator="LinearInterpolator",
+    )
 
     itr_tot: List = []
     controls_upper: List = []
     traj: List = []
-
-    bellman_value_calculation = BellmanValueCalculation(
-        param=param,
-        reward=G,
-        reservoir_management=reservoir_management,
-        stock_discretization=X,
-    )
 
     gap = 1e3
     fin = time()
@@ -400,7 +262,6 @@ def init_iterative_calculation(
         itr_tot,
         controls_upper,
         traj,
-        bellman_value_calculation,
         gap,
         G,
     )

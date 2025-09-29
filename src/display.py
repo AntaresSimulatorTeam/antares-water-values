@@ -2,9 +2,8 @@ import numpy as np
 import plotly.graph_objects as go
 from tqdm import tqdm
 
-from multi_stock_bellman_value_calculation import MultiStockManagement
-from read_antares_data import TimeScenarioParameter
-from type_definition import Array1D, Dict
+from reservoir_management import MultiStockManagement
+from type_definition import Array1D, Dict, TimeScenarioParameter
 
 
 def draw_usage_values(
@@ -19,7 +18,7 @@ def draw_usage_values(
     mult = 3
     reinterpolated_usage_values = {
         area: np.zeros((n_weeks, mult * nSteps_bellman))
-        for area in multi_stock_management.dict_reservoirs.keys()
+        for area in multi_stock_management.areas
     }
     for i, (area, mng) in enumerate(multi_stock_management.dict_reservoirs.items()):
         lvls = np.linspace(
@@ -28,7 +27,7 @@ def draw_usage_values(
         for week in range(n_weeks):
             diff_to_levels = np.abs(lvls[:, None] - levels_uv[None, week, :, i])
             closest_level = np.argmin(diff_to_levels, axis=1)
-            reinterpolated_usage_values[area][week] = usage_values[area][week][
+            reinterpolated_usage_values[area][week] = usage_values[area.area][week][
                 closest_level
             ]
 
@@ -56,7 +55,7 @@ def draw_usage_values(
         + [
             go.Scatter(
                 x=np.arange(n_weeks + 1),
-                y=np.mean(trajectory, axis=2)[:, i],
+                y=np.mean(trajectory, axis=1)[:, i],
                 visible=(i == 0),
                 name=f"Trajectory",
                 mode="markers",
@@ -102,13 +101,13 @@ def draw_usage_values(
                             {
                                 "visible": [
                                     area_b == area
-                                    for area_b in multi_stock_management.dict_reservoirs.keys()
+                                    for area_b in multi_stock_management.areas
                                 ]
                                 * 4
                             },
                         ],
                     }
-                    for area in multi_stock_management.dict_reservoirs.keys()
+                    for area in multi_stock_management.areas
                 ],
                 "x": 0.0,
                 "xanchor": "left",
@@ -190,13 +189,13 @@ def draw_uvs_sddp(
                             {
                                 "visible": [
                                     area_b == area
-                                    for area_b in multi_stock_management.dict_reservoirs.keys()
+                                    for area_b in multi_stock_management.areas
                                 ]
                                 * 3
                             },
                         ],
                     }
-                    for area in multi_stock_management.dict_reservoirs.keys()
+                    for area in multi_stock_management.areas
                 ],
                 "x": 0.0,
                 "xanchor": "left",

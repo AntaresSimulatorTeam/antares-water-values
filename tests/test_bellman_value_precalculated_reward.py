@@ -1,37 +1,337 @@
 import numpy as np
 import pytest
 
-from functions_iterative import (
-    ReservoirManagement,
-    TimeScenarioIndex,
-    TimeScenarioParameter,
+from estimation import LinearCostEstimator, PieceWiseLinearInterpolator
+from functions_iterative import MultiStockManagement, TimeScenarioParameter
+from multi_stock_bellman_value_calculation import (
+    MultiStockManagement,
+    generate_controls,
+    get_antares_costs,
+    initialize_antares_problems,
 )
-from read_antares_data import Reservoir
+from optimization import WeeklyBellmanProblem
 from simple_bellman_value_calculation import (
-    calculate_bellman_value_with_precalculated_reward,
+    calculate_bellman_value_with_precalculated_cost,
+)
+from type_definition import (
+    AreaIndex,
+    Dict,
+    List,
+    ScenarioIndex,
+    TimeScenarioIndex,
+    WeekIndex,
+    area_value_to_area_scenario_value,
+    timescenario_list_area_value_to_array,
+    timescenario_list_value_to_array,
+)
+
+expected_vb = np.array(
+    [
+        [
+            -5.8882903e09,
+            -5.3716593e09,
+            -4.3035971e09,
+            -3.5937789e09,
+            -1.9985804e09,
+            0.0000000e00,
+        ],
+        [
+            -5.2849848e09,
+            -4.3628841e09,
+            -3.3863439e09,
+            -2.4233408e09,
+            -1.4029317e09,
+            0.0000000e00,
+        ],
+        [
+            -5.1270902e09,
+            -4.2049894e09,
+            -3.2284493e09,
+            -2.2654461e09,
+            -1.2450371e09,
+            0.0000000e00,
+        ],
+        [
+            -4.9845786e09,
+            -4.0474742e09,
+            -3.0743212e09,
+            -2.1075515e09,
+            -1.1028108e09,
+            0.0000000e00,
+        ],
+        [
+            -4.8792730e09,
+            -3.9421688e09,
+            -2.9690158e09,
+            -1.9966429e09,
+            -9.9750547e08,
+            0.0000000e00,
+        ],
+        [
+            -4.7739679e09,
+            -3.8368637e09,
+            -2.8637107e09,
+            -1.8913377e09,
+            -8.9220019e08,
+            0.0000000e00,
+        ],
+        [
+            -4.6686628e09,
+            -3.7315584e09,
+            -2.7584054e09,
+            -1.7860324e09,
+            -7.8689491e08,
+            0.0000000e00,
+        ],
+        [
+            -4.5633592e09,
+            -3.6262533e09,
+            -2.6531005e09,
+            -1.6807272e09,
+            -6.9781325e08,
+            0.0000000e00,
+        ],
+        [
+            -4.4580593e09,
+            -3.5209533e09,
+            -2.5478006e09,
+            -1.5754267e09,
+            -6.4518170e08,
+            0.0000000e00,
+        ],
+        [
+            -4.3527593e09,
+            -3.4156534e09,
+            -2.4425006e09,
+            -1.4748719e09,
+            -5.9255008e08,
+            0.0000000e00,
+        ],
+        [
+            -4.2474637e09,
+            -3.3103565e09,
+            -2.3372029e09,
+            -1.3964571e09,
+            -5.3991853e08,
+            0.0000000e00,
+        ],
+        [
+            -4.1421691e09,
+            -3.2050616e09,
+            -2.2345021e09,
+            -1.3438308e09,
+            -4.8728694e08,
+            0.0000000e00,
+        ],
+        [
+            -4.0368771e09,
+            -3.0997683e09,
+            -2.1460563e09,
+            -1.2912045e09,
+            -4.3465536e08,
+            0.0000000e00,
+        ],
+        [
+            -3.9315873e09,
+            -2.9958764e09,
+            -2.0817644e09,
+            -1.2385782e09,
+            -3.8202378e08,
+            0.0000000e00,
+        ],
+        [
+            -3.8262989e09,
+            -2.9008681e09,
+            -2.0291328e09,
+            -1.1859519e09,
+            -3.2939219e08,
+            0.0000000e00,
+        ],
+        [
+            -3.7572828e09,
+            -2.8303158e09,
+            -1.9765012e09,
+            -1.1333240e09,
+            -2.7676061e08,
+            0.0000000e00,
+        ],
+        [
+            -3.7046513e09,
+            -2.7776842e09,
+            -1.9238697e09,
+            -1.0806925e09,
+            -2.2412904e08,
+            0.0000000e00,
+        ],
+        [
+            -3.6520197e09,
+            -2.7250524e09,
+            -1.8712381e09,
+            -1.0280609e09,
+            -1.7149747e08,
+            0.0000000e00,
+        ],
+        [
+            -3.5993882e09,
+            -2.6724209e09,
+            -1.8186065e09,
+            -9.7542931e08,
+            -1.1886589e08,
+            0.0000000e00,
+        ],
+        [
+            -3.5467566e09,
+            -2.6197893e09,
+            -1.7659749e09,
+            -9.2279776e08,
+            -6.6234308e07,
+            0.0000000e00,
+        ],
+    ]
+)
+
+expected_vb_ms = np.array(
+    [
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+        [
+            1.99858030e09,
+            1.40291125e09,
+            1.24501651e09,
+            1.10278944e09,
+            9.97484181e08,
+            8.92178918e08,
+            7.86873654e08,
+            6.97792511e08,
+            6.45160932e08,
+            5.92529353e08,
+            5.39897775e08,
+            4.87266196e08,
+            4.34634617e08,
+            3.82003038e08,
+            3.29371459e08,
+            2.76739880e08,
+            2.24108301e08,
+            1.71476722e08,
+            1.18845143e08,
+            6.62135644e07,
+        ],
+    ]
 )
 
 
-def test_bellman_value_precalculated_reward() -> None:
+def test_bellman_value_precalculated_reward(
+    param: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
+) -> None:
 
-    param = TimeScenarioParameter(len_week=5, len_scenario=1)
-    reservoir = Reservoir("test_data/one_node", "area")
-    reservoir_management = ReservoirManagement(
-        reservoir=reservoir,
-        penalty_bottom_rule_curve=3000,
-        penalty_upper_rule_curve=3000,
-        penalty_final_level=3000,
-        force_final_level=False,
-    )
-    xNsteps = 20
-    X = np.linspace(0, reservoir.capacity, num=xNsteps)
+    a = AreaIndex("area")
+    levels = {
+        WeekIndex(w): [
+            {a: x}
+            for x in np.linspace(
+                0,
+                multi_stock_management_one_node.dict_reservoirs[a].reservoir.capacity,
+                20,
+            )
+        ]
+        for w in range(param.len_week + 1)
+    }
 
-    vb, G = calculate_bellman_value_with_precalculated_reward(
+    vb, G, _, _ = calculate_bellman_value_with_precalculated_cost(
         len_controls=20,
         param=param,
-        reservoir_management=reservoir_management,
+        multi_stock_management=multi_stock_management_one_node,
         output_path="test_data/one_node",
-        X=X,
+        levels=levels,
+        piecewiselinear=True,
+        type_estimator="LinearInterpolator",
     )
 
     true_list_cut = [
@@ -57,197 +357,156 @@ def test_bellman_value_precalculated_reward() -> None:
         (-0.0004060626000000001, -38705645.55951345),
     ]
     for i, cut in enumerate(true_list_cut):
-        assert G[TimeScenarioIndex(0, 0)].list_cut[i] == pytest.approx(cut)
+        assert -G[TimeScenarioIndex(0, 0)].costs[i] + G[TimeScenarioIndex(0, 0)].duals[
+            i
+        ] * G[TimeScenarioIndex(0, 0)].inputs[i] == pytest.approx(cut[1])
+        assert G[TimeScenarioIndex(0, 0)].duals[i] == pytest.approx(-cut[0], abs=1e-3)
 
-    true_breaking_point = [
-        -8400000.0,
-        -8063224.997515362,
-        -7030895.6782807605,
-        -6199090.137508901,
-        -5286581.292333476,
-        -4407112.655717107,
-        -3538405.80076642,
-        -2213016.0157842324,
-        -1807675.2837932073,
-        -953016.7793065935,
-        -13295.937459539502,
-        1146982.96241088,
-        1779697.1019513493,
-        2582733.975863404,
-        3604958.074023681,
-        4413709.3726140605,
-        5355515.15835384,
-        6172222.34066152,
-        7004949.556935257,
-        7899894.858426053,
-        8400000.0,
-    ]
-    for i, pt in enumerate(true_breaking_point):
-        assert G[TimeScenarioIndex(0, 0)].breaking_point[i] == pytest.approx(pt, 1e-5)
+    for week in range(param.len_week - 1, -1, -1):
+        assert vb[WeekIndex(week)].get_costs() == pytest.approx(
+            expected_vb[:, week], rel=1e-3
+        )
 
-    assert vb == pytest.approx(
-        np.array(
-            [
-                [
-                    -5.88819050e09,
-                    -5.37158308e09,
-                    -4.30354519e09,
-                    -3.62174927e09,
-                    -1.99857483e09,
-                    0.00000000e00,
-                ],
-                [
-                    -5.28486770e09,
-                    -4.36279337e09,
-                    -3.38627736e09,
-                    -2.42429723e09,
-                    -1.40291199e09,
-                    0.00000000e00,
-                ],
-                [
-                    -5.12697202e09,
-                    -4.20489758e09,
-                    -3.22838159e09,
-                    -2.26640141e09,
-                    -1.24501626e09,
-                    0.00000000e00,
-                ],
-                [
-                    -4.98446177e09,
-                    -4.04738189e09,
-                    -3.07425291e09,
-                    -2.10850558e09,
-                    -1.10278955e09,
-                    0.00000000e00,
-                ],
-                [
-                    -4.87915628e09,
-                    -3.94207640e09,
-                    -2.96894743e09,
-                    -1.99659827e09,
-                    -9.97484041e08,
-                    0.00000000e00,
-                ],
-                [
-                    -4.77385081e09,
-                    -3.83677093e09,
-                    -2.86364201e09,
-                    -1.89129286e09,
-                    -8.92178681e08,
-                    0.00000000e00,
-                ],
-                [
-                    -4.66854548e09,
-                    -3.73146560e09,
-                    -2.75833669e09,
-                    -1.78598754e09,
-                    -7.86873403e08,
-                    0.00000000e00,
-                ],
-                [
-                    -4.56324018e09,
-                    -3.62616030e09,
-                    -2.65303139e09,
-                    -1.68068223e09,
-                    -6.97788603e08,
-                    0.00000000e00,
-                ],
-                [
-                    -4.45793490e09,
-                    -3.52085502e09,
-                    -2.54772616e09,
-                    -1.57537699e09,
-                    -6.45156824e08,
-                    0.00000000e00,
-                ],
-                [
-                    -4.35262964e09,
-                    -3.41554976e09,
-                    -2.44242093e09,
-                    -1.47481564e09,
-                    -5.92525097e08,
-                    0.00000000e00,
-                ],
-                [
-                    -4.24732437e09,
-                    -3.31024452e09,
-                    -2.33711570e09,
-                    -1.39639186e09,
-                    -5.39893426e08,
-                    0.00000000e00,
-                ],
-                [
-                    -4.14201910e09,
-                    -3.20493930e09,
-                    -2.23440362e09,
-                    -1.34376008e09,
-                    -4.87261771e08,
-                    0.00000000e00,
-                ],
-                [
-                    -4.03671387e09,
-                    -3.09963410e09,
-                    -2.14594333e09,
-                    -1.29112830e09,
-                    -4.34630157e08,
-                    0.00000000e00,
-                ],
-                [
-                    -3.93140864e09,
-                    -2.99572720e09,
-                    -2.08161815e09,
-                    -1.23849653e09,
-                    -3.81998560e08,
-                    0.00000000e00,
-                ],
-                [
-                    -3.82610344e09,
-                    -2.90069998e09,
-                    -2.02898637e09,
-                    -1.18586480e09,
-                    -3.29367085e08,
-                    0.00000000e00,
-                ],
-                [
-                    -3.75708018e09,
-                    -2.82991041e09,
-                    -1.97635460e09,
-                    -1.13323307e09,
-                    -2.76736122e08,
-                    0.00000000e00,
-                ],
-                [
-                    -3.70444843e09,
-                    -2.77727863e09,
-                    -1.92372285e09,
-                    -1.08060136e09,
-                    -2.24105162e08,
-                    0.00000000e00,
-                ],
-                [
-                    -3.65181671e09,
-                    -2.72464685e09,
-                    -1.87109111e09,
-                    -1.02796969e09,
-                    -1.71474287e08,
-                    0.00000000e00,
-                ],
-                [
-                    -3.59918506e09,
-                    -2.67201512e09,
-                    -1.81845943e09,
-                    -9.75338039e08,
-                    -1.18843427e08,
-                    0.00000000e00,
-                ],
-                [
-                    -3.54655341e09,
-                    -2.61938341e09,
-                    -1.76582776e09,
-                    -9.22706398e08,
-                    -6.62126083e07,
-                    0.00000000e00,
-                ],
-            ]
+
+def test_bellman_value_precalculated_reward_with_multi_stock(
+    param: TimeScenarioParameter,
+    multi_stock_management_one_node: MultiStockManagement,
+) -> None:
+
+    a = AreaIndex("area")
+    levels = {
+        WeekIndex(w): [
+            {a: x}
+            for x in np.linspace(
+                0,
+                multi_stock_management_one_node.dict_reservoirs[a].reservoir.capacity,
+                20,
+            )
+        ]
+        for w in range(param.len_week + 1)
+    }
+
+    bellman_values, _, _, _ = calculate_bellman_value_with_precalculated_cost(
+        len_controls=20,
+        param=param,
+        multi_stock_management=multi_stock_management_one_node,
+        output_path="test_data/one_node",
+        levels=levels,
+        piecewiselinear=False,
+        type_estimator="LinearDecomposer",
+    )
+
+    for week in range(param.len_week - 1, -1, -1):
+        bellman_values[WeekIndex(week)].get_costs() == pytest.approx(
+            expected_vb_ms[week], rel=1e-3
+        )
+
+
+def test_get_all_cost(
+    controls_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
+    costs_precalculated_one_node_10: Dict[TimeScenarioIndex, List[float]],
+    slopes_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
+    multi_stock_management_one_node: MultiStockManagement,
+    param: TimeScenarioParameter,
+) -> None:
+    controls = generate_controls(
+        param=param,
+        multi_stock_management=multi_stock_management_one_node,
+        controls_looked_up="grid",
+        xNsteps=10,
+    )
+
+    list_models = initialize_antares_problems(
+        param=param,
+        multi_stock_management=multi_stock_management_one_node,
+        output_path="test_data/one_node",
+        name_solver="CLP",
+        verbose=False,
+    )
+
+    costs, slopes, _, _ = get_antares_costs(
+        param=param, list_models=list_models, controls=controls
+    )
+    assert timescenario_list_area_value_to_array(
+        controls, param, multi_stock_management_one_node.areas
+    ) == pytest.approx(
+        timescenario_list_area_value_to_array(
+            controls_precalculated_one_node_10,
+            param,
+            multi_stock_management_one_node.areas,
         )
     )
+    assert timescenario_list_value_to_array(costs, param) == pytest.approx(
+        timescenario_list_value_to_array(
+            costs_precalculated_one_node_10,
+            param,
+        )
+    )
+    assert timescenario_list_area_value_to_array(
+        slopes, param, multi_stock_management_one_node.areas
+    ) == pytest.approx(
+        timescenario_list_area_value_to_array(
+            slopes_precalculated_one_node_10,
+            param,
+            multi_stock_management_one_node.areas,
+        )
+    )
+
+
+def test_solve_weekly_problem_with_approximation(
+    param: TimeScenarioParameter,
+    controls_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
+    costs_precalculated_one_node_10: Dict[TimeScenarioIndex, List[float]],
+    slopes_precalculated_one_node_10: Dict[
+        TimeScenarioIndex, List[Dict[AreaIndex, float]]
+    ],
+    multi_stock_management_one_node: MultiStockManagement,
+) -> None:
+
+    reward = LinearCostEstimator(
+        param=param,
+        controls=controls_precalculated_one_node_10,
+        costs=costs_precalculated_one_node_10,
+        duals=slopes_precalculated_one_node_10,
+        type_estimator="LinearInterpolator",
+    )
+    for area, mng in multi_stock_management_one_node.dict_reservoirs.items():
+        X = np.linspace(0, mng.reservoir.capacity, num=20)
+        V = {
+            week: np.zeros((len(X), param.len_scenario), dtype=np.float32)
+            for week in range(param.len_week + 1)
+        }
+
+        week = param.len_week - 1
+
+        scenario = 0
+        V_fut = PieceWiseLinearInterpolator(X, V[week + 1][:, scenario])
+        i = 10
+        problem = WeeklyBellmanProblem(
+            param=param,
+            multi_stock_management=MultiStockManagement([mng]),
+            week_costs_estimation={
+                ScenarioIndex(scenario): reward[TimeScenarioIndex(week, scenario)]
+            },
+            week=week,
+        )
+
+        control, Vu, _, xf = problem.solve(
+            level_init=area_value_to_area_scenario_value({area: X[i]}, 1),
+            future_costs_estimation=V_fut,
+        )
+
+        cost = reward[TimeScenarioIndex(week, scenario)](
+            {area: control[area][ScenarioIndex(scenario)]}
+        )
+
+        assert Vu == pytest.approx(539893423)
+        assert xf[area][ScenarioIndex(scenario)] == pytest.approx(2280000)
+        assert control[area][ScenarioIndex(scenario)] == pytest.approx(3014776)
+        assert cost == pytest.approx(539893423)

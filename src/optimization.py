@@ -509,6 +509,40 @@ class AntaresProblem:
             additional_constraint = self._build_univariate_bellman_constraints(V)
         elif type(V) is BellmanValueEstimation:
             additional_constraint = self._build_multivariate_bellman_constraints(V)
+        elif type(V) is LinearInterpolator:
+            additional_constraint = [
+                self.solver.Add(
+                    sum(
+                        [
+                            self.stored_variables_and_constraints[a][
+                                "final_bellman_value"
+                            ]
+                            for a in self.range_reservoir
+                        ]
+                    )
+                    >= (cost - min(V.costs))
+                    + sum(
+                        [
+                            (
+                                self.stored_variables_and_constraints[area][
+                                    "final_level"
+                                ]
+                                - levels[r]
+                            )
+                            * duals[r]
+                            for r, area in enumerate(self.range_reservoir)
+                        ]
+                    ),
+                    name=f"BellmanValue{lvl_id}",
+                )
+                for lvl_id, (levels, cost, duals) in enumerate(
+                    zip(
+                        V.inputs,
+                        V.costs,
+                        V.duals,
+                    )
+                )
+            ]
         for area in self.range_reservoir:
             level_i = all_level_i[area]
             cst_initial_level = self.solver.LookupConstraint(

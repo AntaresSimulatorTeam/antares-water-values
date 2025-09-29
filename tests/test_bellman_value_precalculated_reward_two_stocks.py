@@ -74,7 +74,7 @@ def test_weekly_bellman_problem(
     )
 
 
-def test_bellman_value_precalculated_multi_stock(
+def test_bellman_value_precalculated_multi_stock_1cycle(
     param: TimeScenarioParameter,
     multi_stock_management_two_nodes: MultiStockManagement,
 ) -> None:
@@ -98,7 +98,49 @@ def test_bellman_value_precalculated_multi_stock(
         method="lines",
     )
 
-    bellman_values, _, _, _ = calculate_bellman_value_with_precalculated_cost(
+    _, _, lb, ub = calculate_bellman_value_with_precalculated_cost(
+        param=param,
+        multi_stock_management=multi_stock_management_two_nodes,
+        output_path="test_data/two_nodes",
+        len_controls=5,
+        levels=levels,
+        name_solver="CLP",
+        controls_looked_up="line+diagonal",
+        verbose=True,
+        n_cycle=1,
+        type_estimator="LinearDecomposer",
+        piecewiselinear=False,
+    )
+
+    assert lb == pytest.approx(559368290)
+    assert ub == pytest.approx(735370177)
+
+
+def test_bellman_value_precalculated_multi_stock_2cycles(
+    param: TimeScenarioParameter,
+    multi_stock_management_two_nodes: MultiStockManagement,
+) -> None:
+
+    levels = multi_stock_management_two_nodes.get_disc(
+        param=param,
+        xNsteps=5,
+        trajectory={
+            TimeScenarioIndex(w, s): {
+                a: mng.reservoir.bottom_rule_curve[0] * 0.7
+                + mng.reservoir.upper_rule_curve[0] * 0.3
+                for a, mng in multi_stock_management_two_nodes.dict_reservoirs.items()
+            }
+            for w in range(param.len_week)
+            for s in range(param.len_scenario)
+        },
+        correlation_matrix=get_correlation_matrix(
+            multi_stock_management=multi_stock_management_two_nodes,
+            corr_type="no_corrs",
+        ),
+        method="lines",
+    )
+
+    bellman_values, _, lb, ub = calculate_bellman_value_with_precalculated_cost(
         param=param,
         multi_stock_management=multi_stock_management_two_nodes,
         output_path="test_data/two_nodes",
@@ -111,6 +153,9 @@ def test_bellman_value_precalculated_multi_stock(
         type_estimator="LinearDecomposer",
         piecewiselinear=False,
     )
+
+    assert lb == pytest.approx(1271687268)
+    assert ub == pytest.approx(1111002597)
 
     assert time_list_area_value_to_array(
         levels, param, multi_stock_management_two_nodes.areas

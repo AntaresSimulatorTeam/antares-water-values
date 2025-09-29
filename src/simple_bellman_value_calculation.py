@@ -109,15 +109,12 @@ def calculate_bellman_value_with_precalculated_cost(
 
     lb = V[WeekIndex(0)](multi_stock_management.get_initial_level())
 
-    if piecewiselinear:
-        ub, _, _, _ = compute_upper_bound(
-            multi_stock_management=multi_stock_management,
-            param=param,
-            list_models=list_models,
-            V=V,
-        )
-    else:
-        ub = -1
+    ub, _, _, _ = compute_upper_bound(
+        multi_stock_management=multi_stock_management,
+        param=param,
+        list_models=list_models,
+        V=V,
+    )
     return (V, costs_approx, lb, ub)
 
 

@@ -516,7 +516,6 @@ def cutting_plane_method(
     starting_pt: Dict[AreaIndex, float],
     costs_approx: LinearCostEstimator,
     costs: Dict[TimeScenarioIndex, List[float]],
-    final_bellman_values: Estimator,
     nSteps_bellman: int,
     method: str,
     correlations: np.ndarray,
@@ -590,14 +589,12 @@ def cutting_plane_method(
             param=param,
             multi_stock_management=multi_stock_management,
             costs_approx=costs_approx,
-            final_bellman_values=final_bellman_values,
             name_solver=name_solver,
             levels=levels,
             divisor=divisor,
             verbose=verbose,
             piecewiselinear=False,
         )
-        final_bellman_values = bellman_values[WeekIndex(0)]
 
         # Evaluate optimal
         trajectory, pseudo_opt_controls, _ = (
@@ -777,12 +774,7 @@ def iter_bell_vals(
         controls=controls_list,
         costs=costs,
         duals=duals,
-        type_estimator="LinearDecomposer",
-    )
-
-    # Initialize our approximation on future costs
-    future_costs_approx = get_default_linear_interpolator(
-        multi_stock_management=multi_stock_management,
+        type_estimator="LinearInterpolator",
     )
 
     # Correlations matrix
@@ -801,7 +793,6 @@ def iter_bell_vals(
             costs_approx=costs_approx,
             saving_dir=saving_dir,
             costs=costs,
-            final_bellman_values=future_costs_approx,
             nSteps_bellman=nSteps_bellman,
             method=method,
             correlations=correlations,
@@ -1050,7 +1041,7 @@ def iter_bell_vals_v2(
         controls=controls_list,
         costs=costs,
         duals=duals,
-        type_estimator="LinearDecomposer",
+        type_estimator="LinearInterpolator",
     )
     # Iterative part
     usage_values, bellman_costs, costs_approx, all_uvs, levels_uv, lower_bound = (

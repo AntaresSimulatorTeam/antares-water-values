@@ -712,6 +712,7 @@ def iter_bell_vals(
     Dict[WeekIndex, List[Dict[AreaIndex, float]]],
     Dict[TimeScenarioIndex, Dict[AreaIndex, float]],
     Dict[AreaIndex, Dict[WeekIndex, List[float]]],
+    float,
 ]:
     """
     In a similar fashion to Kelley's algorithm (1960), the idea is to approximate the (convex) cost function
@@ -811,6 +812,8 @@ def iter_bell_vals(
         )
     )
 
+    lb = future_costs_approx_l[WeekIndex(0)](multi_stock_management.get_initial_level())
+
     # Deducing usage values
     usage_values, _ = compute_usage_values_from_costs(
         param=param,
@@ -830,6 +833,7 @@ def iter_bell_vals(
         levels,
         optimal_trajectory,
         usage_values,
+        lb,
     )
 
 
@@ -899,7 +903,7 @@ def sddp_cutting_planes(
         normalization["euro"],
         normalization["energy"],
     )
-    jl_sddp.reinit_cuts(*formatted_data)
+    # jl_sddp.reinit_cuts(*formatted_data)
     # Body
     while iter < maxiter and (iter < 4 or (opt_gap > precision)):
         iter += 1

@@ -6,6 +6,7 @@ import os, argparse, traceback
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
+from proxy_bellman_trajectories import STOCK_STEP_DISCR
 
 """
 Long-Term Storage Trajectories Generator for Antares Studies
@@ -51,7 +52,6 @@ Note:
 
 """
 
-
 class Launch:
     def __init__(self, 
                  dir_study: str, 
@@ -89,7 +89,7 @@ class Launch:
         export_dir = os.path.join(self.global_export_dir, self.name_area)
         os.makedirs(export_dir, exist_ok=True)
         steps = ["Init Proxy", "Bellman values", "Trajectories", "Setup export/modif"]
-        pbar = tqdm(total=len(steps)+52*self.MC_years+51*len(self.TS_selection)*51+52*self.MC_years,
+        pbar = tqdm(total=len(steps)+52*self.MC_years+(100//STOCK_STEP_DISCR+1)*len(self.TS_selection)*51+52*self.MC_years,
                     unit="step")
 
         self.proxy = ProxyStageCostFunction(

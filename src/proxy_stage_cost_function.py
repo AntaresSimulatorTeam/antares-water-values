@@ -48,50 +48,103 @@ class ProxyStageCostFunction:
 
         return weighted_net_load
     
-    def compute_turb_and_pump_with_thresholds(self, 
-                                              turb_thresholds : np.ndarray, 
-                                              weekly_net_load : np.ndarray, 
-                                              max_hourly_turb : np.ndarray, 
-                                              max_hourly_pump : np.ndarray, 
-                                              null_pump : bool) -> tuple:
+    # def compute_turb_and_pump_with_thresholds(self, 
+    #                                           turb_thresholds : np.ndarray, 
+    #                                           weekly_net_load : np.ndarray, 
+    #                                           max_hourly_turb : np.ndarray, 
+    #                                           max_hourly_pump : np.ndarray, 
+    #                                           null_pump : bool) -> tuple:
+    #     """
+    #     Compute weekly turbine and pump energy, control, and cost for given thresholds 
+    #     of net load.
+
+    #     Returns:
+    #         tuple: (hourly_turb, hourly_pump, weekly_control, costs)
+    #     """  
+    #     hourly_turb = []
+    #     hourly_pump = []
+    #     weekly_control = []
+    #     costs = []
+        
+    #     for turb_threshold in turb_thresholds:
+    #         clipped_net_load = np.minimum(weekly_net_load, np.maximum(turb_threshold, weekly_net_load - max_hourly_turb))
+    #         turb = weekly_net_load - clipped_net_load
+
+    #         if not null_pump:
+    #             if turb_threshold < 0:
+    #                 pump_threshold = turb_threshold
+    #             else:
+    #                 pump_threshold = ((self.reservoir.efficiency / self.turb_efficiency) ** (1 / (self.alpha - 1))) * turb_threshold
+    #             potential_pump = pump_threshold - clipped_net_load
+    #             mask = clipped_net_load < pump_threshold
+    #             pump = np.minimum(potential_pump, max_hourly_pump) * mask
+    #         else:
+    #             pump = np.zeros_like(clipped_net_load)
+
+    #         clipped_net_load += pump
+
+    #         hourly_turb.append(np.sum(turb * self.turb_efficiency))
+    #         hourly_pump.append(np.sum(pump * self.reservoir.efficiency))
+    #         hourly_control = turb * self.turb_efficiency - pump * self.reservoir.efficiency
+    #         weekly_control.append(np.sum(hourly_control))
+    #         cost = np.sum(np.abs(clipped_net_load) ** self.alpha)
+    #         costs.append(cost)
+        
+    #     return hourly_turb,hourly_pump,weekly_control,costs
+
+    def compute_turb_and_pump_with_thresholds(
+        self,
+        turb_thresholds: np.ndarray,
+        weekly_net_load: np.ndarray,
+        max_hourly_turb: np.ndarray,
+        max_hourly_pump: np.ndarray,
+        null_pump: bool
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         """
-        Compute weekly turbine and pump energy, control, and cost for given thresholds 
-        of net load.
+        Vectorized version: computes outputs for all turb_thresholds at once.
 
         Returns:
-            tuple: (hourly_turb, hourly_pump, weekly_control, costs)
-        """  
-        hourly_turb = []
-        hourly_pump = []
-        weekly_control = []
-        costs = []
-        
-        for turb_threshold in turb_thresholds:
-            clipped_net_load = np.minimum(weekly_net_load, np.maximum(turb_threshold, weekly_net_load - max_hourly_turb))
-            turb = weekly_net_load - clipped_net_load
+            hourly_turb (T,), hourly_pump (T,), weekly_control (T,), costs (T,)
+        """
+        # Shapes
+        # weekly_net_load: (168,)
+        # turb_thresholds: (T,)
+        nl = weekly_net_load[None, :]        # (1,168)
+        mt = max_hourly_turb[None, :]        # (1,168)
+        mp = max_hourly_pump[None, :]        # (1,168)
+        tt = turb_thresholds[:, None]        # (T,1)
 
-            if not null_pump:
-                if turb_threshold < 0:
-                    pump_threshold = turb_threshold
-                else:
-                    pump_threshold = ((self.reservoir.efficiency / self.turb_efficiency) ** (1 / (self.alpha - 1))) * turb_threshold
-                potential_pump = pump_threshold - clipped_net_load
-                mask = clipped_net_load < pump_threshold
-                pump = np.minimum(potential_pump, max_hourly_pump) * mask
-            else:
-                pump = np.zeros_like(clipped_net_load)
+        # Turbining clip
+        clipped = np.minimum(nl, np.maximum(tt, nl - mt))  # (T,168)
+        turb = nl - clipped                                # (T,168)
 
-            clipped_net_load += pump
+        # Pumping
+        if null_pump:
+            pump = np.zeros_like(clipped)                  # (T,168)
+        else:
+            ratio = (self.reservoir.efficiency / self.turb_efficiency) ** (1 / (self.alpha - 1))
 
-            hourly_turb.append(np.sum(turb * self.turb_efficiency))
-            hourly_pump.append(np.sum(pump * self.reservoir.efficiency))
-            hourly_control = turb * self.turb_efficiency - pump * self.reservoir.efficiency
-            weekly_control.append(np.sum(hourly_control))
-            cost = np.sum(np.abs(clipped_net_load) ** self.alpha)
-            costs.append(cost)
-        
-        return hourly_turb,hourly_pump,weekly_control,costs
+            pump_thresholds = np.where(
+                turb_thresholds < 0,
+                turb_thresholds,
+                ratio * turb_thresholds
+            )                                               # (T,)
 
+            pt = pump_thresholds[:, None]                   # (T,1)
+            potential_pump = pt - clipped                   # (T,168)
+            mask = clipped < pt                             # (T,168)
+
+            pump = np.where(mask, np.minimum(potential_pump, mp), 0.0)  # (T,168)
+
+        net_after = clipped + pump                          # (T,168)
+
+        # Aggregations
+        hourly_turb = turb.sum(axis=1) * self.turb_efficiency                 # (T,)
+        hourly_pump = pump.sum(axis=1) * self.reservoir.efficiency            # (T,)
+        weekly_control = (turb * self.turb_efficiency - pump * self.reservoir.efficiency).sum(axis=1)
+        costs = (np.abs(net_after) ** self.alpha).sum(axis=1)
+
+        return hourly_turb, hourly_pump, weekly_control, costs
 
 
     def stage_cost_function(self, week: int, scenario: int) -> np.ndarray:
@@ -129,6 +182,12 @@ class ProxyStageCostFunction:
             max_hourly_pump=max_hourly_pump,
             null_pump=null_pump
         )
+        
+        idx = np.argsort(weekly_control)
+        weekly_control = weekly_control[idx]
+        costs = costs[idx]
+        hourly_turb = hourly_turb[idx]
+        hourly_pump = hourly_pump[idx]
 
         return np.array([
             interp1d(weekly_control, costs, fill_value="extrapolate"),

@@ -5,6 +5,7 @@ import pandas as pd
 from configparser import ConfigParser
 import shutil
 import os
+from proxy_bellman_trajectories import STOCK_STEP_DISCR
 
 
 class Exporter:
@@ -53,7 +54,7 @@ class Exporter:
         """
         data = []
         for w in range(self.nb_weeks):
-            for c_index, c in enumerate(range(0, 101, 2)):
+            for c_index, c in enumerate(range(0, 101, STOCK_STEP_DISCR)):
                 stock_percent = c  # stock expressed in %
                 value = self.bv.mean_bv[w, c_index]
                 data.append({
@@ -74,7 +75,7 @@ class Exporter:
         usage_values=self.bv.compute_usage_values()
         data = []
         for w in range(self.nb_weeks):
-            for c_index, c in enumerate(range(2, 101, 2)):
+            for c_index, c in enumerate(range(STOCK_STEP_DISCR, 101, STOCK_STEP_DISCR)):
                 stock_percent = c  # stock expressed in %
                 value = usage_values[w, c_index]
                 data.append({
@@ -362,7 +363,7 @@ enabled = true
 
     def apply_all(self) -> None:
         """
-        Execute all the steps to modify the Antares study in order.
+        Execute all the steps to modify the Antares study.
         """
         self.overwrite_pmax()
         self.create_st_cluster()

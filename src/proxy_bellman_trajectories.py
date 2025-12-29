@@ -5,13 +5,13 @@ from type_definition import Callable
 from scipy.interpolate import interp1d
 from tqdm import tqdm
 
-STOCK_STEP_DISCR=2
+STOCK_DISCR=2
 
 class BellmanValuesProxy:
     def __init__(self, proxy: ProxyStageCostFunction, export_dir: str, pbar : tqdm,TS_selection:list[int]|None=None)->None:
         """
-        Initialize BellmanValuesProxy with given Proxy, logging flag and export directory.
-        Sets up cost functions, storage arrays, and logger, then computes Bellman and usage values.
+        Initialize BellmanValuesProxy with given Proxy and export directory.
+        Sets up cost functions, storage arrays, then computes Bellman and usage values.
         """
         self.proxy = proxy
         self.nb_weeks = proxy.nb_weeks
@@ -26,7 +26,7 @@ class BellmanValuesProxy:
         self.turb_functions = self.stage_cost_functions[:, :, 1]
         self.pump_functions = self.stage_cost_functions[:, :, 2]
 
-        self.mean_bv = np.zeros((self.nb_weeks, 100//STOCK_STEP_DISCR+1))
+        self.mean_bv = np.zeros((self.nb_weeks, 100//STOCK_DISCR+1))
 
         self.compute_bellman_values()
     
@@ -67,7 +67,7 @@ class BellmanValuesProxy:
         Returns an interpolated Bellman value function for given week over reservoir stock levels.
         """
         return interp1d(
-            np.linspace(0, self.proxy.reservoir.capacity, 100//STOCK_STEP_DISCR+1),
+            np.linspace(0, self.proxy.reservoir.capacity, 100//STOCK_DISCR+1),
             self.mean_bv[week],
             kind="linear",
             fill_value="extrapolate",
@@ -98,21 +98,15 @@ class BellmanValuesProxy:
         max_control: float,
     ) -> tuple[float, float | None, float | None]:
         """
-        Vectorized version of iterate_over_stock_levels (forced controls).
-
-        Enumerates next stock levels on the 0..100% grid (step 2%),
+        Enumerates next stock levels on the 0..100% grid,
         computes implied control, filters infeasible controls, evaluates total value,
         and keeps the best.
         """
         capacity = float(self.proxy.reservoir.capacity)
 
-        next_stock_grid = (np.arange(0, 101, STOCK_STEP_DISCR, dtype=float) / 100.0) * capacity
+        next_stock_grid = (np.arange(0, 101, STOCK_DISCR, dtype=float) / 100.0) * capacity
 
-        # Forced control corresponding to that next stock
-        # original: control = current_stock - new_level + weekly_inflow
         controls = current_stock - next_stock_grid + weekly_inflow
-
-        # Feasibility mask: identical constraints as your original code
         feasible = (
             (controls >= -max_week_pump * self.proxy.reservoir.efficiency) &
             (controls <=  max_week_turb * self.proxy.turb_efficiency) &
@@ -149,7 +143,7 @@ class BellmanValuesProxy:
 
         penalty_final_stock = self.penalty_final_stock()
         self.mean_bv[self.nb_weeks - 1] = np.array([
-            penalty_final_stock((c / 100) * self.proxy.reservoir.capacity) for c in range(0, 101, STOCK_STEP_DISCR)
+            penalty_final_stock((c / 100) * self.proxy.reservoir.capacity) for c in range(0, 101, STOCK_DISCR)
         ])
 
         self.pbar.set_postfix_str("Bellman values computing") 
@@ -161,7 +155,7 @@ class BellmanValuesProxy:
             max_week_turb = self.proxy.reservoir.max_weekly_turb[w+1]
             max_week_pump = self.proxy.reservoir.max_weekly_pump[w+1]
 
-            for c in range(0, 101, STOCK_STEP_DISCR):
+            for c in range(0, 101, STOCK_DISCR):
                 current_stock = (c / 100) * self.proxy.reservoir.capacity
                 bv=np.zeros((len(self.TS_selection)))
                 for i,s in enumerate(self.TS_selection):
@@ -196,17 +190,7 @@ class BellmanValuesProxy:
 
                     bv[i] = final_best_value
 
-                self.mean_bv[w, c // STOCK_STEP_DISCR] = np.mean(bv)
-
-    def compute_usage_values(self) -> np.ndarray:
-        """
-        Computes usage values as discrete derivatives of mean Bellman values across stock levels for each week.
-        """
-        usage_values = np.zeros((self.nb_weeks, 100//STOCK_STEP_DISCR))
-        for w in range(self.nb_weeks):
-            for c in range(STOCK_STEP_DISCR, 101, STOCK_STEP_DISCR):
-                usage_values[w, (c // STOCK_STEP_DISCR) - 1] = self.mean_bv[w, c // STOCK_STEP_DISCR] - self.mean_bv[w, (c // STOCK_STEP_DISCR) - 1]
-        return usage_values
+                self.mean_bv[w, c // STOCK_DISCR] = np.mean(bv)
 
 class OptimalTrajectories:
     def __init__(self,
@@ -315,35 +299,29 @@ class OptimalTrajectories:
         turb = self.bellman_values.proxy.reservoir.max_hourly_turb[week * 168:(week + 1) * 168]
         max_control = turb * self.bellman_values.proxy.turb_efficiency
 
-        net_hourly_turb = inflow - max_control  # same as before: inflow - turb*eff
+        net_hourly_turb = inflow - max_control
 
         stock = float(stock_init)
 
         for h in range(168):
-            # apply net inflow for this hour
             stock += float(net_hourly_turb[h])
 
-            # overflow correction
             if stock > cap:
                 overflow = stock - cap
 
-                # store the adjustment (same semantics as your inflow_adjust_overflow)
                 self.inflow_adjust_overflow[week, scenario, h] = overflow
 
-                # remove overflow from net inflow at this hour so stock becomes exactly cap
                 net_hourly_turb[h] -= overflow
                 stock = cap
 
 
-            # negative stock correction
             if stock < 0.0:
-                neg = stock  # negative number, same as your detect_hourly_negative_stock return
+                neg = stock  
 
-                # reduce max feasible turbining for the week at this hour (same as before)
-                max_control[h] += neg  # since neg<0, this decreases max_control[h]
+                max_control[h] += neg  
 
-                # adjust net inflow so stock becomes exactly 0
-                net_hourly_turb[h] -= neg  # subtracting a negative increases net inflow
+
+                net_hourly_turb[h] -= neg 
                 stock = 0.0
 
         return float(np.sum(max_control))

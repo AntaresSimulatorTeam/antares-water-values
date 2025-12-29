@@ -1,6 +1,3 @@
-import matplotlib.pyplot as plt
-import matplotlib.colors as colors
-import numpy as np
 from proxy_bellman_trajectories import BellmanValuesProxy, OptimalTrajectories
 import plotly.graph_objects as go
 import plotly.express as px
@@ -13,92 +10,6 @@ class Plotter:
         """
         self.bv = bv
         self.trajectories = trajectories
-
-    def plot_bellman_value(self, week_index: int) -> None:
-        """
-        Plot Bellman value as a function of stock level for a given week.
-        Raises ValueError if the week_index is out of bounds.
-        """
-        if week_index < 0 or week_index >= self.bv.nb_weeks:
-            raise ValueError(f"Invalid week: {week_index}. Must be between 0 and {self.bv.nb_weeks - 1}.")
-
-        stock_levels = np.linspace(0, 100, 51)
-        bellman_values = self.bv.mean_bv[week_index, :]
-
-        plt.figure(figsize=(10, 5))
-        plt.plot(stock_levels, bellman_values, label=f"Week {week_index + 1}", color='tab:blue')
-
-        plt.xlabel("Stock (%)")
-        plt.ylabel("Bellman Value")
-        area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
-        area_str = f" - Area: {area}" if area else ""
-        plt.title(f"Bellman Value vs Stock - Week {week_index + 1}{area_str}")
-        plt.grid(True)
-        plt.legend()
-        plt.tight_layout()
-        plt.show()
-
-    def plot_usage_values(self) -> None:
-        """
-        Plot usage values as a function of stock level for all weeks.
-        """
-        usage_values = self.bv.compute_usage_values()
-        stock_levels = np.linspace(2, 100, 50)
-        plt.figure(figsize=(12, 6))
-
-        for w in range(self.bv.nb_weeks):
-            plt.plot(
-                stock_levels,
-                usage_values[w],
-                label=f"W {w+1}"
-            )
-
-        plt.xlabel('Stock (%)')
-        plt.ylabel('Usage Value (MWh)')
-        area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
-        area_str = f" - Area: {area}" if area else ""
-        plt.title(f"Usage Values vs Stock{area_str}")
-        plt.legend(
-            loc='lower right',
-            bbox_to_anchor=(1, -0.15),
-            ncol=6
-        )
-        plt.tight_layout(rect=(0, 0.1, 1, 1))
-        plt.grid(True)
-        plt.tight_layout()
-        plt.show()
-
-    def plot_usage_values_heatmap(self) -> None:
-        """
-        Plot a heatmap of usage values over weeks and stock levels.
-        """
-        usage_values = self.bv.compute_usage_values()
-        fig, ax = plt.subplots(figsize=(14, 6))
-
-        norm = colors.Normalize(-3e10,0)
-
-        im = ax.imshow(
-            usage_values[:-1].T,
-            aspect='auto',
-            origin='lower',
-            cmap='nipy_spectral',
-            extent=(1, 52, 2, 100),
-            norm=norm,
-            interpolation='bilinear'  # smoothing
-        )
-
-        cbar = fig.colorbar(im, ax=ax, ticks=np.linspace(-3e10, 0,10))
-        cbar.set_label("Usage Value")
-
-        ax.set_xlabel("Week")
-        ax.set_ylabel("Stock (%)")
-        area = getattr(self.bv.proxy, 'name_area', None) or getattr(self.bv, 'area', None)
-        area_str = f" - Area: {area}" if area else ""
-        ax.set_title(f"Usage Value Heatmap (β={self.bv.proxy.alpha}){area_str}")
-
-        plt.grid(False)
-        plt.tight_layout()
-        plt.show()
 
     def plot_trajectories(self) -> None:
         """

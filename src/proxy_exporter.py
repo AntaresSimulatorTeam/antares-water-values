@@ -5,7 +5,7 @@ import pandas as pd
 from configparser import ConfigParser
 import shutil
 import os
-from proxy_bellman_trajectories import STOCK_STEP_DISCR
+from proxy_bellman_trajectories import STOCK_DISCR
 
 
 class Exporter:
@@ -39,49 +39,7 @@ class Exporter:
                     "turb": t,
                     "pump": p,
                     "week": w + 1,
-                    "mcYear": s + 1,
-                    "sim": "u_0"
-                })
-
-        df = pd.DataFrame(data)
-        output_path = os.path.join(self.export_dir, filename)
-        df.to_csv(output_path, index=False)
-
-    def export_bellman_values(self, filename: str = "bellman_values.csv") -> None:
-        """
-        Export Bellman values in expectation for each stock percentage, week.
-        to a CSV file.
-        """
-        data = []
-        for w in range(self.nb_weeks):
-            for c_index, c in enumerate(range(0, 101, STOCK_STEP_DISCR)):
-                stock_percent = c  # stock expressed in %
-                value = self.bv.mean_bv[w, c_index]
-                data.append({
-                    "week": w + 1,
-                    "stock_percent": stock_percent,
-                    "bellman_value": value
-                })
-
-        df = pd.DataFrame(data)
-        output_path = os.path.join(self.export_dir, filename)
-        df.to_csv(output_path, index=False)
-
-    def export_usage_values(self, filename:str = "usage_values.csv") -> None:
-        """
-        Export usage values in expectation for each stock percentage, week.
-        to a CSV file.
-        """
-        usage_values=self.bv.compute_usage_values()
-        data = []
-        for w in range(self.nb_weeks):
-            for c_index, c in enumerate(range(STOCK_STEP_DISCR, 101, STOCK_STEP_DISCR)):
-                stock_percent = c  # stock expressed in %
-                value = usage_values[w, c_index]
-                data.append({
-                    "week": w + 1,
-                    "stock_percent": stock_percent,
-                    "usage_value": value
+                    "mcYear": s + 1
                 })
 
         df = pd.DataFrame(data)
@@ -103,7 +61,6 @@ class Exporter:
                     "hlevel": hlevel,
                     "week": w + 1,
                     "mcYear": s + 1,
-                    "sim": "u_0"
                 })
         df = pd.DataFrame(data)
         output_path = os.path.join(self.export_dir, filename)
@@ -207,7 +164,7 @@ enabled = true
     def modify_scenario_builder(self) -> None:
         """
         Create a text file in user/tmp/scenariobuilder_lines listing
-        the lines needed to assign ST clusters and stock proxy to MC scenarios.
+        the lines needed to assign ST clusters and to MC scenarios.
         """
         config = ConfigParser(strict=False)
         config.read(os.path.join(self.dir_study, "settings", "generaldata.ini"))
@@ -227,7 +184,7 @@ enabled = true
     def adjust_inflow_pmax_withdrawal_constraint(self, balance: np.ndarray, week: int) -> np.ndarray:
         """
         Adjust the hourly balance at the end of the week to not exceed
-        the maximum weekly turbine capacity accounting for efficiency.
+        the maximum weekly turbine capacity (avoid numerical rounding errors leading to infeasibilities).
         """
         delta = np.sum(balance) - np.sum(self.bv.proxy.reservoir.max_weekly_turb[week] * self.bv.proxy.turb_efficiency)
         if delta > 0:
@@ -237,7 +194,7 @@ enabled = true
     def adjust_inflows_pmax_injection_constraint(self, balance: np.ndarray, week: int) -> np.ndarray:
         """
         Adjust the hourly balance at the end of the week to not exceed
-        the maximum weekly pumping capacity accounting for efficiency.
+        the maximum weekly pumping capacity (avoid numerical rounding errors leading to infeasibilities).
         """
         delta = np.sum(balance) + np.sum(self.bv.proxy.reservoir.max_weekly_pump[week] * self.bv.proxy.reservoir.efficiency)
         if delta < 0:
@@ -267,10 +224,10 @@ enabled = true
                 hourly_inflow = self.bv.proxy.reservoir.hourly_inflow[hour_start:hour_start + 168, s]
                 balance[hour_start:hour_start + 168, s] += hourly_inflow
 
-                # Adjust inflows to respect st storage constraints (no overflow and no negative stock)
+                # Adjust inflows to respect st storage constraints (overflow and negative stock leading to unfeasibilites)
                 balance[hour_start:hour_start + 168, s] -= self.trajectories.inflow_adjust_overflow[w, s, :]
 
-                # Adjust inflows to respect pmax constraints (round errors)
+                # Adjust inflows to respect pmax constraints (avoid numerical rounding errors leading to infeasibilities)
                 balance[hour_start:hour_start + 168, s] = self.adjust_inflow_pmax_withdrawal_constraint(
                     balance[hour_start:hour_start + 168, s], w
                 )
@@ -304,6 +261,10 @@ enabled = true
         np.savetxt(path, balance, fmt="%.20f", delimiter="\t")
 
     def adjust_to_spillage_constraint(self) -> None:
+        """
+        Complies with spillage constraint. Negative net load is transfered to solar producion and
+        max(turbining capacity,pumping capacity) is added to net load and misc-gen (fatal production).
+        """
         miscgen_path = os.path.join(self.dir_study, "input", "misc-gen", f"miscgen-{self.name_area}.txt")
         load_path = os.path.join(self.dir_study, "input", "load", "series", f"load_{self.name_area}.txt")
         solar_path = os.path.join(self.dir_study, "input", "solar", "series", f"solar_{self.name_area}.txt")

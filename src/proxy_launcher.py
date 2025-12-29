@@ -23,7 +23,7 @@ The processing can be run for multiple areas in parallel, and shared study files
 Usage example:
 
 python proxy_launcher.py --dir_study "/path/to/antares/study" --areas Area1 Area2 \
-    --MC_years 200 --alpha 2 --enable_logging False --actions export_trajectories plot_usage_values \
+    --MC_years 200 --alpha 2 --actions export_trajectories plot_usage_values \
     
 python proxy_launcher.py --dir_study "/path/to/antares/study" --areas Area1 Area2 \
     --MC_years 200 --actions modify_antares_data --TS_selection 5 10 15 20 25
@@ -34,7 +34,6 @@ Arguments:
   --MC_years        (int)    : Number of Monte-Carlo years to simulate (default: 200)
   --TS_selection    (list)   : List of TS to consider when calculating Bellman values (default: =MC_years)
   --alpha           (float)  : Cost function alpha parameter (default: 2)
-  --enable_logging  (bool)   : Enable detailed logging (default: False)
   --actions         (list)   : Actions to perform (required)
       Available actions include:
       - export_bellman_values
@@ -59,20 +58,18 @@ class Launch:
                  area: str,
                  MC_years: int, 
                  alpha: float,
-                 enable_logging: bool,
                  TS_selection: list[int] | None,
                  global_export_dir: str | None = None,
                 ):
         """
         Initialize the Launch class with study directory, area, target area, Monte-Carlo years,
-        cost function parameter alpha, logging flag, fictive node flag, and global export directory.
+        cost function parameter alpha, fictive node flag, and global export directory.
         """
         self.dir_study = dir_study
         self.name_area = area
         self.MC_years = MC_years
         self.TS_selection = TS_selection if TS_selection is not None else list(range(MC_years))
         self.alpha = alpha
-        self.enable_logging = enable_logging
         self.global_export_dir = global_export_dir
 
     def run(self, actions: list[str]|None=None) -> None:
@@ -101,7 +98,7 @@ class Launch:
             pbar=pbar
         )
         pbar.update(1)
-        self.bv = BellmanValuesProxy(self.proxy, enable_logging=self.enable_logging, export_dir=export_dir,pbar=pbar,TS_selection=self.TS_selection)
+        self.bv = BellmanValuesProxy(self.proxy, export_dir=export_dir,pbar=pbar,TS_selection=self.TS_selection)
         pbar.update(1)
         self.trajectories = OptimalTrajectories(self.bv,pbar=pbar)
         pbar.update(1)
@@ -140,8 +137,7 @@ def run_for_area(area: str,
                  dir_study: str, 
                  MC_years: int,
                  TS_selection: list[int] | None, 
-                 alpha: float, 
-                 enable_logging: bool,
+                 alpha: float,
                  actions: list[str] | None = None, 
                  global_export_dir: str | None = None) -> None:
     """
@@ -155,7 +151,6 @@ def run_for_area(area: str,
             MC_years=MC_years,
             TS_selection=TS_selection,
             alpha=alpha,
-            enable_logging=enable_logging,
             global_export_dir=None
         ).run(actions=actions)
     else:
@@ -165,7 +160,6 @@ def run_for_area(area: str,
             MC_years=MC_years,
             TS_selection=TS_selection,
             alpha=alpha,
-            enable_logging=enable_logging,
             global_export_dir=global_export_dir,
         ).run(actions=actions)
 
@@ -200,7 +194,6 @@ def main() -> None:
     parser.add_argument("--MC_years", type=int, required=False, default=200, help="Number of Monte-Carlo years to simulate.")
     parser.add_argument("--TS_selection", type=int, nargs='+', default=None, help="List of TS to consider when calculating Bellman values. Default is all TS.")
     parser.add_argument("--alpha", type=float, required=False, default=2, help="Cost function alpha parameter, default is 2.")
-    parser.add_argument("--enable_logging", type=bool, default=False, help="Enable logging.")
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="List of actions to perform.")
 
 
@@ -215,7 +208,6 @@ def main() -> None:
                 args.MC_years,
                 args.TS_selection,
                 args.alpha,
-                args.enable_logging,
                 args.actions,
                 None
             )
@@ -246,7 +238,6 @@ def main() -> None:
         f.write(f"MC_years            : {args.MC_years}\n")
         f.write(f"TS_selection        : {args.TS_selection}\n")
         f.write(f"alpha               : {args.alpha}\n")
-        f.write(f"enable_logging      : {args.enable_logging}\n")
         f.write("\n")
 
     if len(args.areas) == 1:
@@ -256,7 +247,6 @@ def main() -> None:
             args.MC_years,
             args.TS_selection,
             args.alpha,
-            args.enable_logging,
             args.actions,
             global_export_dir,
         )
@@ -270,7 +260,6 @@ def main() -> None:
                     args.MC_years,
                     args.TS_selection,
                     args.alpha,
-                    args.enable_logging,
                     args.actions,
                     global_export_dir
                 ): area for area in args.areas

@@ -7,6 +7,7 @@ from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from proxy_bellman_trajectories import STOCK_STEP_DISCR
+import time
 
 """
 Long-Term Storage Trajectories Generator for Antares Studies
@@ -220,10 +221,33 @@ def main() -> None:
             )
         return
 
-    # Otherwise, create a global export directory with timestamp
-    date_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-    global_export_dir = os.path.join(args.dir_study,"user", f"LT_storage_trajectories_{date_str}")
+    t_start = time.perf_counter()
+
+    run_date = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_date_pretty = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+    global_export_dir = os.path.join(
+        args.dir_study,
+        "user",
+        f"LT_storage_trajectories_{run_date}"
+    )
     os.makedirs(global_export_dir, exist_ok=True)
+
+    log_path = os.path.join(global_export_dir, "run_log.txt")
+
+    with open(log_path, "w", encoding="utf-8") as f:
+        f.write("=== LT storage trajectories run ===\n")
+        f.write(f"Date                : {run_date_pretty}\n")
+        f.write(f"dir_study           : {args.dir_study}\n")
+        f.write(f"areas               : {args.areas}\n")
+        f.write(f"actions             : {args.actions}\n")
+        f.write(f"STOCK_STEP_DISCR    : {STOCK_STEP_DISCR}\n")
+        f.write(f"MC_years            : {args.MC_years}\n")
+        f.write(f"TS_selection        : {args.TS_selection}\n")
+        f.write(f"alpha               : {args.alpha}\n")
+        f.write(f"enable_logging      : {args.enable_logging}\n")
+        f.write("\n")
 
     if len(args.areas) == 1:
         run_for_area(
@@ -260,6 +284,14 @@ def main() -> None:
                     traceback.print_exc()
 
     post_process_shared_files(args.dir_study, args.areas)
+
+    t_end = time.perf_counter()
+    elapsed_s = t_end - t_start
+
+    with open(log_path, "a", encoding="utf-8") as f:
+        f.write(f"Total runtime (s)    : {elapsed_s:.2f}\n")
+
+    print(f"📝 Run log written to {log_path}")
 
 
 if __name__ == "__main__":

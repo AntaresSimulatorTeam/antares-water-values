@@ -92,9 +92,9 @@ class BellmanValuesProxy:
         weekly_inflow: float,
         max_week_pump: float,
         max_week_turb: float,
-        stage_cost_function,
-        future_bellman_function,
-        penalty_function,
+        stage_cost_function:interp1d,
+        future_bellman_function:interp1d,
+        penalty_function:interp1d,
         max_control: float,
     ) -> tuple[float, float | None, float | None]:
         """

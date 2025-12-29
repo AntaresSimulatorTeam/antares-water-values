@@ -6,15 +6,17 @@ import os, argparse, traceback
 from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
-from proxy_bellman_trajectories import STOCK_STEP_DISCR
+from proxy_bellman_trajectories import STOCK_DISCR
 import time
+
+ALPHA = 2
 
 """
 Long-Term Storage Trajectories Generator for Antares Studies
 
 This script computes optimal storage trajectories and controls for multiple study areas
 based on Monte-Carlo scenarios and a cost function parameterized by alpha.
-It supports exporting Bellman values, controls, trajectories, and generating various plots.
+It supports exporting Bellman values, controls, trajectories, and generating a plot.
 It also allows modifying Antares study input files and undoing modifications.
 
 The processing can be run for multiple areas in parallel, and shared study files
@@ -23,7 +25,7 @@ The processing can be run for multiple areas in parallel, and shared study files
 Usage example:
 
 python proxy_launcher.py --dir_study "/path/to/antares/study" --areas Area1 Area2 \
-    --MC_years 200 --alpha 2 --actions export_trajectories plot_usage_values \
+    --MC_years 200 --alpha 2 --actions export_trajectories \
     
 python proxy_launcher.py --dir_study "/path/to/antares/study" --areas Area1 Area2 \
     --MC_years 200 --actions modify_antares_data --TS_selection 5 10 15 20 25
@@ -36,13 +38,9 @@ Arguments:
   --alpha           (float)  : Cost function alpha parameter (default: 2)
   --actions         (list)   : Actions to perform (required)
       Available actions include:
-      - export_bellman_values
       - export_controls
       - export_trajectories
-      - export_usage_values
       - plot_trajectories
-      - plot_usage_values
-      - plot_usage_values_heatmap
       - modify_antares_data
       - undo_modifications
 
@@ -87,7 +85,7 @@ class Launch:
         export_dir = os.path.join(self.global_export_dir, self.name_area)
         os.makedirs(export_dir, exist_ok=True)
         steps = ["Init Proxy", "Bellman values", "Trajectories", "Setup export/modif"]
-        pbar = tqdm(total=len(steps)+52*self.MC_years+(100//STOCK_STEP_DISCR+1)*len(self.TS_selection)*51+52*self.MC_years,
+        pbar = tqdm(total=len(steps)+52*self.MC_years+(100//STOCK_DISCR+1)*len(self.TS_selection)*51+52*self.MC_years,
                     unit="step")
 
         self.proxy = ProxyStageCostFunction(
@@ -111,20 +109,12 @@ class Launch:
             actions = ["modify_antares_data"]
 
         for action in actions:
-            if action == "export_bellman_values":
-                self.exporter.export_bellman_values()
-            elif action == "export_controls":
+            if action == "export_controls":
                 self.exporter.export_controls()
             elif action == "export_trajectories":
                 self.exporter.export_trajectories()
-            elif action == "export_usage_values":
-                self.exporter.export_usage_values()
             elif action == "plot_trajectories":
                 self.plotter.plot_trajectories()
-            elif action == "plot_usage_values":
-                self.plotter.plot_usage_values()
-            elif action == "plot_usage_values_heatmap":
-                self.plotter.plot_usage_values_heatmap()
             elif action == "modify_antares_data":
                 self.modifier.apply_all()
             elif action == "undo_modifications":
@@ -193,7 +183,6 @@ def main() -> None:
     parser.add_argument("--areas", type=str, nargs='+', required=True, help="List of study areas (space-separated).")
     parser.add_argument("--MC_years", type=int, required=False, default=200, help="Number of Monte-Carlo years to simulate.")
     parser.add_argument("--TS_selection", type=int, nargs='+', default=None, help="List of TS to consider when calculating Bellman values. Default is all TS.")
-    parser.add_argument("--alpha", type=float, required=False, default=2, help="Cost function alpha parameter, default is 2.")
     parser.add_argument("--actions", type=str, nargs='*', default=None, help="List of actions to perform.")
 
 
@@ -207,7 +196,7 @@ def main() -> None:
                 args.dir_study,
                 args.MC_years,
                 args.TS_selection,
-                args.alpha,
+                ALPHA,
                 args.actions,
                 None
             )
@@ -234,10 +223,10 @@ def main() -> None:
         f.write(f"dir_study           : {args.dir_study}\n")
         f.write(f"areas               : {args.areas}\n")
         f.write(f"actions             : {args.actions}\n")
-        f.write(f"STOCK_STEP_DISCR    : {STOCK_STEP_DISCR}\n")
+        f.write(f"STOCK_DISCR    : {STOCK_DISCR}\n")
         f.write(f"MC_years            : {args.MC_years}\n")
         f.write(f"TS_selection        : {args.TS_selection}\n")
-        f.write(f"alpha               : {args.alpha}\n")
+        f.write(f"alpha               : {ALPHA}\n")
         f.write("\n")
 
     if len(args.areas) == 1:
@@ -246,7 +235,7 @@ def main() -> None:
             args.dir_study,
             args.MC_years,
             args.TS_selection,
-            args.alpha,
+            ALPHA,
             args.actions,
             global_export_dir,
         )
@@ -259,7 +248,7 @@ def main() -> None:
                     args.dir_study,
                     args.MC_years,
                     args.TS_selection,
-                    args.alpha,
+                    ALPHA,
                     args.actions,
                     global_export_dir
                 ): area for area in args.areas

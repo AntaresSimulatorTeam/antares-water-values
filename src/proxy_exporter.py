@@ -8,7 +8,7 @@ import os
 
 
 class Exporter:
-    def __init__(self, proxy: ProxyStageCostFunction, bv: BellmanValuesProxy, trajectories: OptimalTrajectories):
+    def __init__(self, proxy: ProxyStageCostFunction, bv: BellmanValuesProxy, trajectories: OptimalTrajectories, export_dir:str):
         """
         Initialize Exporter with Proxy, BellmanValuesProxy, and OptimalTrajectories instances.
         Sets export directory, number of weeks, and scenarios.
@@ -17,7 +17,7 @@ class Exporter:
         self.bv = bv
         self.trajectories = trajectories
 
-        self.export_dir = self.bv.export_dir
+        self.export_dir = export_dir
         self.nb_weeks = proxy.nb_weeks
         self.scenarios = proxy.scenarios
 

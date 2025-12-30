@@ -4,12 +4,13 @@ import plotly.express as px
 import os
 
 class Plotter:
-    def __init__(self, bv: BellmanValuesProxy, trajectories: OptimalTrajectories):
+    def __init__(self, bv: BellmanValuesProxy, trajectories: OptimalTrajectories, export_dir:str):
         """
         Initialize Plotter with BellmanValuesProxy and OptimalTrajectories instances.
         """
         self.bv = bv
         self.trajectories = trajectories
+        self.export_dir=export_dir
 
     def plot_trajectories(self) -> None:
         """
@@ -119,5 +120,5 @@ class Plotter:
         fig.show()
         if not isinstance(self.bv.export_dir, str) or not self.bv.export_dir:
             raise ValueError("export_dir must be a non-empty string before saving the plot.")
-        html_path = os.path.join(self.bv.export_dir, "trajectories_plot.html")
+        html_path = os.path.join(self.export_dir, "trajectories_plot.html")
         fig.write_html(html_path)

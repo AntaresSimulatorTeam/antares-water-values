@@ -101,8 +101,8 @@ class Launch:
         self.trajectories = OptimalTrajectories(self.bv,pbar=pbar)
         pbar.update(1)
 
-        self.plotter = Plotter(self.bv, self.trajectories)
-        self.exporter = Exporter(self.proxy, self.bv, self.trajectories)
+        self.plotter = Plotter(self.bv, self.trajectories, export_dir=export_dir)
+        self.exporter = Exporter(self.proxy, self.bv, self.trajectories, export_dir=export_dir)
         self.modifier = ModifyAntaresStudy(self.bv, self.trajectories)
 
         if actions is None:

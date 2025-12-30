@@ -48,16 +48,16 @@ class ProxyStageCostFunction:
 
         return weighted_net_load
 
-    def compute_turb_and_pump_with_thresholds(
+    def compute_control_with_thresholds(
         self,
         turb_thresholds: np.ndarray,
         weekly_net_load: np.ndarray,
         max_hourly_turb: np.ndarray,
         max_hourly_pump: np.ndarray,
         null_pump: bool
-    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    ) -> tuple:
         """
-        Compute weekly turbine and pump energy, control, and cost using
+        Compute weekly control and cost using
         threshold-based hourly policies.
 
         Each policy is defined by a turbining threshold applied to the hourly
@@ -103,24 +103,19 @@ class ProxyStageCostFunction:
         net_after = clipped + pump                         
 
         # Aggregations
-        hourly_turb = turb.sum(axis=1) * self.turb_efficiency            
-        hourly_pump = pump.sum(axis=1) * self.reservoir.efficiency      
         weekly_control = (turb * self.turb_efficiency - pump * self.reservoir.efficiency).sum(axis=1)
         costs = (np.abs(net_after) ** self.alpha).sum(axis=1)
 
-        return hourly_turb, hourly_pump, weekly_control, costs
+        return weekly_control, costs
 
 
-    def stage_cost_function(self, week: int, scenario: int) -> np.ndarray:
+    def stage_cost_function(self, week: int, scenario: int) -> tuple:
         """
-        Compute the cost, turbined energy, and pumped energy for a given week and scenario,
+        Compute the cost for a given week and scenario,
         as functions of the weekly energy control.
 
         Returns:
-            np.ndarray: Array of three interpolators (scipy interp1d):
-                - cost(control),
-                - turbined_energy(control),
-                - pumped_energy(control)
+            Interpolator (scipy interp1d): cost(control),
         """
         weekly_net_load = self.weighted_net_load[week * 168:(week + 1) * 168, scenario]
         max_hourly_turb = self.reservoir.max_hourly_turb[(week)*168:(week+1)*168]
@@ -133,7 +128,7 @@ class ProxyStageCostFunction:
 
         turb_thresholds = np.linspace(low, high, 25)
 
-        hourly_turb, hourly_pump, weekly_control, costs = self.compute_turb_and_pump_with_thresholds(
+        weekly_control, costs = self.compute_control_with_thresholds(
             turb_thresholds=turb_thresholds,
             weekly_net_load=weekly_net_load,
             max_hourly_turb=max_hourly_turb,
@@ -144,14 +139,12 @@ class ProxyStageCostFunction:
         idx = np.argsort(weekly_control)
         weekly_control = weekly_control[idx]
         costs = costs[idx]
-        hourly_turb = hourly_turb[idx]
-        hourly_pump = hourly_pump[idx]
 
-        return np.array([
-            interp1d(weekly_control, costs, fill_value="extrapolate"),
-            interp1d(weekly_control, hourly_turb, fill_value="extrapolate"),
-            interp1d(weekly_control, hourly_pump, fill_value="extrapolate")
-        ])
+        ub_cost = float(max(costs[0], costs[-1]))
+
+        stage_cost_function = interp1d(weekly_control, costs, fill_value="extrapolate")
+        
+        return stage_cost_function,ub_cost
 
 
     def compute_stage_cost_functions(self)->np.ndarray:
@@ -160,19 +153,26 @@ class ProxyStageCostFunction:
 
         Returns:
             np.ndarray: Array of shape (nb_weeks, nb_scenarios), containing
-            3-element arrays of scipy interp1d interpolators.
+            stage cost function.
         """
         cost_functions = np.empty(
-            (self.nb_weeks, len(self.scenarios), 3), 
+            (self.nb_weeks, len(self.scenarios)), 
             dtype=object
         )
+
+        self.stage_cost_upper_bounds = np.empty((self.nb_weeks, len(self.scenarios)), dtype=float)
+
         if hasattr(self, "pbar"):
             self.pbar.set_postfix_str("Stage cost functions computing")        
         for w in range(self.nb_weeks):
             for s in self.scenarios:
                 if hasattr(self,"pbar"):
                     self.pbar.update(1)
-                cost_functions[w,s]=self.stage_cost_function(w,s)
+
+                stage_cost_function, ub = self.stage_cost_function(w, s)
+                cost_functions[w, s] = stage_cost_function
+                self.stage_cost_upper_bounds[w, s] = ub
+
         return cost_functions
         
 
@@ -193,12 +193,4 @@ class ProxyStageCostFunction:
         Returns:
             float: Upper bound of the stage cost for the given week across scenarios.
         """
-        ub_cost=0
-        for s in self.scenarios:
-            stage_cost_function = self.stage_cost_functions[week,s][0]
-            controls = stage_cost_function.x
-            max_cost_turb = stage_cost_function(controls[-1])
-            max_cost_pump = stage_cost_function(controls[0])
-            ub_cost_new = max(max_cost_turb,max_cost_pump)
-            ub_cost=max(ub_cost,ub_cost_new)
-        return ub_cost
+        return float(self.stage_cost_upper_bounds[week].max())

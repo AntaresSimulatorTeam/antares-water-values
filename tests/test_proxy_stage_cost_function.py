@@ -17561,7 +17561,7 @@ high = np.max(weekly_net_load) if null_pump else raw_high
 
 turb_thresholds = np.linspace(low, high, 10)
 
-def test_turb_and_pump_with_thresholds()->None:
+def test_control_with_thresholds()->None:
      expected = np.array([-6961.7275,
                2078.38706349206,
                11118.5016269841,
@@ -17575,37 +17575,13 @@ def test_turb_and_pump_with_thresholds()->None:
      assert turb_thresholds == pytest.approx(expected, rel=1e-6, abs=1e-9)
 
 def test_turb_pump_control_costs()->None:
-     hourly_turb, hourly_pump, weekly_control, costs = proxy1.compute_turb_and_pump_with_thresholds(
-         turb_thresholds=turb_thresholds,
-         weekly_net_load=weekly_net_load,
-         max_hourly_turb=max_hourly_turb,
-         max_hourly_pump=max_hourly_pump,
-         null_pump=null_pump
+     weekly_control, costs = proxy1.compute_control_with_thresholds(
+     turb_thresholds=turb_thresholds,
+     weekly_net_load=weekly_net_load,
+     max_hourly_turb=max_hourly_turb,
+     max_hourly_pump=max_hourly_pump,
+     null_pump=null_pump
      )
-     expected_hourly_turb = np.array([771547.199,
-          717239.892,
-          578406.139,
-          393818.444,
-          232982.412,
-          80956.5483,
-          800.552619,
-               0,
-               0,
-               0
-          ], dtype=float)
-     
-     expected_hourly_pump = np.array([
-          0,
-          8642.14380,
-          43646.5328,
-          105213.741,
-          187625.930,
-          256417.395,
-          324877.675,
-          394019.727,
-          451664.787,
-          470400], dtype=float)
-     
      expected_weekly_control = np.array([
           771547.199999997,
           708597.74849603 ,
@@ -17632,8 +17608,6 @@ def test_turb_pump_control_costs()->None:
 
      assert costs == pytest.approx(expected_costs, rel=1e-6, abs=1e-9)
      assert weekly_control == pytest.approx(expected_weekly_control, rel=1e-6, abs=1e-9)
-     assert hourly_turb == pytest.approx(expected_hourly_turb, rel=1e-6, abs=1e-9)
-     assert hourly_pump == pytest.approx(expected_hourly_pump, rel=1e-6, abs=1e-9)
 
 def test_upper_bound_cost()->None:
      ub_cost = proxy1.upper_bound_cost(10)

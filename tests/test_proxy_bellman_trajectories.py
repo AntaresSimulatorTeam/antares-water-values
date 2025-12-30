@@ -14,7 +14,6 @@ proxy = ProxyStageCostFunction(dir_study=dir_study,
               pbar=pbar)
 
 bellman_values = BellmanValuesProxy(proxy=proxy,
-                                    export_dir="tests",
                                     pbar=pbar)
 
 def test_bellman_value()->None:

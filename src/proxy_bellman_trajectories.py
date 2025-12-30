@@ -8,23 +8,18 @@ from tqdm import tqdm
 STOCK_DISCR=2
 
 class BellmanValuesProxy:
-    def __init__(self, proxy: ProxyStageCostFunction, export_dir: str, pbar : tqdm,TS_selection:list[int]|None=None)->None:
+    def __init__(self, proxy: ProxyStageCostFunction, pbar : tqdm,TS_selection:list[int]|None=None)->None:
         """
-        Initialize BellmanValuesProxy with given Proxy and export directory.
+        Initialize BellmanValuesProxy with given Proxy.
         Sets up cost functions, storage arrays, then computes Bellman and usage values.
         """
         self.proxy = proxy
         self.nb_weeks = proxy.nb_weeks
         self.scenarios = proxy.scenarios
         self.TS_selection=TS_selection if TS_selection is not None else self.scenarios
-        self.export_dir = export_dir
         self.pbar = pbar
 
         self.stage_cost_functions = self.proxy.stage_cost_functions
-
-        self.cost_functions = self.stage_cost_functions[:, :, 0]
-        self.turb_functions = self.stage_cost_functions[:, :, 1]
-        self.pump_functions = self.stage_cost_functions[:, :, 2]
 
         self.mean_bv = np.zeros((self.nb_weeks, 100//STOCK_DISCR+1))
 
@@ -162,7 +157,7 @@ class BellmanValuesProxy:
 
                     self.pbar.update(1)
                     weekly_inflow = self.proxy.reservoir.weekly_inflow[w + 1, s]
-                    cost_function = self.cost_functions[w + 1, s]
+                    cost_function = self.stage_cost_functions[w + 1, s]
                     controls = cost_function.x
 
                     best_value, best_stock, best_control = self.iterate_over_controls_vec(
@@ -203,7 +198,6 @@ class OptimalTrajectories:
         self.bellman_values=bellman_values
         self.nb_weeks = bellman_values.nb_weeks
         self.scenarios = bellman_values.scenarios
-        self.export_dir = bellman_values.export_dir
         self.pbar = pbar
         
         self.mean_bv=bellman_values.mean_bv
@@ -211,7 +205,7 @@ class OptimalTrajectories:
 
     def compute_trajectories(self) -> None:
         """
-        Compute optimal reservoir trajectories, controls, turbining and pumping schedules
+        Compute optimal reservoir trajectories and controls schedules
         for all scenarios and weeks using Bellman values, penalties and inflows.
         Adjusts hourly inflows to avoid overflow or negative stock with external method.
         """
@@ -235,7 +229,7 @@ class OptimalTrajectories:
                 hourly_inflow = self.bellman_values.proxy.reservoir.hourly_inflow[w * 168:(w + 1) * 168, s]
 
 
-                cost_function = self.bellman_values.cost_functions[w, s]
+                cost_function = self.bellman_values.stage_cost_functions[w, s]
                 penalty_function = penalty_by_week[w]
 
                 controls = cost_function.x
@@ -279,8 +273,6 @@ class OptimalTrajectories:
 
                 self.trajectories[s, w] = final_best_stock
                 self.optimal_controls[s, w] = final_best_control
-                self.optimal_turb[s, w] = self.bellman_values.turb_functions[w, s](final_best_control)
-                self.optimal_pump[s, w] = self.bellman_values.pump_functions[w, s](final_best_control)
                 current_stock = final_best_stock
 
     def adjust_hourly_inflow_overflow(

@@ -5,7 +5,6 @@ import pandas as pd
 from configparser import ConfigParser
 import shutil
 import os
-from proxy_bellman_trajectories import STOCK_DISCR
 
 
 class Exporter:
@@ -24,20 +23,16 @@ class Exporter:
 
     def export_controls(self, filename: str = "controls.csv") -> None:
         """
-        Export optimal control trajectories (control u, turbine, pump) 
+        Export optimal control trajectories
         for all scenarios and weeks to a CSV file.
         """
         data = []
         for s in self.scenarios:
             for w in range(self.nb_weeks):
                 u = self.trajectories.optimal_controls[s, w]
-                t = self.trajectories.optimal_turb[s, w]
-                p = self.trajectories.optimal_pump[s, w]
                 data.append({
                     "area": self.proxy.name_area,
                     "u": u,
-                    "turb": t,
-                    "pump": p,
                     "week": w + 1,
                     "mcYear": s + 1
                 })

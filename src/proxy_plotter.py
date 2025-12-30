@@ -118,7 +118,7 @@ class Plotter:
         )
 
         fig.show()
-        if not isinstance(self.bv.export_dir, str) or not self.bv.export_dir:
+        if not isinstance(self.export_dir, str) or not self.export_dir:
             raise ValueError("export_dir must be a non-empty string before saving the plot.")
         html_path = os.path.join(self.export_dir, "trajectories_plot.html")
         fig.write_html(html_path)

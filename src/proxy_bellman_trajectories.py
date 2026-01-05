@@ -5,7 +5,7 @@ from type_definition import Callable
 from scipy.interpolate import interp1d
 from tqdm import tqdm
 
-STOCK_DISCR=1
+STOCK_DISCR=2
 
 class BellmanValuesProxy:
     def __init__(self, proxy: ProxyStageCostFunction, pbar : tqdm,TS_selection:list[int]|None=None)->None:

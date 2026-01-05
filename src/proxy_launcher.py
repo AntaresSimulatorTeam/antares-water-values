@@ -7,6 +7,7 @@ from datetime import datetime
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm
 from proxy_bellman_trajectories import STOCK_DISCR
+from proxy_stage_cost_function import THRESHOLDS
 import time
 
 ALPHA = 2
@@ -223,9 +224,10 @@ def main() -> None:
         f.write(f"dir_study           : {args.dir_study}\n")
         f.write(f"areas               : {args.areas}\n")
         f.write(f"actions             : {args.actions}\n")
-        f.write(f"STOCK_DISCR    : {STOCK_DISCR}\n")
         f.write(f"MC_years            : {args.MC_years}\n")
         f.write(f"TS_selection        : {args.TS_selection}\n")
+        f.write(f"STOCK_DISCR         : {STOCK_DISCR}\n")
+        f.write(f"THRESHOLDS          : {THRESHOLDS}\n")
         f.write(f"alpha               : {ALPHA}\n")
         f.write("\n")
 

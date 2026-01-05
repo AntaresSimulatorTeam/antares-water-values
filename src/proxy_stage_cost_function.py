@@ -4,7 +4,7 @@ import numpy as np
 from scipy.interpolate import interp1d
 from tqdm import tqdm
 
-
+THRESHOLDS = 25
 
 class ProxyStageCostFunction:
     def __init__(self, dir_study: str, name_area: str, MC_years:int, alpha:float,pbar:tqdm) -> None:
@@ -126,7 +126,7 @@ class ProxyStageCostFunction:
         raw_high = np.max(weekly_net_load + max_hourly_pump) * (self.turb_efficiency / self.reservoir.efficiency) ** (1 / (self.alpha - 1))
         high = np.max(weekly_net_load) if null_pump else raw_high
 
-        turb_thresholds = np.linspace(low, high, 25)
+        turb_thresholds = np.unique(np.linspace(low, high, THRESHOLDS))
 
         weekly_control, costs = self.compute_control_with_thresholds(
             turb_thresholds=turb_thresholds,

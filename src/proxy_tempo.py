@@ -116,34 +116,57 @@ class BellmanValuesTempo:
             kind='linear', fill_value='extrapolate')
         # Alternative no penalty: penalty = lambda x: 0
         return penalty
-
+    
     def compute_bellman_values(self) -> None:
         """
         Compute Bellman values backward in time with risk-adjusted expectations (CVaR).
         For each week, capacity level, and scenario, optimize over possible control actions.
+
+        Vectorized version:
+        - For each week, precompute gains for all (scenario, control) pairs once.
+        - For each capacity level, compute total values for all controls at once, then take max over controls.
+        - Apply CVaR (tail mean after sorting) over scenarios.
         """
         self.mean_bv[self.end_week] = np.zeros(self.capacity + 1)
+
+        controls = np.arange(self.max_control + 1, dtype=int)  # shape (A,)
+
         for w in reversed(range(self.start_week, self.end_week)):
-            penalty = self.penalty(w+1)
+            penalty = self.penalty(w + 1)
+
+            # Precompute gains for this week for all scenarios and all controls: shape (S, A)
+            # gains[s, a] corresponds to scenario s and control = controls[a]
+            gains = np.empty((self.nb_scenarios, controls.size), dtype=float)
+            for j, control in enumerate(controls):
+                gains[:, j] = np.fromiter(
+                    (
+                        self.gain_function.gain_for_week_control_and_scenario(
+                            w + 1, int(control), s, self.max_control
+                        )
+                        for s in range(self.nb_scenarios)
+                    ),
+                    dtype=float,
+                    count=self.nb_scenarios,
+                )
+
+            alpha = self.CVar
+            cutoff_index = int((1 - alpha) * self.nb_scenarios)
+
             for c in range(self.capacity + 1):
-                bv = []
-                for s in range(self.nb_scenarios):
-                    best_value = -np.inf
-                    for control in range(self.max_control + 1):
+                idx = c - controls  # shape (A,)
+                future_value = self.mean_bv[w + 1, idx]  # shape (A,)
+                penalty_value = penalty(idx)  # shape (A,)
 
-                        # Week W+1 selected because Bellman values are computed at end of week w
-                        gain = self.gain_function.gain_for_week_control_and_scenario(w + 1, control, s,self.max_control)
-                        future_value = self.mean_bv[w + 1, c - control]
-                        total_value = gain + future_value + penalty(c - control)
-                        if total_value > best_value:
-                            best_value = total_value
-                    bv.append(best_value)
+                # Total value for each (scenario, control): shape (S, A)
+                total_values = gains + future_value[None, :] + penalty_value[None, :]
 
-                alpha = self.CVar
-                bellman_values = bv
-                sorted_bv = np.sort(bellman_values)
-                cutoff_index = int((1 - alpha) * len(sorted_bv))
-                self.mean_bv[w, c] = np.mean(sorted_bv[cutoff_index:])
+                # Best value per scenario: shape (S,)
+                best_per_scenario = np.max(total_values, axis=1)
+
+                # CVaR tail-mean over scenarios
+                sorted_bv = np.sort(best_per_scenario)
+                self.mean_bv[w, c] = float(np.mean(sorted_bv[cutoff_index:]))
+
 
     def compute_usage_values(self) -> np.ndarray:
         """
@@ -180,40 +203,84 @@ class TrajectoriesTempo:
         """
         Compute stock and control trajectories over all scenarios and weeks,
         considering possible constraints from reduced stock trajectories.
+
+        Vectorized over scenarios and controls (loop only over weeks).
         """
         control_trajectories = np.zeros((self.nb_scenarios, 61))
         stock_trajectories = np.zeros((self.nb_scenarios, 61))
 
-        for s in range(self.nb_scenarios):
-            stock_trajectories[s, :self.start_week] = self.capacity
-            for w in range(self.start_week, self.end_week + 1):
-                penalty = self.bv.penalty(w)
-                if self.start_week>0 and stock_trajectories[s, w - 1] == 0:
-                    stock_trajectories[s, w:] = 0
-                    break
-                best_value = -np.inf
-                best_control = None
-                for c in range(self.max_control + 1):
-                    gain = self.bv.gain_function.gain_for_week_control_and_scenario(w, c, s,self.max_control)
-                    future_value = self.bv.mean_bv[w, int(stock_trajectories[s, w - 1]) - c]
-                    total_value = gain + future_value + penalty(int(stock_trajectories[s, w - 1]) - c)
-                    if total_value > best_value:
-                        best_control = c
-                        best_value = total_value
-                if self.stock_trajectories_red is not None and best_control is not None:
-                    # Do not allow negative stocks below red stocks
-                    if stock_trajectories[s, w - 1] - best_control < self.stock_trajectories_red[s, w]:
-                        best_control = stock_trajectories[s, w - 1] - self.stock_trajectories_red[s, w]
-                    # Do not allow negative controls below red controls
-                    if best_control < self.stock_trajectories_red[s, w - 1] - self.stock_trajectories_red[s, w]:
-                        best_control = self.stock_trajectories_red[s, w - 1] - self.stock_trajectories_red[s, w]
+        # Init: stock = capacity up to start_week (excluded)
+        stock_trajectories[:, :self.start_week] = self.capacity
 
-                if best_control is not None:
-                    stock_trajectories[s, w] = stock_trajectories[s, w - 1] - best_control
-                    control_trajectories[s, w] = best_control
-                else:
-                    stock_trajectories[s, w] = np.nan
-                    control_trajectories[s, w] = np.nan
+        controls = np.arange(self.max_control + 1, dtype=int)  # (A,)
+        S = self.nb_scenarios
+
+        # Active scenarios (used to emulate early break per scenario when stock hits 0)
+        active = np.ones(S, dtype=bool)
+
+        for w in range(self.start_week, self.end_week + 1):
+            penalty = self.bv.penalty(w)
+
+            # If start_week>0 and previous stock == 0 => set rest to 0 and stop updating this scenario
+            if self.start_week > 0:
+                prev_stock = stock_trajectories[:, w - 1]
+                just_deactivated = active & (prev_stock == 0)
+                if np.any(just_deactivated):
+                    stock_trajectories[just_deactivated, w:] = 0.0
+                    # controls already 0 by default; keep them.
+                    active[just_deactivated] = False
+
+            if not np.any(active):
+                break
+
+            # Work only on active scenarios
+            s_idx = np.where(active)[0]
+            prev_stock_act = stock_trajectories[s_idx, w - 1].astype(int)  # (S_act,)
+
+            # Precompute gains for this week for all active scenarios and all controls: (S_act, A)
+            gains = np.empty((s_idx.size, controls.size), dtype=float)
+            for j, c in enumerate(controls):
+                gains[:, j] = np.fromiter(
+                    (
+                        self.bv.gain_function.gain_for_week_control_and_scenario(
+                            w, int(c), int(s), self.max_control
+                        )
+                        for s in s_idx
+                    ),
+                    dtype=float,
+                    count=s_idx.size,
+                )
+
+            # Indices of future value: stock after applying control (broadcast) => (S_act, A)
+            idx_after = prev_stock_act[:, None] - controls[None, :]
+
+            # Future BV and penalty evaluated for all (scenario, control)
+            future_value = self.bv.mean_bv[w, idx_after]          # (S_act, A)
+            penalty_value = penalty(idx_after)                    # (S_act, A)
+
+            total_values = gains + future_value + penalty_value   # (S_act, A)
+
+            # Best control per active scenario (integer control)
+            best_control = controls[np.argmax(total_values, axis=1)].astype(float)  # (S_act,)
+
+            # Apply "red" constraints exactly like your code (post-adjustment, no re-argmax)
+            if self.stock_trajectories_red is not None:
+                red_now = self.stock_trajectories_red[s_idx, w]       # (S_act,)
+                red_prev = self.stock_trajectories_red[s_idx, w - 1]  # (S_act,)
+
+                # Do not allow negative stocks below red stocks
+                bc1 = prev_stock_act - red_now
+                mask1 = (prev_stock_act - best_control) < red_now
+                best_control = np.where(mask1, bc1, best_control)
+
+                # Do not allow negative controls below red controls
+                bc2 = red_prev - red_now
+                mask2 = best_control < bc2
+                best_control = np.where(mask2, bc2, best_control)
+
+            # Update trajectories (only active scenarios)
+            stock_trajectories[s_idx, w] = prev_stock_act - best_control
+            control_trajectories[s_idx, w] = best_control
 
         return control_trajectories, stock_trajectories
 

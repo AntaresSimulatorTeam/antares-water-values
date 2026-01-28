@@ -28,17 +28,20 @@ class BellmanValuesProxy:
     def penalty_final_stock(self) -> Callable:
         """
         Returns a penalty function based on deviation from initial reservoir level at final week.
-        The penalty scales with the upper bound cost and relative negative deviation percentage (1%).
+        The penalty scales with the upper bound cost and relative negative deviation percentage (10%).
         """
-        penalty = lambda x:abs(x-self.proxy.reservoir.initial_level)/self.proxy.reservoir.initial_level * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
+        penalty = lambda x:abs(x-self.proxy.reservoir.initial_level)/(10*self.proxy.reservoir.initial_level) * 100 * self.proxy.upper_bound_cost(self.nb_weeks-1)
 
         return penalty
-    
+
     def penalty_rule_curves(self, week_idx: int) -> Callable:
         """
         Returns a piecewise penalty function penalizing deviations outside the weekly lower and upper rule curves.
         Penalties grow linearly beyond ±1% of reservoir capacity from the rule curves.
         """
+        if week_idx == self.nb_weeks -1 :
+            return lambda x:0
+        
         ub_cost = self.proxy.upper_bound_cost(week_idx)
         penalty = interp1d(
             [
